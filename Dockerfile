@@ -12,4 +12,5 @@ COPY src ./src
 RUN uv sync --frozen --no-dev
 
 WORKDIR /data
+EXPOSE 8765
 ENTRYPOINT ["/app/.venv/bin/split-video"]
