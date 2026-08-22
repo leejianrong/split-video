@@ -13,6 +13,7 @@ from rich.table import Table
 from split_video.ffmpeg import ExtractError, FfmpegNotFoundError, ProbeError, detect_silence, extract_segment, probe_duration
 from split_video.naming import build_manifest, segment_filename, write_manifest
 from split_video.segments import compute_segments
+from split_video.timefmt import format_timestamp
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 console = Console()
@@ -105,7 +106,13 @@ def main(
     table.add_column("Duration")
     table.add_column("File")
     for seg, filename in zip(segments, filenames):
-        table.add_row(str(seg.index), f"{seg.start:.2f}s", f"{seg.end:.2f}s", f"{seg.duration:.2f}s", filename)
+        table.add_row(
+            str(seg.index),
+            format_timestamp(seg.start, total_duration),
+            format_timestamp(seg.end, total_duration),
+            format_timestamp(seg.duration, total_duration),
+            filename,
+        )
     console.print(table)
 
     if dry_run:

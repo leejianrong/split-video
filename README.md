@@ -7,7 +7,7 @@ one file per song, by detecting the silence gaps between them.
 
 Requires `ffmpeg`/`ffprobe` on your `PATH`.
 
-```
+```bash
 uv sync
 ```
 
@@ -20,13 +20,13 @@ Always start with `--dry-run` to check the detected segments before writing
 any files — live recordings have a non-zero noise floor, so the right
 `--silence-threshold` varies per recording:
 
-```
+```bash
 uv run split-video liveshow.mp4 --dry-run
 ```
 
 Once the segments look right, drop `--dry-run` to actually split:
 
-```
+```bash
 uv run split-video liveshow.mp4
 ```
 
@@ -54,7 +54,7 @@ A prebuilt image is published to GHCR on every push to `main`. Run it by
 mounting the folder that contains your video to `/data`, then passing the
 filename (and any flags) exactly as you would locally:
 
-```
+```bash
 docker run --rm -v "$PWD":/data ghcr.io/leejianrong/split-video:latest liveshow.mp4 --dry-run
 docker run --rm -v "$PWD":/data ghcr.io/leejianrong/split-video:latest liveshow.mp4
 ```
@@ -63,19 +63,19 @@ Split files and `manifest.json` land back in that same host folder. On
 Linux, add `--user "$(id -u):$(id -g)"` to the `docker run` command so the
 output files are owned by you instead of root:
 
-```
+```bash
 docker run --rm --user "$(id -u):$(id -g)" -v "$PWD":/data ghcr.io/leejianrong/split-video:latest liveshow.mp4
 ```
 
 To build the image locally instead of pulling it:
 
-```
+```bash
 docker build -t split-video .
 docker run --rm -v "$PWD":/data split-video liveshow.mp4 --dry-run
 ```
 
 ## Tests
 
-```
+```bash
 uv run pytest
 ```

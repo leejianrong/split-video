@@ -14,3 +14,7 @@ wheels/
 
 # Test artifacts
 .pytest_cache/
+
+# Personal video files / splitter output — never commit these
+/videos/
+*_split/
