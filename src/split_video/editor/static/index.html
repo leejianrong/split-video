@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>split-video editor</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="app-header">
+    <div class="app-header__title">
+      <span id="filename" class="filename">Loading…</span>
+      <span id="segment-count" class="segment-count"></span>
+    </div>
+    <button id="export-btn" class="btn btn-primary" disabled>Export</button>
+  </header>
+
+  <main id="app-main" class="app-main">
+    <div class="player-wrap">
+      <video id="video" controls preload="metadata"></video>
+    </div>
+
+    <div class="zoom-controls">
+      <button id="zoom-out" class="btn" title="Zoom out">&minus;</button>
+      <span id="zoom-label" class="zoom-label">Fit</span>
+      <button id="zoom-in" class="btn" title="Zoom in">+</button>
+      <button id="zoom-fit" class="btn">Fit</button>
+    </div>
+
+    <div id="timeline-viewport" class="timeline-viewport">
+      <div id="timeline-track" class="timeline-track">
+        <div id="ruler" class="ruler"></div>
+        <div id="bands" class="bands"></div>
+        <div id="playhead" class="playhead"></div>
+      </div>
+    </div>
+
+    <section class="controls-panel">
+      <div class="slider-row">
+        <label for="silence-threshold">Silence threshold</label>
+        <input type="range" id="silence-threshold" min="-60" max="-10" step="1" />
+        <output id="silence-threshold-value" class="slider-value"></output>
+        <button id="recompute-btn" class="btn">Recompute</button>
+      </div>
+      <div class="slider-row">
+        <label for="min-silence-duration">Min silence duration</label>
+        <input type="range" id="min-silence-duration" min="0.2" max="10" step="0.1" />
+        <output id="min-silence-duration-value" class="slider-value"></output>
+      </div>
+      <div class="slider-row">
+        <label for="min-song-length">Min song length</label>
+        <input type="range" id="min-song-length" min="1" max="120" step="1" />
+        <output id="min-song-length-value" class="slider-value"></output>
+      </div>
+      <div class="slider-row">
+        <label for="silence-padding">Silence padding</label>
+        <input type="range" id="silence-padding" min="0" max="2" step="0.05" />
+        <output id="silence-padding-value" class="slider-value"></output>
+      </div>
+      <p class="caption">
+        Recomputing — whether live (the three sliders above) or via
+        <strong>Recompute</strong> (the silence threshold) — replaces
+        <em>all</em> current splits, including any you've dragged, added, or
+        deleted by hand.
+      </p>
+    </section>
+  </main>
+
+  <div id="export-modal" class="modal hidden"></div>
+  <div id="app-overlay" class="overlay hidden"></div>
+
+  <script type="module" src="main.js"></script>
+</body>
+</html>

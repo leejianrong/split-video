@@ -27,7 +27,7 @@ def compute_segments(
     total_duration: float,
     min_silence_duration: float,
     min_song_length: float,
-    edge_margin: float = 0.3,
+    padding: float = 0.15,
 ) -> list[Segment]:
     # Defensive re-filter: ffmpeg's own `silencedetect=d=...` already only
     # reports gaps of at least min_silence_duration, but this keeps the
@@ -45,15 +45,15 @@ def compute_segments(
     if gaps and gaps[-1].end >= total_duration - _LEADING_TRAILING_EPSILON:
         trailing = gaps.pop(-1)
 
-    song_start = leading.end if leading is not None else 0.0
-    song_end = trailing.start if trailing is not None else total_duration
+    song_start = max(0.0, leading.end - padding) if leading is not None else 0.0
+    song_end = min(total_duration, trailing.start + padding) if trailing is not None else total_duration
 
     boundaries: list[tuple[float, float]] = []
     cursor = song_start
     for gap in gaps:
-        cut = _cut_point(gap, edge_margin)
-        boundaries.append((cursor, cut))
-        cursor = cut
+        cut_out, cut_in = _cut_points(gap, padding)
+        boundaries.append((cursor, cut_out))
+        cursor = cut_in
     boundaries.append((cursor, song_end))
 
     boundaries = _merge_short_segments(boundaries, min_song_length)
@@ -61,13 +61,18 @@ def compute_segments(
     return [Segment(index=i + 1, start=start, end=end) for i, (start, end) in enumerate(boundaries)]
 
 
-def _cut_point(gap: SilenceInterval, edge_margin: float) -> float:
-    midpoint = (gap.start + gap.end) / 2
-    low = gap.start + edge_margin
-    high = gap.end - edge_margin
-    if low > high:
-        return midpoint
-    return min(max(midpoint, low), high)
+def _cut_points(gap: SilenceInterval, padding: float) -> tuple[float, float]:
+    """Return (song_before_end, song_after_start) for an interior silence gap.
+
+    Trims the gap out entirely, keeping only a small protective sliver of
+    silence on each side so a quiet attack/decay transient isn't clipped.
+    """
+    if gap.end - gap.start <= 2 * padding:
+        # Gap too short to pad both sides without the two cuts crossing;
+        # degenerate to a single midpoint (zero retained silence).
+        midpoint = (gap.start + gap.end) / 2
+        return midpoint, midpoint
+    return gap.start + padding, gap.end - padding
 
 
 def _merge_short_segments(

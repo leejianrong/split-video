@@ -2,14 +2,19 @@
 
 from __future__ import annotations
 
+import threading
+import webbrowser
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
 import typer
+import uvicorn
 from rich.console import Console
 from rich.table import Table
 
+from split_video.editor.app import create_app
+from split_video.editor.schemas import StateParams
 from split_video.ffmpeg import ExtractError, FfmpegNotFoundError, ProbeError, detect_silence, extract_segment, probe_duration
 from split_video.naming import build_manifest, segment_filename, write_manifest
 from split_video.segments import compute_segments
@@ -21,7 +26,7 @@ error_console = Console(stderr=True)
 
 
 @app.command()
-def main(
+def split(
     source: Path = typer.Argument(
         ..., exists=True, dir_okay=False, readable=True, help="Path to the input video/audio file."
     ),
@@ -40,10 +45,10 @@ def main(
         "--min-song-length",
         help="Minimum duration (seconds) for a detected segment to be kept as its own song.",
     ),
-    edge_margin: float = typer.Option(
-        0.3,
-        "--edge-margin",
-        help="Minimum distance (seconds) to keep the cut point from either edge of a silence gap.",
+    silence_padding: float = typer.Option(
+        0.15,
+        "--silence-padding",
+        help="Seconds of near-silence to retain on each side of a cut, to avoid clipping a quiet attack or decay transient.",
     ),
     output_dir: Optional[Path] = typer.Option(
         None,
@@ -88,7 +93,7 @@ def main(
         for s in silences:
             console.print(f"[dim]silence: {s.start:.2f}s - {s.end:.2f}s ({s.end - s.start:.2f}s)[/dim]")
 
-    segments = compute_segments(silences, total_duration, min_silence_duration, min_song_length, edge_margin)
+    segments = compute_segments(silences, total_duration, min_silence_duration, min_song_length, silence_padding)
 
     if not silences:
         console.print(
@@ -148,7 +153,7 @@ def main(
                 "silence_threshold": silence_threshold,
                 "min_silence_duration": min_silence_duration,
                 "min_song_length": min_song_length,
-                "edge_margin": edge_margin,
+                "silence_padding": silence_padding,
                 "precise": precise,
             },
             generated_at=datetime.now(timezone.utc),
@@ -157,3 +162,51 @@ def main(
         console.print(f"Wrote manifest to '{manifest_path}'")
 
     console.print(f"[green]Done.[/green] Wrote {len(segments)} file(s) to '{resolved_output_dir}'")
+
+
+@app.command()
+def edit(
+    source: Path = typer.Argument(
+        ..., exists=True, dir_okay=False, readable=True, help="Path to the video/audio file to edit."
+    ),
+    host: str = typer.Option(
+        "127.0.0.1", "--host", help="Interface to bind the local editor server to (use 0.0.0.0 in Docker)."
+    ),
+    port: int = typer.Option(8765, "--port", help="Port for the local editor server."),
+    silence_threshold: float = typer.Option(
+        -35.0, "--silence-threshold", help="Initial silence threshold in dB."
+    ),
+    min_silence_duration: float = typer.Option(
+        2.0,
+        "--min-silence-duration",
+        help="Initial minimum duration (seconds) of a quiet passage to count as a gap between songs.",
+    ),
+    min_song_length: float = typer.Option(
+        30.0,
+        "--min-song-length",
+        help="Initial minimum duration (seconds) for a detected segment to be kept as its own song.",
+    ),
+    silence_padding: float = typer.Option(
+        0.15,
+        "--silence-padding",
+        help="Initial seconds of near-silence to retain on each side of a cut.",
+    ),
+    no_browser: bool = typer.Option(
+        False, "--no-browser", help="Don't automatically open a browser tab (required inside Docker)."
+    ),
+) -> None:
+    """Launch a local browser-based editor for adjusting song split points."""
+    defaults = StateParams(
+        silence_threshold=silence_threshold,
+        min_silence_duration=min_silence_duration,
+        min_song_length=min_song_length,
+        padding=silence_padding,
+    )
+    editor_app = create_app(source, defaults)
+
+    url = f"http://{host}:{port}/"
+    console.print(f"Editor running at [bold]{url}[/bold] — press Ctrl+C to stop.")
+    if not no_browser:
+        threading.Timer(1.0, webbrowser.open, args=[url]).start()
+
+    uvicorn.run(editor_app, host=host, port=port, log_level="warning")

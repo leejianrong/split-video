@@ -1,0 +1,371 @@
+:root {
+  color-scheme: dark;
+  --bg: #16181d;
+  --panel: #1e2128;
+  --border: #333844;
+  --text: #e6e8ec;
+  --text-dim: #9aa0ac;
+  --accent: #4a9eff;
+  --accent-dim: #2b6cb0;
+  --danger: #e5484d;
+  --warn: #f6ad55;
+  --seg-even: #2b6cb0;
+  --seg-odd: #2f855a;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-size: 14px;
+}
+
+button, input, output {
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+}
+
+.btn {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 6px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.btn:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.btn-primary {
+  background: var(--accent-dim);
+  border-color: var(--accent);
+}
+
+.btn.dirty {
+  border-color: var(--warn);
+  color: var(--warn);
+}
+
+.app-header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+}
+
+.app-header__title {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+}
+
+.filename {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 60vw;
+}
+
+.segment-count {
+  color: var(--text-dim);
+}
+
+.app-main {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.player-wrap {
+  display: flex;
+  justify-content: center;
+  background: #000;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+#video {
+  width: 100%;
+  max-width: 960px;
+  max-height: 60vh;
+  display: block;
+}
+
+.zoom-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.zoom-label {
+  min-width: 60px;
+  text-align: center;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+.timeline-viewport {
+  position: relative;
+  overflow-x: scroll;
+  overflow-y: hidden;
+  height: 116px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.timeline-track {
+  position: relative;
+  height: 100%;
+  min-width: 100%;
+}
+
+.ruler {
+  position: relative;
+  height: 22px;
+  border-bottom: 1px solid var(--border);
+}
+
+.tick {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  border-left: 1px solid #4a4f5b;
+  padding-left: 3px;
+  font-size: 10px;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.bands {
+  position: relative;
+  height: 78px;
+  cursor: copy;
+}
+
+.band {
+  position: absolute;
+  top: 6px;
+  bottom: 6px;
+  border-radius: 3px;
+}
+
+.band.segment-even {
+  background: var(--seg-even);
+  opacity: 0.55;
+}
+
+.band.segment-odd {
+  background: var(--seg-odd);
+  opacity: 0.55;
+}
+
+.band.segment-even.selected-neighbor,
+.band.segment-odd.selected-neighbor {
+  opacity: 0.8;
+}
+
+.band.excluded {
+  top: 0;
+  bottom: 0;
+  background: repeating-linear-gradient(
+    45deg,
+    #2a2d34,
+    #2a2d34 6px,
+    #22242a 6px,
+    #22242a 12px
+  );
+  cursor: default;
+}
+
+.marker {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--warn);
+  cursor: ew-resize;
+  z-index: 5;
+}
+
+.marker.selected {
+  width: 3px;
+  background: var(--danger);
+  z-index: 6;
+}
+
+.marker-tab {
+  position: absolute;
+  top: -7px;
+  left: -9px;
+  width: 20px;
+  height: 14px;
+  border-radius: 3px;
+  background: inherit;
+  cursor: ew-resize;
+}
+
+.marker-delete {
+  position: absolute;
+  top: -24px;
+  left: -8px;
+  width: 16px;
+  height: 16px;
+  line-height: 16px;
+  text-align: center;
+  border-radius: 50%;
+  background: var(--danger);
+  color: #fff;
+  font-size: 11px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+
+.marker:hover .marker-delete,
+.marker.selected .marker-delete {
+  opacity: 1;
+}
+
+.playhead {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: #fff;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.controls-panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.slider-row {
+  display: grid;
+  grid-template-columns: 160px 1fr 70px auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.slider-row input[type="range"] {
+  width: 100%;
+}
+
+.slider-value {
+  color: var(--text-dim);
+  text-align: right;
+}
+
+.caption {
+  margin: 4px 0 0;
+  color: var(--text-dim);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  z-index: 90;
+}
+
+.overlay.hidden {
+  display: none;
+}
+
+.modal {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.modal.hidden {
+  display: none;
+}
+
+.modal-box {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 20px 24px;
+  min-width: 420px;
+  max-width: 90vw;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
+.modal-box h2 {
+  margin-top: 0;
+  font-size: 16px;
+}
+
+.export-preview-list {
+  list-style: none;
+  margin: 12px 0;
+  padding: 0;
+  max-height: 240px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.export-preview-list li {
+  padding: 4px 10px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.export-preview-list li:last-child {
+  border-bottom: none;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.modal-box progress {
+  width: 100%;
+}
+
+.error {
+  color: var(--danger);
+}
