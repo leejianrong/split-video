@@ -11,6 +11,9 @@ Requires `ffmpeg`/`ffprobe` on your `PATH`.
 uv sync
 ```
 
+Or, without installing anything locally, use the Docker image (see
+[Docker](#docker) below).
+
 ## Usage
 
 Always start with `--dry-run` to check the detected segments before writing
@@ -44,6 +47,32 @@ This writes `01 - liveshow.mp4`, `02 - liveshow.mp4`, ... plus a
   seconds off since it snaps to the nearest keyframe.
 - `--output-dir`, `--format`, `--overwrite`, `--manifest/--no-manifest`,
   `-v/--verbose`: see `uv run split-video --help`.
+
+## Docker
+
+A prebuilt image is published to GHCR on every push to `main`. Run it by
+mounting the folder that contains your video to `/data`, then passing the
+filename (and any flags) exactly as you would locally:
+
+```
+docker run --rm -v "$PWD":/data ghcr.io/leejianrong/split-video:latest liveshow.mp4 --dry-run
+docker run --rm -v "$PWD":/data ghcr.io/leejianrong/split-video:latest liveshow.mp4
+```
+
+Split files and `manifest.json` land back in that same host folder. On
+Linux, add `--user "$(id -u):$(id -g)"` to the `docker run` command so the
+output files are owned by you instead of root:
+
+```
+docker run --rm --user "$(id -u):$(id -g)" -v "$PWD":/data ghcr.io/leejianrong/split-video:latest liveshow.mp4
+```
+
+To build the image locally instead of pulling it:
+
+```
+docker build -t split-video .
+docker run --rm -v "$PWD":/data split-video liveshow.mp4 --dry-run
+```
 
 ## Tests
 
