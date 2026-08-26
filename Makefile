@@ -2,12 +2,17 @@ IMAGE := split-video
 PORT  ?= 8765
 DIR   ?= $(PWD)
 
-.PHONY: dev build test
+.PHONY: help build dev test
 
-build:
+.DEFAULT_GOAL := help
+
+help: ## Show available commands
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-10s\033[0m %s\n", $$1, $$2}'
+
+build: ## Build the Docker image
 	docker build -t $(IMAGE) .
 
-dev: build
+dev: build ## Build and run the visual editor in Docker (override with DIR=./videos PORT=9000)
 	docker run --rm \
 		--name split-video-editor \
 		-p $(PORT):8765 \
@@ -16,5 +21,5 @@ dev: build
 		$(IMAGE) \
 		edit /data --host 0.0.0.0 --no-browser
 
-test:
+test: ## Run the test suite locally via uv
 	uv run pytest
