@@ -4,7 +4,7 @@
 
 import * as api from "./api.js";
 
-export function createFilePicker({ listEl, pathEl, upBtn, statusEl, onOpen }) {
+export function createFilePicker({ listEl, pathEl, upBtn, statusEl, statusTextEl, onOpen }) {
   let parentPath = null;
 
   function render(listing) {
@@ -46,16 +46,19 @@ export function createFilePicker({ listEl, pathEl, upBtn, statusEl, onOpen }) {
   async function open(path, name) {
     listEl.classList.add("browse-list--busy");
     if (statusEl) {
-      statusEl.textContent = `Opening "${name}"… this can take a while for a long recording.`;
+      statusEl.classList.remove("hidden", "error");
+      statusTextEl.textContent = `Opening "${name}"… this can take a while for a long recording.`;
     }
     try {
       await api.openFile(path);
     } catch (err) {
       listEl.classList.remove("browse-list--busy");
-      if (statusEl) statusEl.textContent = `Couldn't open "${name}": ${err.message}`;
+      if (statusEl) {
+        statusEl.classList.add("error");
+        statusTextEl.textContent = `Couldn't open "${name}": ${err.message}`;
+      }
       return;
     }
-    if (statusEl) statusEl.textContent = "";
     onOpen();
   }
 

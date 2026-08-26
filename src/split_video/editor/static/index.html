@@ -21,7 +21,10 @@
       <span id="browse-path" class="browse-path">/</span>
     </div>
     <ul id="browse-list" class="browse-list"></ul>
-    <p id="browse-status" class="browse-status"></p>
+    <div id="browse-status" class="browse-status hidden">
+      <span class="spinner"></span>
+      <span id="browse-status-text"></span>
+    </div>
   </div>
 
   <main id="app-main" class="app-main hidden">
@@ -64,7 +67,7 @@
       </div>
       <div class="slider-row">
         <label for="min-song-length">Min song length</label>
-        <input type="range" id="min-song-length" min="1" max="120" step="1" />
+        <input type="range" id="min-song-length" min="1" max="240" step="1" />
         <output id="min-song-length-value" class="slider-value"></output>
       </div>
       <div class="slider-row">

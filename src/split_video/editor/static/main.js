@@ -29,6 +29,7 @@ async function main() {
       pathEl: document.getElementById("browse-path"),
       upBtn: document.getElementById("browse-up"),
       statusEl: document.getElementById("browse-status"),
+      statusTextEl: document.getElementById("browse-status-text"),
       onOpen: async () => {
         filePicker.classList.add("hidden");
         appMain.classList.remove("hidden");
