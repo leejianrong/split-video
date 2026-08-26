@@ -18,3 +18,7 @@ wheels/
 # Personal video files / splitter output — never commit these
 /videos/
 *_split/
+
+# YAMNet model assets — fetched via `make fetch-model` / the Docker build,
+# not vendored (see scripts/fetch_yamnet_model.py)
+/src/split_video/editor/models/

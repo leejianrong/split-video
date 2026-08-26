@@ -2,7 +2,7 @@ IMAGE := split-video
 PORT  ?= 8765
 DIR   ?= $(PWD)
 
-.PHONY: help build dev test
+.PHONY: help build dev test fetch-model
 
 .DEFAULT_GOAL := help
 
@@ -11,6 +11,9 @@ help: ## Show available commands
 
 build: ## Build the Docker image
 	docker build -t $(IMAGE) .
+
+fetch-model: ## Download the YAMNet model for local (non-Docker) dev; the Docker build fetches it itself
+	uv run --with kagglehub python scripts/fetch_yamnet_model.py
 
 dev: build ## Build and run the visual editor in Docker (override with DIR=./videos PORT=9000)
 	docker run --rm \

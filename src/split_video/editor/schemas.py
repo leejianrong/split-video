@@ -66,6 +66,34 @@ class WaveformResponse(BaseModel):
     buckets: list[tuple[float, float]]
 
 
+class ClassificationRegionOut(BaseModel):
+    start: float
+    end: float
+    bucket: str
+    score: float
+
+
+class ClassificationResponse(BaseModel):
+    analyzed: bool
+    regions: list[ClassificationRegionOut]
+    thresholds: dict[str, float]
+
+
+class AnalyzeStartResponse(BaseModel):
+    job_id: str
+
+
+class AnalyzeStatusResponse(BaseModel):
+    status: str
+    completed: int
+    total: int
+    error: str | None = None
+
+
+class RethresholdRequest(BaseModel):
+    thresholds: dict[str, float]
+
+
 class SegmentsRequest(BaseModel):
     silences: list[SilenceIntervalOut]
     duration: float

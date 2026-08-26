@@ -38,6 +38,7 @@ export function createTimeline({
   bands,
   playhead,
   waveformCanvas,
+  classificationRow,
   player,
   splitBtn,
   deleteSplitBtn,
@@ -47,6 +48,7 @@ export function createTimeline({
   let selectedIndex = null;
   let dragging = null; // { index, pointerId, tabEl }
   let waveformBuckets = [];
+  let classificationRegions = [];
 
   function notifyChange() {
     if (onChange) onChange();
@@ -182,6 +184,31 @@ export function createTimeline({
     tabEl.addEventListener("pointercancel", onUp);
   }
 
+  // Unlike the waveform, classification regions are coarse (merged
+  // contiguous same-bucket spans — tens to low hundreds, not thousands), so
+  // plain positioned DOM nodes work fine here: no canvas size limits to
+  // worry about, and they scroll/zoom "for free" the same way ruler ticks
+  // and bands do, since they live inside the scrolled `#timeline-track`.
+  function makeClassificationRegion(region) {
+    const div = document.createElement("div");
+    div.className = `classification-region bucket-${region.bucket}`;
+    div.style.left = `${region.start * pxPerSec}px`;
+    div.style.width = `${Math.max(0, (region.end - region.start) * pxPerSec)}px`;
+    div.title = `${region.bucket.replace("_", "/")} (${Math.round(region.score * 100)}%)`;
+    return div;
+  }
+
+  function renderClassification() {
+    if (!classificationRow) return;
+    classificationRow.innerHTML = "";
+    for (const region of classificationRegions) {
+      // The fallback bucket (nothing confidently classified) is left blank
+      // rather than drawn, so it reads as "no signal" instead of a 6th color.
+      if (region.bucket === "silence_other") continue;
+      classificationRow.appendChild(makeClassificationRegion(region));
+    }
+  }
+
   function renderBands() {
     bands.innerHTML = "";
 
@@ -264,6 +291,7 @@ export function createTimeline({
     const width = Math.max(state.duration * pxPerSec, viewport.clientWidth || 0);
     track.style.width = `${width}px`;
     renderRuler();
+    renderClassification();
     renderBands();
     renderWaveform();
     updateZoomLabel();
@@ -389,6 +417,10 @@ export function createTimeline({
     setWaveform: (buckets) => {
       waveformBuckets = buckets || [];
       renderWaveform();
+    },
+    setClassification: (regions) => {
+      classificationRegions = regions || [];
+      renderClassification();
     },
   };
 }

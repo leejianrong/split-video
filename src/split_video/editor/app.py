@@ -13,17 +13,27 @@ from split_video.editor.browse import (
     list_directory,
     resolve_within_root,
 )
-from split_video.editor.cache import SilenceCache, WaveformCache
-from split_video.editor.jobs import JobStore, start_export
+from split_video.editor.cache import ClassificationCache, SilenceCache, WaveformCache
+from split_video.editor.jobs import (
+    AnalysisJobStore,
+    JobStore,
+    start_audio_analysis,
+    start_export,
+)
 from split_video.editor.schemas import (
+    AnalyzeStartResponse,
+    AnalyzeStatusResponse,
     BrowseEntryOut,
     BrowseResponse,
+    ClassificationRegionOut,
+    ClassificationResponse,
     DetectRequest,
     DetectResponse,
     ExportRequest,
     ExportStartResponse,
     ExportStatusResponse,
     OpenRequest,
+    RethresholdRequest,
     SegmentOut,
     SegmentsRequest,
     SegmentsResponse,
@@ -54,6 +64,7 @@ class _Session:
         self.total_duration: float = 0.0
         self.cache: SilenceCache | None = None
         self.waveform_cache: WaveformCache | None = None
+        self.classification_cache: ClassificationCache | None = None
         self.initial_silences: list[SilenceInterval] = []
         self.initial_segments: list[Segment] = []
 
@@ -66,6 +77,7 @@ def create_app(root: Path, defaults: StateParams) -> FastAPI:
 
     browse_root = root.parent if root.is_file() else root
     job_store = JobStore()
+    analysis_job_store = AnalysisJobStore()
     session = _Session()
 
     def _segments_out(segments: list[Segment]) -> list[SegmentOut]:
@@ -84,6 +96,7 @@ def create_app(root: Path, defaults: StateParams) -> FastAPI:
         session.total_duration = probe_duration(source)
         session.cache = SilenceCache(source)
         session.waveform_cache = WaveformCache(source)
+        session.classification_cache = ClassificationCache()
         session.initial_silences = session.cache.get_raw_silences(defaults.silence_threshold)
         session.initial_segments = compute_segments(
             session.initial_silences,
@@ -158,6 +171,47 @@ def create_app(root: Path, defaults: StateParams) -> FastAPI:
         _require_open()
         peaks = session.waveform_cache.get_peaks()
         return WaveformResponse(buckets=peaks.buckets)
+
+    def _classification_out(cache: ClassificationCache, analyzed: bool) -> ClassificationResponse:
+        return ClassificationResponse(
+            analyzed=analyzed,
+            regions=[
+                ClassificationRegionOut(start=r.start, end=r.end, bucket=r.bucket, score=r.score)
+                for r in cache.get_regions()
+            ],
+            thresholds=cache.get_thresholds(),
+        )
+
+    @app.post("/api/analyze", response_model=AnalyzeStartResponse)
+    def analyze() -> AnalyzeStartResponse:
+        source = _require_open()
+        thresholds = session.classification_cache.get_thresholds()
+        job_id = start_audio_analysis(analysis_job_store, source, session.classification_cache, thresholds)
+        return AnalyzeStartResponse(job_id=job_id)
+
+    @app.get("/api/analyze/{job_id}", response_model=AnalyzeStatusResponse)
+    def analyze_status(job_id: str) -> AnalyzeStatusResponse:
+        job = analysis_job_store.get(job_id)
+        if job is None:
+            raise HTTPException(status_code=404, detail="unknown job id")
+        with job.lock:
+            return AnalyzeStatusResponse(status=job.status, completed=job.completed, total=job.total, error=job.error)
+
+    @app.get("/api/classification", response_model=ClassificationResponse)
+    def classification() -> ClassificationResponse:
+        _require_open()
+        cache = session.classification_cache
+        return _classification_out(cache, cache.is_analyzed)
+
+    @app.post("/api/classification/thresholds", response_model=ClassificationResponse)
+    def rethreshold_classification(request: RethresholdRequest) -> ClassificationResponse:
+        _require_open()
+        cache = session.classification_cache
+        try:
+            cache.rethreshold(request.thresholds)
+        except RuntimeError as exc:
+            raise HTTPException(status_code=409, detail=str(exc))
+        return _classification_out(cache, True)
 
     @app.post("/api/segments", response_model=SegmentsResponse)
     def segments_endpoint(request: SegmentsRequest) -> SegmentsResponse:

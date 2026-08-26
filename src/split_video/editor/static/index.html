@@ -12,7 +12,10 @@
       <span id="filename" class="filename">Loading…</span>
       <span id="segment-count" class="segment-count"></span>
     </div>
-    <button id="export-btn" class="btn btn-primary" disabled>Export</button>
+    <div class="app-header__actions">
+      <button id="analyze-btn" class="btn" title="Classify audio (music/speech/applause/etc.) via YAMNet" disabled>Analyze audio</button>
+      <button id="export-btn" class="btn btn-primary" disabled>Export</button>
+    </div>
   </header>
 
   <div id="file-picker" class="file-picker hidden">
@@ -49,9 +52,18 @@
       <canvas id="waveform" class="waveform"></canvas>
       <div id="timeline-track" class="timeline-track">
         <div id="ruler" class="ruler"></div>
+        <div id="classification-row" class="classification-row"></div>
         <div id="bands" class="bands"></div>
         <div id="playhead" class="playhead"></div>
       </div>
+    </div>
+
+    <div id="classification-legend" class="classification-legend hidden">
+      <span class="legend-item"><span class="swatch bucket-music"></span>Music</span>
+      <span class="legend-item"><span class="swatch bucket-singing"></span>Singing</span>
+      <span class="legend-item"><span class="swatch bucket-speech"></span>Speech</span>
+      <span class="legend-item"><span class="swatch bucket-applause_crowd"></span>Applause/crowd</span>
+      <span class="legend-item"><span class="swatch bucket-laughter"></span>Laughter</span>
     </div>
 
     <section class="controls-panel">

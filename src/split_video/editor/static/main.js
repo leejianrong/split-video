@@ -8,6 +8,7 @@ import { createTimeline } from "./timeline.js";
 import { createControls } from "./controls.js";
 import { createExportModal } from "./exportModal.js";
 import { createFilePicker } from "./filePicker.js";
+import { createAnalysisControl } from "./analysis.js";
 
 function updateHeader() {
   document.getElementById("filename").textContent = state.filename;
@@ -71,6 +72,7 @@ async function bootEditor() {
     bands: document.getElementById("bands"),
     playhead: document.getElementById("playhead"),
     waveformCanvas: document.getElementById("waveform"),
+    classificationRow: document.getElementById("classification-row"),
     player,
     splitBtn: document.getElementById("split-btn"),
     deleteSplitBtn: document.getElementById("delete-split-btn"),
@@ -85,6 +87,13 @@ async function bootEditor() {
     .getWaveform()
     .then((data) => timeline.setWaveform(data.buckets))
     .catch((err) => console.error("waveform fetch failed:", err));
+
+  createAnalysisControl({
+    analyzeBtn: document.getElementById("analyze-btn"),
+    legendEl: document.getElementById("classification-legend"),
+    timeline,
+  });
+  document.getElementById("analyze-btn").disabled = false;
 
   document.getElementById("zoom-in").addEventListener("click", () => timeline.setZoom(timeline.getPxPerSec() * 1.4));
   document.getElementById("zoom-out").addEventListener("click", () => timeline.setZoom(timeline.getPxPerSec() / 1.4));

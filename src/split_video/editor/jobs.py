@@ -1,4 +1,4 @@
-"""In-memory export job state, run in a background thread.
+"""In-memory job state (export, audio analysis), run in a background thread.
 
 Scoped to one `split-video edit` server process — no disk/multi-process
 persistence, which is the right amount of machinery for a single-user local
@@ -13,7 +13,15 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from split_video.ffmpeg import ExtractError, extract_segment
+from split_video.editor import classify
+from split_video.editor.cache import ClassificationCache
+from split_video.ffmpeg import (
+    ExtractError,
+    ProbeError,
+    extract_pcm_audio,
+    extract_segment,
+    probe_duration,
+)
 from split_video.naming import build_manifest, segment_filename, write_manifest
 from split_video.segments import Segment
 
@@ -115,6 +123,72 @@ def _run_export(
             job.status = "error"
             job.error = str(exc)
     except OSError as exc:
+        with job.lock:
+            job.status = "error"
+            job.error = str(exc)
+
+
+class AnalysisJob:
+    def __init__(self) -> None:
+        self.lock = threading.Lock()
+        self.status = "running"
+        self.completed = 0
+        self.total = 0
+        self.error: str | None = None
+
+
+class AnalysisJobStore:
+    def __init__(self) -> None:
+        self._jobs: dict[str, AnalysisJob] = {}
+        self._lock = threading.Lock()
+
+    def create(self) -> tuple[str, AnalysisJob]:
+        job_id = uuid.uuid4().hex
+        job = AnalysisJob()
+        with self._lock:
+            self._jobs[job_id] = job
+        return job_id, job
+
+    def get(self, job_id: str) -> AnalysisJob | None:
+        with self._lock:
+            return self._jobs.get(job_id)
+
+
+def start_audio_analysis(
+    job_store: AnalysisJobStore,
+    source: Path,
+    cache: ClassificationCache,
+    thresholds: dict[str, float],
+) -> str:
+    job_id, job = job_store.create()
+    thread = threading.Thread(target=_run_analysis, args=(job, source, cache, thresholds), daemon=True)
+    thread.start()
+    return job_id
+
+
+def _run_analysis(job: AnalysisJob, source: Path, cache: ClassificationCache, thresholds: dict[str, float]) -> None:
+    try:
+        # Set an upfront estimate from duration alone so the progress bar
+        # isn't stuck at 0/0 during the (possibly slow) PCM decode below,
+        # which happens before the real per-frame count is known.
+        with job.lock:
+            job.total = max(1, int(probe_duration(source) * classify.SAMPLE_RATE) // classify.HOP_SAMPLES)
+
+        model, labels = classify.get_model_and_labels()
+        pcm = extract_pcm_audio(source, sample_rate=classify.SAMPLE_RATE)
+
+        def on_progress(completed: int, total: int) -> None:
+            with job.lock:
+                job.completed = completed
+                job.total = total
+
+        regions, frame_bucket_scores, total_duration = classify.classify_audio(
+            pcm, model, labels, thresholds, on_progress
+        )
+        cache.store_result(frame_bucket_scores, total_duration, regions)
+        with job.lock:
+            job.status = "done"
+    except (classify.ModelNotFoundError, ExtractError, ProbeError, OSError) as exc:
         with job.lock:
             job.status = "error"
             job.error = str(exc)

@@ -102,3 +102,22 @@ export async function startExport({ segments, precise, outputFormat, overwrite, 
 export async function getExportStatus(jobId) {
   return requestJSON(`api/export/${encodeURIComponent(jobId)}`);
 }
+
+export async function startAnalysis() {
+  return requestJSON("api/analyze", { method: "POST" });
+}
+
+export async function getAnalysisStatus(jobId) {
+  return requestJSON(`api/analyze/${encodeURIComponent(jobId)}`);
+}
+
+export async function getClassification() {
+  return requestJSON("api/classification");
+}
+
+export async function setClassificationThresholds(thresholds) {
+  return requestJSON("api/classification/thresholds", {
+    method: "POST",
+    body: JSON.stringify({ thresholds }),
+  });
+}

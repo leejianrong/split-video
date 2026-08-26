@@ -1,9 +1,11 @@
 import time
 
+import pytest
 from fastapi.testclient import TestClient
 
 import split_video.editor.cache as cache_module
 from split_video.editor.app import create_app
+from split_video.editor.classify import MODEL_PATH
 from split_video.editor.schemas import StateParams
 
 DEFAULTS = StateParams(silence_threshold=-35.0, min_silence_duration=2.0, min_song_length=2.0, padding=0.15)
@@ -80,6 +82,56 @@ def test_waveform_before_open_is_409(three_songs_clip):
     client = TestClient(create_app(three_songs_clip.parent, DEFAULTS))
     response = client.get("/api/waveform")
     assert response.status_code == 409
+
+
+def test_classification_before_analyze_reports_not_analyzed(three_songs_clip):
+    client = _client(three_songs_clip)
+    response = client.get("/api/classification")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["analyzed"] is False
+    assert body["regions"] == []
+    assert set(body["thresholds"]) == {"music", "singing", "speech", "applause_crowd", "laughter", "silence_other"}
+
+
+def test_classification_before_open_is_409(three_songs_clip):
+    client = TestClient(create_app(three_songs_clip.parent, DEFAULTS))
+    response = client.get("/api/classification")
+    assert response.status_code == 409
+
+
+def test_rethreshold_before_analyze_is_409(three_songs_clip):
+    client = _client(three_songs_clip)
+    response = client.post("/api/classification/thresholds", json={"thresholds": {"music": 0.5}})
+    assert response.status_code == 409
+
+
+@pytest.mark.skipif(not MODEL_PATH.exists(), reason="run `make fetch-model` first")
+def test_analyze_runs_yamnet_and_populates_classification(three_songs_clip):
+    client = _client(three_songs_clip)
+
+    response = client.post("/api/analyze")
+    assert response.status_code == 200
+    job_id = response.json()["job_id"]
+
+    status = _poll_until_done(client, job_id, status_path=f"/api/analyze/{job_id}")
+    assert status["status"] == "done", status.get("error")
+
+    response = client.get("/api/classification")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["analyzed"] is True
+    assert len(body["regions"]) > 0
+    for region in body["regions"]:
+        assert region["end"] > region["start"]
+        assert region["bucket"] in body["thresholds"]
+        assert 0.0 <= region["score"] <= 1.0
+
+    # Retuning a threshold re-derives regions without rerunning inference —
+    # exercised here by round-tripping through the endpoint successfully.
+    response = client.post("/api/classification/thresholds", json={"thresholds": {"music": 0.999}})
+    assert response.status_code == 200
+    assert response.json()["thresholds"]["music"] == 0.999
 
 
 def test_segments_endpoint_is_pure_and_never_touches_ffmpeg(three_songs_clip, monkeypatch):
@@ -205,11 +257,12 @@ def test_open_rejects_path_escaping_root(three_songs_clip, tmp_path):
     assert response.status_code == 400
 
 
-def _poll_until_done(client, job_id, timeout=30.0):
+def _poll_until_done(client, job_id, status_path=None, timeout=30.0):
+    status_path = status_path or f"/api/export/{job_id}"
     deadline = time.time() + timeout
     while time.time() < deadline:
-        status = client.get(f"/api/export/{job_id}").json()
+        status = client.get(status_path).json()
         if status["status"] in ("done", "error"):
             return status
         time.sleep(0.05)
-    raise AssertionError("export job did not finish in time")
+    raise AssertionError(f"job at {status_path} did not finish in time")

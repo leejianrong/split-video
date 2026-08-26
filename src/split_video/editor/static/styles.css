@@ -90,6 +90,13 @@ button, input, output {
   min-width: 0;
 }
 
+.app-header__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
 .filename {
   font-weight: 600;
   white-space: nowrap;
@@ -275,7 +282,7 @@ button, input, output {
   position: relative;
   overflow-x: scroll;
   overflow-y: hidden;
-  height: 116px;
+  height: 130px; /* ruler 22 + classification-row 14 + bands 78 + 16 breathing room */
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -294,7 +301,7 @@ button, input, output {
    it, per the default same-stacking-context paint order. */
 .waveform {
   position: absolute;
-  top: 22px; /* .ruler height */
+  top: 36px; /* .ruler height + .classification-row height */
   left: 0;
   height: 78px;
   pointer-events: none;
@@ -315,6 +322,67 @@ button, input, output {
   font-size: 10px;
   color: var(--text-dim);
   white-space: nowrap;
+}
+
+.classification-row {
+  position: relative;
+  height: 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.classification-region {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  border-radius: 2px;
+  opacity: 0.85;
+  cursor: default;
+}
+
+.classification-region.bucket-music {
+  background: #7c5cff;
+}
+
+.classification-region.bucket-singing {
+  background: #ff6fae;
+}
+
+.classification-region.bucket-speech {
+  background: #35c2c1;
+}
+
+.classification-region.bucket-applause_crowd {
+  background: #f0b429;
+}
+
+.classification-region.bucket-laughter {
+  background: #f6e05e;
+}
+
+.classification-legend {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.classification-legend.hidden {
+  display: none;
+}
+
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  display: inline-block;
+  opacity: 0.85;
 }
 
 .bands {
