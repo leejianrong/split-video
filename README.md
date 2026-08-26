@@ -88,6 +88,13 @@ In the editor:
 - **Any recompute — live or via the Recompute button — replaces the entire
   split list, including manual edits you've made.** Tune thresholds first,
   then fine-tune by hand last.
+- **Analyze audio** runs the recording through YAMNet (a general-purpose
+  audio classifier) and colors the timeline by what it hears — music,
+  singing, speech, applause/crowd, laughter — so you can visually vet a
+  proposed split against more than just where things went quiet. It's a
+  background job with a progress bar (classifying a multi-hour recording
+  takes real time); the model only needs fetching once (see
+  [Development](#development)) and the result is cached per file.
 - **Export** writes the split files and `manifest.json` right there, with a
   progress bar while it runs.
 
@@ -150,6 +157,15 @@ uv run split-video split liveshow.mp4 --dry-run
 uv run split-video edit liveshow.mp4
 ```
 
+The editor's **Analyze audio** feature needs the YAMNet model, which isn't
+vendored (same reasoning as `/videos` — no large binaries in git). The
+Docker image fetches it automatically at build time; for a local `uv run`
+setup, fetch it once yourself:
+
+```bash
+make fetch-model
+```
+
 To build the Docker image locally instead of pulling it:
 
 ```bash
@@ -172,3 +188,6 @@ make dev DIR=~/recordings PORT=9000
 ```bash
 uv run pytest
 ```
+
+A few tests exercise real YAMNet inference and skip automatically if you
+haven't run `make fetch-model`.
