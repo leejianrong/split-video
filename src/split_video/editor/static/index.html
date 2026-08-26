@@ -15,16 +15,31 @@
     <button id="export-btn" class="btn btn-primary" disabled>Export</button>
   </header>
 
-  <main id="app-main" class="app-main">
+  <div id="file-picker" class="file-picker hidden">
+    <div class="file-picker__toolbar">
+      <button id="browse-up" class="btn" title="Up one level" disabled>&uarr; Up</button>
+      <span id="browse-path" class="browse-path">/</span>
+    </div>
+    <ul id="browse-list" class="browse-list"></ul>
+    <p id="browse-status" class="browse-status"></p>
+  </div>
+
+  <main id="app-main" class="app-main hidden">
     <div class="player-wrap">
       <video id="video" controls preload="metadata"></video>
     </div>
 
-    <div class="zoom-controls">
-      <button id="zoom-out" class="btn" title="Zoom out">&minus;</button>
-      <span id="zoom-label" class="zoom-label">Fit</span>
-      <button id="zoom-in" class="btn" title="Zoom in">+</button>
-      <button id="zoom-fit" class="btn">Fit</button>
+    <div class="timeline-toolbar">
+      <div class="split-controls">
+        <button id="split-btn" class="btn" title="Add a split at the playhead (S)">][</button>
+        <button id="delete-split-btn" class="btn btn-danger" title="Delete the selected split (Delete)" disabled>Delete split</button>
+      </div>
+      <div class="zoom-controls">
+        <button id="zoom-out" class="btn" title="Zoom out">&minus;</button>
+        <span id="zoom-label" class="zoom-label">Fit</span>
+        <button id="zoom-in" class="btn" title="Zoom in">+</button>
+        <button id="zoom-fit" class="btn">Fit</button>
+      </div>
     </div>
 
     <div id="timeline-viewport" class="timeline-viewport">

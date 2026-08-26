@@ -24,6 +24,27 @@ class StateParams(BaseModel):
     padding: float
 
 
+class SessionResponse(BaseModel):
+    file_open: bool
+    filename: str | None = None
+
+
+class BrowseEntryOut(BaseModel):
+    name: str
+    path: str
+    is_dir: bool
+
+
+class BrowseResponse(BaseModel):
+    cwd: str
+    parent: str | None
+    entries: list[BrowseEntryOut]
+
+
+class OpenRequest(BaseModel):
+    path: str
+
+
 class StateResponse(BaseModel):
     filename: str
     duration: float

@@ -60,6 +60,17 @@ button, input, output {
   color: var(--warn);
 }
 
+.btn-danger {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.btn-danger:hover:not(:disabled) {
+  border-color: var(--danger);
+  background: var(--danger);
+  color: #fff;
+}
+
 .app-header {
   position: sticky;
   top: 0;
@@ -100,6 +111,90 @@ button, input, output {
   gap: 12px;
 }
 
+.app-main.hidden {
+  display: none;
+}
+
+.file-picker {
+  max-width: 700px;
+  margin: 24px auto;
+  padding: 16px;
+}
+
+.file-picker.hidden {
+  display: none;
+}
+
+.file-picker__toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.browse-path {
+  color: var(--text-dim);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.browse-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.browse-list li {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+}
+
+.browse-list li:last-child {
+  border-bottom: none;
+}
+
+.browse-list li:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.browse-list li.dir .name {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.browse-list li.dir .name::after {
+  content: "/";
+}
+
+.browse-empty {
+  color: var(--text-dim);
+  text-align: center;
+  cursor: default !important;
+}
+
+.browse-empty:hover {
+  background: none !important;
+}
+
+.browse-list--busy {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.browse-status {
+  margin: 10px 2px 0;
+  color: var(--text-dim);
+  font-size: 12px;
+  min-height: 1.4em;
+}
+
 .player-wrap {
   display: flex;
   justify-content: center;
@@ -113,6 +208,24 @@ button, input, output {
   max-width: 960px;
   max-height: 60vh;
   display: block;
+}
+
+.timeline-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.split-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+#split-btn {
+  font-weight: 700;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
 .zoom-controls {
@@ -164,7 +277,7 @@ button, input, output {
 .bands {
   position: relative;
   height: 78px;
-  cursor: copy;
+  cursor: pointer;
 }
 
 .band {
@@ -199,7 +312,6 @@ button, input, output {
     #22242a 6px,
     #22242a 12px
   );
-  cursor: default;
 }
 
 .marker {

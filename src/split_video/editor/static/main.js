@@ -7,6 +7,7 @@ import { createPlayer } from "./player.js";
 import { createTimeline } from "./timeline.js";
 import { createControls } from "./controls.js";
 import { createExportModal } from "./exportModal.js";
+import { createFilePicker } from "./filePicker.js";
 
 function updateHeader() {
   document.getElementById("filename").textContent = state.filename;
@@ -15,6 +16,39 @@ function updateHeader() {
 }
 
 async function main() {
+  const session = await api.getSession();
+  const filePicker = document.getElementById("file-picker");
+  const appMain = document.getElementById("app-main");
+
+  if (!session.file_open) {
+    filePicker.classList.remove("hidden");
+    appMain.classList.add("hidden");
+    document.getElementById("filename").textContent = "Choose a video to edit";
+    const picker = createFilePicker({
+      listEl: document.getElementById("browse-list"),
+      pathEl: document.getElementById("browse-path"),
+      upBtn: document.getElementById("browse-up"),
+      statusEl: document.getElementById("browse-status"),
+      onOpen: async () => {
+        filePicker.classList.add("hidden");
+        appMain.classList.remove("hidden");
+        try {
+          await bootEditor();
+        } catch (err) {
+          reportBootFailure(err);
+        }
+      },
+    });
+    await picker.load("");
+    return;
+  }
+
+  filePicker.classList.add("hidden");
+  appMain.classList.remove("hidden");
+  await bootEditor();
+}
+
+async function bootEditor() {
   const data = await api.getState();
   state.filename = data.filename;
   state.duration = data.duration;
@@ -36,6 +70,8 @@ async function main() {
     bands: document.getElementById("bands"),
     playhead: document.getElementById("playhead"),
     player,
+    splitBtn: document.getElementById("split-btn"),
+    deleteSplitBtn: document.getElementById("delete-split-btn"),
     onChange: updateHeader,
   });
   timeline.fit();
@@ -82,8 +118,10 @@ async function main() {
   document.getElementById("export-btn").disabled = false;
 }
 
-main().catch((err) => {
+function reportBootFailure(err) {
   console.error(err);
   document.getElementById("filename").textContent = "Failed to load";
   alert(`Failed to load editor: ${err.message}`);
-});
+}
+
+main().catch(reportBootFailure);

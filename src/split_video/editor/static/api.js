@@ -28,6 +28,21 @@ async function requestJSON(path, options = {}) {
   return res.json();
 }
 
+export async function getSession() {
+  return requestJSON("api/session");
+}
+
+export async function browse(path = "") {
+  return requestJSON(`api/browse?path=${encodeURIComponent(path)}`);
+}
+
+export async function openFile(path) {
+  return requestJSON("api/open", {
+    method: "POST",
+    body: JSON.stringify({ path }),
+  });
+}
+
 export async function getState() {
   return requestJSON("api/state");
 }

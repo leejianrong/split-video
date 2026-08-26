@@ -107,6 +107,69 @@ def test_media_source_supports_range_requests(three_songs_clip):
     assert len(response.content) == 100
 
 
+def test_session_reports_file_open_for_file_source(three_songs_clip):
+    client = _client(three_songs_clip)
+    response = client.get("/api/session")
+    assert response.status_code == 200
+    assert response.json() == {"file_open": True, "filename": three_songs_clip.name}
+
+
+def test_directory_source_starts_with_no_file_open(three_songs_clip):
+    client = TestClient(create_app(three_songs_clip.parent, DEFAULTS))
+    response = client.get("/api/session")
+    assert response.status_code == 200
+    assert response.json() == {"file_open": False, "filename": None}
+
+
+def test_state_before_open_is_409(three_songs_clip):
+    client = TestClient(create_app(three_songs_clip.parent, DEFAULTS))
+    response = client.get("/api/state")
+    assert response.status_code == 409
+
+
+def test_browse_lists_video_in_directory_root(three_songs_clip):
+    client = TestClient(create_app(three_songs_clip.parent, DEFAULTS))
+    response = client.get("/api/browse")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["cwd"] == ""
+    assert body["parent"] is None
+    assert {e["name"] for e in body["entries"]} == {three_songs_clip.name}
+    assert body["entries"][0]["is_dir"] is False
+
+
+def test_browse_rejects_path_escaping_root(three_songs_clip):
+    client = TestClient(create_app(three_songs_clip.parent, DEFAULTS))
+    response = client.get("/api/browse", params={"path": "../"})
+    assert response.status_code == 400
+
+
+def test_open_then_state_matches_direct_file_mode(three_songs_clip):
+    client = TestClient(create_app(three_songs_clip.parent, DEFAULTS))
+    open_response = client.post("/api/open", json={"path": three_songs_clip.name})
+    assert open_response.status_code == 200
+    assert open_response.json()["filename"] == three_songs_clip.name
+
+    session = client.get("/api/session").json()
+    assert session == {"file_open": True, "filename": three_songs_clip.name}
+
+    state = client.get("/api/state").json()
+    assert state == open_response.json()
+
+
+def test_open_rejects_nonexistent_file(three_songs_clip):
+    client = TestClient(create_app(three_songs_clip.parent, DEFAULTS))
+    response = client.post("/api/open", json={"path": "does-not-exist.mp4"})
+    assert response.status_code == 404
+
+
+def test_open_rejects_path_escaping_root(three_songs_clip, tmp_path):
+    outside = tmp_path.parent / "outside.mp4"
+    client = TestClient(create_app(three_songs_clip.parent, DEFAULTS))
+    response = client.post("/api/open", json={"path": f"../{outside.name}"})
+    assert response.status_code == 400
+
+
 def _poll_until_done(client, job_id, timeout=30.0):
     deadline = time.time() + timeout
     while time.time() < deadline:

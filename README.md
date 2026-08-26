@@ -45,6 +45,18 @@ Then open `http://localhost:8765` in your own browser — the container has
 no browser to open one for you, and `127.0.0.1` inside the container
 wouldn't be reachable from the host even if it tried.
 
+`edit` also accepts a directory instead of a single file — point it at the
+folder your recordings live in and pick one from a file browser inside the
+editor itself, instead of naming it up front:
+
+```bash
+docker run --rm -p 8765:8765 -v "$PWD":/data ghcr.io/leejianrong/split-video \
+  edit /data --host 0.0.0.0 --no-browser
+```
+
+If you've cloned this repo, `make dev` wraps that exact command (building
+the image locally instead of pulling it — see [Development](#development)).
+
 ## Usage
 
 Always start with `--dry-run` to check the detected segments before writing
@@ -72,12 +84,22 @@ split-video edit liveshow.mp4
 ```
 
 This opens a browser tab with the video, a timeline showing the proposed
-splits, and sliders for the same thresholds below — drag a split point,
-add or delete one, zoom in on the timeline for precision, and click Export
-when it looks right. (Drop the leading `split-video` and run these as
+splits, and sliders for the same thresholds below — position the playhead
+and click the split button (or press `S`) to add a split, select one and
+click Delete (or press Delete/Backspace) to remove it, zoom in on the
+timeline for precision, and click Export when it looks right. (Drop the
+leading `split-video` and run these as
 `docker run ... ghcr.io/leejianrong/split-video split ...` /
 `edit ...` if you're using the Docker image instead of a local install —
 see [Quickstart](#quickstart-docker) above.)
+
+Point `edit` at a directory instead of a file (or run it with no argument
+at all, which defaults to the current directory) to pick a video from a
+file browser inside the editor rather than naming one up front:
+
+```bash
+split-video edit ~/recordings
+```
 
 ### Key options (`split`)
 
@@ -101,14 +123,19 @@ see [Quickstart](#quickstart-docker) above.)
 ### Visual editor (`edit`)
 
 `split-video edit liveshow.mp4` starts a local server and opens a browser
-tab. In it:
+tab. If you point it at a directory (or nothing — it defaults to the
+current directory) instead, you get a file browser to pick a video from
+first. In the editor itself:
 
 - The video plays in a real player, with a timeline underneath showing the
   currently-proposed splits.
-- Drag a split point to move it, click empty timeline space to add one, or
-  hover a split point for a delete "×" (select it and press Delete/Backspace
-  as an alternative). Arrow keys nudge a selected split by 0.1s (1s with
-  Shift) for precision beyond what dragging gives you.
+- Click or drag anywhere on the timeline to move the playhead — it never
+  adds a split by itself. Position the playhead where you want a cut, then
+  click the `][` button (or press `S`) to add one there. Drag a split
+  point's tab to move it, hover it for a delete "×", or click it to select
+  it — a Delete-split button appears, or just press Delete/Backspace.
+  Arrow keys nudge a selected split by 0.1s (1s with Shift) for precision
+  beyond what dragging gives you.
 - Scroll to zoom the timeline in/out, centered on your cursor; Shift+scroll
   or the scrollbar pans; "Fit" resets to the whole recording.
 - Four sliders mirror `split`'s thresholds. Moving `min-silence-duration`,
@@ -141,6 +168,16 @@ To build the Docker image locally instead of pulling it:
 ```bash
 docker build -t split-video .
 docker run --rm -v "$PWD":/data split-video split liveshow.mp4 --dry-run
+```
+
+Or bring up the editor with one command via the Makefile — it builds the
+image and runs the container for you, mounting the current directory
+(override with `DIR=`) and publishing the editor on `localhost:8765`
+(override with `PORT=`):
+
+```bash
+make dev
+make dev DIR=~/recordings PORT=9000
 ```
 
 ### Tests

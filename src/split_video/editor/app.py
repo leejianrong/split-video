@@ -8,17 +8,22 @@ from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from starlette.responses import FileResponse
 
+from split_video.editor.browse import PathEscapesRootError, list_directory, resolve_within_root
 from split_video.editor.cache import SilenceCache
 from split_video.editor.jobs import JobStore, start_export
 from split_video.editor.schemas import (
+    BrowseEntryOut,
+    BrowseResponse,
     DetectRequest,
     DetectResponse,
     ExportRequest,
     ExportStartResponse,
     ExportStatusResponse,
+    OpenRequest,
     SegmentOut,
     SegmentsRequest,
     SegmentsResponse,
+    SessionResponse,
     SilenceIntervalOut,
     StateParams,
     StateResponse,
@@ -31,21 +36,31 @@ from split_video.silence import SilenceInterval
 STATIC_DIR = Path(__file__).parent / "static"
 
 
-def create_app(source: Path, defaults: StateParams) -> FastAPI:
+class _Session:
+    """The one file currently open for editing, if any.
+
+    A local single-user tool only ever edits one file at a time, so this is
+    deliberately just mutable state on the app rather than a per-client
+    session store — `/api/open` swaps it out, everything else reads it.
+    """
+
+    def __init__(self) -> None:
+        self.source: Path | None = None
+        self.total_duration: float = 0.0
+        self.cache: SilenceCache | None = None
+        self.initial_silences: list[SilenceInterval] = []
+        self.initial_segments: list[Segment] = []
+
+
+def create_app(root: Path, defaults: StateParams) -> FastAPI:
+    """`root` is either a video file to open immediately (the historical
+    `split-video edit <file>` behavior, unchanged) or a directory to pick a
+    video from via the in-browser file picker."""
     app = FastAPI(title="split-video editor")
 
-    total_duration = probe_duration(source)
-    cache = SilenceCache(source)
+    browse_root = root.parent if root.is_file() else root
     job_store = JobStore()
-
-    initial_silences = cache.get_raw_silences(defaults.silence_threshold)
-    initial_segments = compute_segments(
-        initial_silences,
-        total_duration,
-        defaults.min_silence_duration,
-        defaults.min_song_length,
-        defaults.padding,
-    )
+    session = _Session()
 
     def _segments_out(segments: list[Segment]) -> list[SegmentOut]:
         return [SegmentOut(index=s.index, start=s.start, end=s.end, duration=s.duration) for s in segments]
@@ -53,24 +68,82 @@ def create_app(source: Path, defaults: StateParams) -> FastAPI:
     def _silences_out(silences: list[SilenceInterval]) -> list[SilenceIntervalOut]:
         return [SilenceIntervalOut(start=s.start, end=s.end) for s in silences]
 
-    @app.get("/api/state", response_model=StateResponse)
-    def get_state() -> StateResponse:
+    def _require_open() -> Path:
+        if session.source is None:
+            raise HTTPException(status_code=409, detail="no file is open; call /api/open first")
+        return session.source
+
+    def _open(source: Path) -> None:
+        session.source = source
+        session.total_duration = probe_duration(source)
+        session.cache = SilenceCache(source)
+        session.initial_silences = session.cache.get_raw_silences(defaults.silence_threshold)
+        session.initial_segments = compute_segments(
+            session.initial_silences,
+            session.total_duration,
+            defaults.min_silence_duration,
+            defaults.min_song_length,
+            defaults.padding,
+        )
+
+    def _state_response() -> StateResponse:
+        source = _require_open()
         return StateResponse(
             filename=source.name,
-            duration=total_duration,
+            duration=session.total_duration,
             video_url="/media/source",
             params=defaults,
-            silences=_silences_out(initial_silences),
-            segments=_segments_out(initial_segments),
+            silences=_silences_out(session.initial_silences),
+            segments=_segments_out(session.initial_segments),
         )
+
+    if root.is_file():
+        _open(root)
+
+    @app.get("/api/session", response_model=SessionResponse)
+    def get_session() -> SessionResponse:
+        return SessionResponse(
+            file_open=session.source is not None,
+            filename=session.source.name if session.source is not None else None,
+        )
+
+    @app.get("/api/browse", response_model=BrowseResponse)
+    def browse(path: str = "") -> BrowseResponse:
+        try:
+            listing = list_directory(browse_root, path)
+        except PathEscapesRootError:
+            raise HTTPException(status_code=400, detail="path escapes the browse root")
+        except (FileNotFoundError, NotADirectoryError):
+            raise HTTPException(status_code=404, detail="directory not found")
+        return BrowseResponse(
+            cwd=listing.cwd,
+            parent=listing.parent,
+            entries=[BrowseEntryOut(name=e.name, path=e.path, is_dir=e.is_dir) for e in listing.entries],
+        )
+
+    @app.post("/api/open", response_model=StateResponse)
+    def open_file(request: OpenRequest) -> StateResponse:
+        try:
+            resolved = resolve_within_root(browse_root, request.path)
+        except PathEscapesRootError:
+            raise HTTPException(status_code=400, detail="path escapes the browse root")
+        if not resolved.is_file():
+            raise HTTPException(status_code=404, detail="file not found")
+        _open(resolved)
+        return _state_response()
+
+    @app.get("/api/state", response_model=StateResponse)
+    def get_state() -> StateResponse:
+        return _state_response()
 
     @app.get("/media/source")
     def get_media() -> FileResponse:
-        return FileResponse(source)
+        return FileResponse(_require_open())
 
     @app.post("/api/detect", response_model=DetectResponse)
     def detect(request: DetectRequest) -> DetectResponse:
-        silences = cache.get_raw_silences(request.silence_threshold)
+        _require_open()
+        silences = session.cache.get_raw_silences(request.silence_threshold)
         return DetectResponse(silences=_silences_out(silences))
 
     @app.post("/api/segments", response_model=SegmentsResponse)
@@ -87,6 +160,7 @@ def create_app(source: Path, defaults: StateParams) -> FastAPI:
 
     @app.post("/api/export", response_model=ExportStartResponse)
     def export(request: ExportRequest) -> ExportStartResponse:
+        source = _require_open()
         pairs = [(s.start, s.end) for s in request.segments]
         _validate_segments(pairs)
 

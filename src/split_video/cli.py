@@ -167,7 +167,13 @@ def split(
 @app.command()
 def edit(
     source: Path = typer.Argument(
-        ..., exists=True, dir_okay=False, readable=True, help="Path to the video/audio file to edit."
+        Path("."),
+        exists=True,
+        readable=True,
+        help=(
+            "Path to a video/audio file to edit directly, or a directory to pick one from "
+            "in the browser's file picker. Defaults to the current directory."
+        ),
     ),
     host: str = typer.Option(
         "127.0.0.1", "--host", help="Interface to bind the local editor server to (use 0.0.0.0 in Docker)."
@@ -205,7 +211,10 @@ def edit(
     editor_app = create_app(source, defaults)
 
     url = f"http://{host}:{port}/"
-    console.print(f"Editor running at [bold]{url}[/bold] — press Ctrl+C to stop.")
+    if source.is_dir():
+        console.print(f"Editor running at [bold]{url}[/bold] — pick a video in the browser. Press Ctrl+C to stop.")
+    else:
+        console.print(f"Editor running at [bold]{url}[/bold] — press Ctrl+C to stop.")
     if not no_browser:
         threading.Timer(1.0, webbrowser.open, args=[url]).start()
 
