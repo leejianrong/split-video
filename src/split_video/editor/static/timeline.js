@@ -3,19 +3,25 @@
 // drag/click/hover hit-testing is free via native pointer events.
 //
 // Gesture map (kept deliberately non-overlapping):
-//   - ruler click/drag        -> seek the video
-//   - band-row click on empty space -> add a split point there (+ seek)
+//   - ruler or band-row click/drag -> seek the video (and deselect)
+//   - Split button / "S" key   -> add a split point at the playhead
+//   - Delete-split button / Delete/Backspace -> remove the selected split
 //   - marker drag (its tab)   -> move that split point
 //   - marker hover            -> reveal a delete "x"
-//   - marker click             -> select it (Delete/Backspace removes it;
-//                                 arrow keys nudge it +-0.1s, +-1s with Shift)
+//   - marker click             -> select it (arrow keys nudge it +-0.1s,
+//                                 +-1s with Shift)
 //   - plain wheel over timeline -> zoom, centered on the cursor
 //   - Shift+wheel / scrollbar   -> pan (native browser behavior, no JS)
+//
+// Splits are deliberately a two-step gesture (position the playhead, then
+// commit) rather than click-to-add: a single misclick used to be enough to
+// litter the timeline with unwanted splits.
 
 import {
   state,
   derivedSegments,
   addSplitPoint,
+  canAddSplitPoint,
   removeSplitPointAt,
   moveSplitPointAt,
   formatTime,
@@ -25,13 +31,34 @@ const MAX_PX_PER_SEC = 200;
 const TICK_INTERVALS = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600, 7200];
 const MIN_LABEL_SPACING_PX = 70;
 
-export function createTimeline({ viewport, track, ruler, bands, playhead, player, onChange }) {
+export function createTimeline({ viewport, track, ruler, bands, playhead, player, splitBtn, deleteSplitBtn, onChange }) {
   let pxPerSec = 1;
   let selectedIndex = null;
   let dragging = null; // { index, pointerId, tabEl }
 
   function notifyChange() {
     if (onChange) onChange();
+  }
+
+  function updateActionButtons() {
+    if (splitBtn) splitBtn.disabled = !canAddSplitPoint(player.currentTime);
+    if (deleteSplitBtn) deleteSplitBtn.disabled = selectedIndex === null;
+  }
+
+  function addAtPlayhead() {
+    const idx = addSplitPoint(player.currentTime);
+    if (idx === null) return;
+    selectedIndex = idx;
+    render();
+    notifyChange();
+  }
+
+  function deleteSelected() {
+    if (selectedIndex === null) return;
+    removeSplitPointAt(selectedIndex);
+    selectedIndex = null;
+    render();
+    notifyChange();
   }
 
   function minPxPerSec() {
@@ -95,10 +122,8 @@ export function createTimeline({ viewport, track, ruler, bands, playhead, player
     del.addEventListener("pointerdown", (e) => e.stopPropagation());
     del.addEventListener("click", (e) => {
       e.stopPropagation();
-      removeSplitPointAt(index);
-      selectedIndex = null;
-      render();
-      notifyChange();
+      selectedIndex = index;
+      deleteSelected();
     });
     marker.appendChild(del);
 
@@ -171,6 +196,7 @@ export function createTimeline({ viewport, track, ruler, bands, playhead, player
     renderRuler();
     renderBands();
     updateZoomLabel();
+    updateActionButtons();
   }
 
   function setZoom(newPxPerSec, anchorClientX) {
@@ -204,34 +230,31 @@ export function createTimeline({ viewport, track, ruler, bands, playhead, player
     }
   }
 
-  // --- ruler: click/drag to seek ---
+  // --- ruler + bands: click/drag to seek (and deselect any split) ---
   function seekFromEvent(e) {
     player.seek(timeFromClientX(e.clientX));
   }
-  ruler.addEventListener("pointerdown", (e) => {
-    seekFromEvent(e);
-    const onMove = (ev) => seekFromEvent(ev);
-    const onUp = () => {
-      ruler.removeEventListener("pointermove", onMove);
-      ruler.removeEventListener("pointerup", onUp);
-    };
-    ruler.addEventListener("pointermove", onMove);
-    ruler.addEventListener("pointerup", onUp);
-  });
-
-  // --- bands: click empty space to add a split point ---
-  bands.addEventListener("click", (e) => {
-    if (e.target.closest(".marker")) return;
-    if (e.target.closest(".excluded")) return;
-    const t = timeFromClientX(e.clientX);
-    const idx = addSplitPoint(t);
-    if (idx !== null) {
-      selectedIndex = idx;
-      player.seek(t);
+  function attachScrubbing(el) {
+    el.addEventListener("pointerdown", (e) => {
+      if (e.target.closest(".marker")) return;
+      seekFromEvent(e);
+      selectedIndex = null;
       render();
-      notifyChange();
-    }
-  });
+      const onMove = (ev) => seekFromEvent(ev);
+      const onUp = () => {
+        el.removeEventListener("pointermove", onMove);
+        el.removeEventListener("pointerup", onUp);
+      };
+      el.addEventListener("pointermove", onMove);
+      el.addEventListener("pointerup", onUp);
+    });
+  }
+  attachScrubbing(ruler);
+  attachScrubbing(bands);
+
+  // --- explicit split add/delete ---
+  if (splitBtn) splitBtn.addEventListener("click", addAtPlayhead);
+  if (deleteSplitBtn) deleteSplitBtn.addEventListener("click", deleteSelected);
 
   // --- wheel: zoom (plain), pan (shift / native scrollbar) ---
   viewport.addEventListener(
@@ -245,18 +268,22 @@ export function createTimeline({ viewport, track, ruler, bands, playhead, player
     { passive: false }
   );
 
-  // --- keyboard: nudge / delete the selected marker ---
+  // --- keyboard: add/delete/nudge splits ---
   document.addEventListener("keydown", (e) => {
-    if (selectedIndex === null) return;
     const tag = (e.target && e.target.tagName) || "";
     if (tag === "INPUT" || tag === "TEXTAREA") return;
 
+    if (e.key === "s" || e.key === "S") {
+      e.preventDefault();
+      addAtPlayhead();
+      return;
+    }
+
+    if (selectedIndex === null) return;
+
     if (e.key === "Delete" || e.key === "Backspace") {
       e.preventDefault();
-      removeSplitPointAt(selectedIndex);
-      selectedIndex = null;
-      render();
-      notifyChange();
+      deleteSelected();
     } else if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
       e.preventDefault();
       const step = e.shiftKey ? 1 : 0.1;
@@ -270,6 +297,7 @@ export function createTimeline({ viewport, track, ruler, bands, playhead, player
   player.onTimeUpdate((t) => {
     playhead.style.transform = `translateX(${t * pxPerSec}px)`;
     maybeAutoScroll(t);
+    updateActionButtons();
   });
 
   window.addEventListener("resize", () => {

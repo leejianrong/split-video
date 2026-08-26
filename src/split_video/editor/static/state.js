@@ -58,13 +58,20 @@ export function derivedSegments() {
   return segments;
 }
 
+/** Whether a split point could be placed at time `t` (far enough from
+ * firstStart/lastEnd and from every existing split point). */
+export function canAddSplitPoint(t) {
+  if (t <= state.firstStart + MIN_GAP || t >= state.lastEnd - MIN_GAP) return false;
+  for (const p of state.splitPoints) {
+    if (Math.abs(p - t) < MIN_GAP) return false;
+  }
+  return true;
+}
+
 /** Insert a new split point at time `t`. Returns its index, or null if `t`
  * is too close to an existing boundary to place one there. */
 export function addSplitPoint(t) {
-  if (t <= state.firstStart + MIN_GAP || t >= state.lastEnd - MIN_GAP) return null;
-  for (const p of state.splitPoints) {
-    if (Math.abs(p - t) < MIN_GAP) return null;
-  }
+  if (!canAddSplitPoint(t)) return null;
   state.splitPoints.push(t);
   state.splitPoints.sort((a, b) => a - b);
   return state.splitPoints.indexOf(t);
