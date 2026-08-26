@@ -47,6 +47,41 @@ def test_detect_only_calls_ffmpeg_once_per_distinct_threshold(three_songs_clip, 
     assert call_count["n"] == 2  # a new threshold is the only thing that re-invokes ffmpeg
 
 
+def test_waveform_returns_buckets_spanning_the_clip(three_songs_clip):
+    client = _client(three_songs_clip)
+    response = client.get("/api/waveform")
+    assert response.status_code == 200
+    buckets = response.json()["buckets"]
+    assert len(buckets) > 0
+    for lo, hi in buckets:
+        assert -1.0 <= lo <= hi <= 1.0
+
+
+def test_waveform_only_decodes_audio_once(three_songs_clip, monkeypatch):
+    call_count = {"n": 0}
+    real_extract_pcm_audio = cache_module.extract_pcm_audio
+
+    def counting_extract_pcm_audio(*args, **kwargs):
+        call_count["n"] += 1
+        return real_extract_pcm_audio(*args, **kwargs)
+
+    monkeypatch.setattr(cache_module, "extract_pcm_audio", counting_extract_pcm_audio)
+
+    client = _client(three_songs_clip)
+    assert call_count["n"] == 0  # not computed eagerly on open
+
+    for _ in range(3):
+        response = client.get("/api/waveform")
+        assert response.status_code == 200
+    assert call_count["n"] == 1  # repeats are cache hits
+
+
+def test_waveform_before_open_is_409(three_songs_clip):
+    client = TestClient(create_app(three_songs_clip.parent, DEFAULTS))
+    response = client.get("/api/waveform")
+    assert response.status_code == 409
+
+
 def test_segments_endpoint_is_pure_and_never_touches_ffmpeg(three_songs_clip, monkeypatch):
     client = _client(three_songs_clip)
     silences_response = client.get("/api/state").json()["silences"]

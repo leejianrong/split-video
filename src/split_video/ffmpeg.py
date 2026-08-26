@@ -21,6 +21,9 @@ class ExtractError(RuntimeError):
     pass
 
 
+WAVEFORM_SAMPLE_RATE = 8000
+
+
 def _require_binary(name: str) -> str:
     path = shutil.which(name)
     if path is None:
@@ -61,6 +64,30 @@ def detect_silence(path: Path, threshold: str, min_silence_duration: float) -> l
         text=True,
     )
     return parse_silencedetect_output(result.stderr, total_duration)
+
+
+def extract_pcm_audio(path: Path, sample_rate: int = WAVEFORM_SAMPLE_RATE) -> bytes:
+    """Decode a file's audio track to raw mono 16-bit PCM, for waveform-peak computation.
+
+    A low sample rate keeps the piped output small: only a crude amplitude
+    envelope is needed here, not audio fidelity.
+    """
+    ffmpeg = _require_binary("ffmpeg")
+    result = subprocess.run(
+        [
+            ffmpeg,
+            "-i", str(path),
+            "-vn",
+            "-ac", "1",
+            "-ar", str(sample_rate),
+            "-f", "s16le",
+            "-",
+        ],
+        capture_output=True,
+    )
+    if result.returncode != 0:
+        raise ExtractError(f"ffmpeg failed to decode audio from '{path.name}': {result.stderr.decode(errors='replace').strip()[-2000:]}")
+    return result.stdout
 
 
 def extract_segment(

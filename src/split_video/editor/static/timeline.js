@@ -31,10 +31,22 @@ const MAX_PX_PER_SEC = 200;
 const TICK_INTERVALS = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600, 7200];
 const MIN_LABEL_SPACING_PX = 70;
 
-export function createTimeline({ viewport, track, ruler, bands, playhead, player, splitBtn, deleteSplitBtn, onChange }) {
+export function createTimeline({
+  viewport,
+  track,
+  ruler,
+  bands,
+  playhead,
+  waveformCanvas,
+  player,
+  splitBtn,
+  deleteSplitBtn,
+  onChange,
+}) {
   let pxPerSec = 1;
   let selectedIndex = null;
   let dragging = null; // { index, pointerId, tabEl }
+  let waveformBuckets = [];
 
   function notifyChange() {
     if (onChange) onChange();
@@ -190,11 +202,70 @@ export function createTimeline({ viewport, track, ruler, bands, playhead, player
     });
   }
 
+  // Unlike the ruler/bands (plain DOM nodes laid out across the full,
+  // potentially huge, track width and simply revealed by native scrolling),
+  // a canvas that wide would blow past browsers' canvas size limits at
+  // typical zoom levels. So this canvas instead stays viewport-sized and
+  // redraws its content — which slice of `waveformBuckets` maps to which
+  // pixel — from `pxPerSec` and the current scroll position, on every
+  // render() (zoom/fit/resize) and on scroll.
+  //
+  // The canvas element is a positioned child of the *scrolling*
+  // `#timeline-viewport`, so — like any other absolutely-positioned
+  // descendant of a scroll container (only `fixed`/`sticky` are exempt) —
+  // it physically scrolls along with the content instead of staying put.
+  // It's counter-translated by `scrollLeft` here so it stays visually
+  // pinned over the viewport while its bitmap is redrawn for whatever time
+  // range that now puts on screen.
+  function renderWaveform() {
+    if (!waveformCanvas) return;
+    const dpr = window.devicePixelRatio || 1;
+    const cssWidth = viewport.clientWidth || 0;
+    const cssHeight = 78;
+    const scrollLeft = viewport.scrollLeft;
+    waveformCanvas.style.width = `${cssWidth}px`;
+    waveformCanvas.style.height = `${cssHeight}px`;
+    waveformCanvas.style.transform = `translateX(${scrollLeft}px)`;
+    waveformCanvas.width = Math.max(1, Math.round(cssWidth * dpr));
+    waveformCanvas.height = Math.max(1, Math.round(cssHeight * dpr));
+
+    const ctx = waveformCanvas.getContext("2d");
+    ctx.clearRect(0, 0, waveformCanvas.width, waveformCanvas.height);
+    if (!waveformBuckets.length || state.duration <= 0) return;
+
+    const bucketCount = waveformBuckets.length;
+    const mid = waveformCanvas.height / 2;
+    const barWidth = Math.max(1, Math.round(dpr));
+    ctx.fillStyle = "rgba(230, 232, 236, 0.4)";
+
+    for (let px = 0; px < cssWidth; px++) {
+      const t0 = (scrollLeft + px) / pxPerSec;
+      const t1 = (scrollLeft + px + 1) / pxPerSec;
+      const bi0 = Math.max(0, Math.min(bucketCount - 1, Math.floor((t0 / state.duration) * bucketCount)));
+      const bi1 = Math.max(bi0 + 1, Math.min(bucketCount, Math.ceil((t1 / state.duration) * bucketCount)));
+
+      let lo = 1;
+      let hi = -1;
+      for (let bi = bi0; bi < bi1; bi++) {
+        const [mn, mx] = waveformBuckets[bi];
+        if (mn < lo) lo = mn;
+        if (mx > hi) hi = mx;
+      }
+      if (hi < lo) continue;
+
+      const x = Math.round(px * dpr);
+      const yTop = mid - hi * mid;
+      const yBot = mid - lo * mid;
+      ctx.fillRect(x, yTop, barWidth, Math.max(1, yBot - yTop));
+    }
+  }
+
   function render() {
     const width = Math.max(state.duration * pxPerSec, viewport.clientWidth || 0);
     track.style.width = `${width}px`;
     renderRuler();
     renderBands();
+    renderWaveform();
     updateZoomLabel();
     updateActionButtons();
   }
@@ -206,9 +277,10 @@ export function createTimeline({ viewport, track, ruler, bands, playhead, player
     if (anchorClientX != null) {
       const anchorTime = timeFromClientX(anchorClientX);
       pxPerSec = clamped;
-      render();
+      render(); // must run first: it's what widens the track enough for the scrollLeft below to land
       const rect = viewport.getBoundingClientRect();
       viewport.scrollLeft = Math.max(0, anchorTime * pxPerSec - (anchorClientX - rect.left));
+      renderWaveform(); // the canvas draws from scrollLeft, so it needs a second pass once that's settled
     } else {
       pxPerSec = clamped;
       render();
@@ -219,6 +291,7 @@ export function createTimeline({ viewport, track, ruler, bands, playhead, player
     pxPerSec = minPxPerSec();
     render();
     viewport.scrollLeft = 0;
+    renderWaveform();
   }
 
   function maybeAutoScroll(t) {
@@ -300,9 +373,12 @@ export function createTimeline({ viewport, track, ruler, bands, playhead, player
     updateActionButtons();
   });
 
+  viewport.addEventListener("scroll", () => renderWaveform(), { passive: true });
+
   window.addEventListener("resize", () => {
     // Re-clamp zoom in case "Fit" is currently active and the window resized.
     if (Math.abs(pxPerSec - minPxPerSec()) < 0.5) fit();
+    else renderWaveform();
   });
 
   return {
@@ -310,5 +386,9 @@ export function createTimeline({ viewport, track, ruler, bands, playhead, player
     fit,
     setZoom,
     getPxPerSec: () => pxPerSec,
+    setWaveform: (buckets) => {
+      waveformBuckets = buckets || [];
+      renderWaveform();
+    },
   };
 }

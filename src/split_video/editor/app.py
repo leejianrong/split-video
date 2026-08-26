@@ -8,8 +8,12 @@ from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from starlette.responses import FileResponse
 
-from split_video.editor.browse import PathEscapesRootError, list_directory, resolve_within_root
-from split_video.editor.cache import SilenceCache
+from split_video.editor.browse import (
+    PathEscapesRootError,
+    list_directory,
+    resolve_within_root,
+)
+from split_video.editor.cache import SilenceCache, WaveformCache
 from split_video.editor.jobs import JobStore, start_export
 from split_video.editor.schemas import (
     BrowseEntryOut,
@@ -27,6 +31,7 @@ from split_video.editor.schemas import (
     SilenceIntervalOut,
     StateParams,
     StateResponse,
+    WaveformResponse,
 )
 from split_video.ffmpeg import probe_duration
 from split_video.naming import segment_filename
@@ -48,6 +53,7 @@ class _Session:
         self.source: Path | None = None
         self.total_duration: float = 0.0
         self.cache: SilenceCache | None = None
+        self.waveform_cache: WaveformCache | None = None
         self.initial_silences: list[SilenceInterval] = []
         self.initial_segments: list[Segment] = []
 
@@ -77,6 +83,7 @@ def create_app(root: Path, defaults: StateParams) -> FastAPI:
         session.source = source
         session.total_duration = probe_duration(source)
         session.cache = SilenceCache(source)
+        session.waveform_cache = WaveformCache(source)
         session.initial_silences = session.cache.get_raw_silences(defaults.silence_threshold)
         session.initial_segments = compute_segments(
             session.initial_silences,
@@ -145,6 +152,12 @@ def create_app(root: Path, defaults: StateParams) -> FastAPI:
         _require_open()
         silences = session.cache.get_raw_silences(request.silence_threshold)
         return DetectResponse(silences=_silences_out(silences))
+
+    @app.get("/api/waveform", response_model=WaveformResponse)
+    def waveform() -> WaveformResponse:
+        _require_open()
+        peaks = session.waveform_cache.get_peaks()
+        return WaveformResponse(buckets=peaks.buckets)
 
     @app.post("/api/segments", response_model=SegmentsResponse)
     def segments_endpoint(request: SegmentsRequest) -> SegmentsResponse:

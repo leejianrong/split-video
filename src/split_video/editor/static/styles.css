@@ -287,6 +287,19 @@ button, input, output {
   min-width: 100%;
 }
 
+/* Pinned to the viewport (not the scrolled track) since a canvas can't be
+   sized to the track's full, potentially huge, scrollable width — it
+   redraws its own content in response to scroll/zoom instead. Placed before
+   `.timeline-track` in the DOM so the (semi-transparent) bands paint over
+   it, per the default same-stacking-context paint order. */
+.waveform {
+  position: absolute;
+  top: 22px; /* .ruler height */
+  left: 0;
+  height: 78px;
+  pointer-events: none;
+}
+
 .ruler {
   position: relative;
   height: 22px;

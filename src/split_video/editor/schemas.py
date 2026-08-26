@@ -62,6 +62,10 @@ class DetectResponse(BaseModel):
     silences: list[SilenceIntervalOut]
 
 
+class WaveformResponse(BaseModel):
+    buckets: list[tuple[float, float]]
+
+
 class SegmentsRequest(BaseModel):
     silences: list[SilenceIntervalOut]
     duration: float

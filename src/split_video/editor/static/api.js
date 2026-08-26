@@ -54,6 +54,10 @@ export async function detectSilence(silenceThreshold) {
   });
 }
 
+export async function getWaveform() {
+  return requestJSON("api/waveform");
+}
+
 // Only one segments recompute should ever be in flight: a new call aborts
 // whatever the previous call was waiting on, so fast slider dragging can't
 // produce an out-of-order response clobbering a newer one.

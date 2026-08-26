@@ -70,12 +70,21 @@ async function bootEditor() {
     ruler: document.getElementById("ruler"),
     bands: document.getElementById("bands"),
     playhead: document.getElementById("playhead"),
+    waveformCanvas: document.getElementById("waveform"),
     player,
     splitBtn: document.getElementById("split-btn"),
     deleteSplitBtn: document.getElementById("delete-split-btn"),
     onChange: updateHeader,
   });
   timeline.fit();
+
+  // Fetched separately (rather than bundled into /api/state) so opening a
+  // file isn't blocked on decoding its full audio track — the waveform
+  // fills in once ready.
+  api
+    .getWaveform()
+    .then((data) => timeline.setWaveform(data.buckets))
+    .catch((err) => console.error("waveform fetch failed:", err));
 
   document.getElementById("zoom-in").addEventListener("click", () => timeline.setZoom(timeline.getPxPerSec() * 1.4));
   document.getElementById("zoom-out").addEventListener("click", () => timeline.setZoom(timeline.getPxPerSec() / 1.4));

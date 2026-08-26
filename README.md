@@ -67,7 +67,9 @@ the editor for it.
 In the editor:
 
 - The video plays in a real player, with a timeline underneath showing the
-  currently-proposed splits.
+  currently-proposed splits. A waveform of the audio renders behind the
+  timeline once it's finished decoding, so you can eyeball where the actual
+  quiet/loud passages are, not just where a threshold happened to trigger.
 - Click or drag anywhere on the timeline to move the playhead — it never
   adds a split by itself. Position the playhead where you want a cut, then
   click the `][` button (or press `S`) to add one there. Drag a split
