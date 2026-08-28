@@ -191,3 +191,15 @@ uv run pytest
 
 A few tests exercise real YAMNet inference and skip automatically if you
 haven't run `make fetch-model`.
+
+### Pre-push hook
+
+A git hook mirrors the fast parts of CI (unit tests, no `ffmpeg` required)
+before every push. Install it once per clone:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+Skip it for a one-off, scoped exception with `git push --no-verify`. CI
+still runs the full suite regardless, so the bypass is safe.
