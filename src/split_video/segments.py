@@ -75,9 +75,7 @@ def _cut_points(gap: SilenceInterval, padding: float) -> tuple[float, float]:
     return gap.start + padding, gap.end - padding
 
 
-def _merge_short_segments(
-    boundaries: list[tuple[float, float]], min_song_length: float
-) -> list[tuple[float, float]]:
+def _merge_short_segments(boundaries: list[tuple[float, float]], min_song_length: float) -> list[tuple[float, float]]:
     boundaries = list(boundaries)
 
     while len(boundaries) > 1:

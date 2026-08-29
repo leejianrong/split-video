@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import itertools
 from dataclasses import dataclass
 
 import numpy as np
@@ -40,5 +41,5 @@ def compute_peaks(pcm_s16le: bytes, bucket_count: int = DEFAULT_BUCKET_COUNT) ->
     bucket_count = min(bucket_count, samples.size)
     edges = np.linspace(0, samples.size, bucket_count + 1).astype(np.int64)
 
-    buckets = [(float(samples[s:e].min()), float(samples[s:e].max())) for s, e in zip(edges[:-1], edges[1:])]
+    buckets = [(float(samples[s:e].min()), float(samples[s:e].max())) for s, e in itertools.pairwise(edges)]
     return WaveformPeaks(buckets=buckets)

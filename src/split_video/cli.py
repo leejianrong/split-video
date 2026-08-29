@@ -6,7 +6,6 @@ import threading
 import webbrowser
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
 
 import typer
 import uvicorn
@@ -15,7 +14,14 @@ from rich.table import Table
 
 from split_video.editor.app import create_app
 from split_video.editor.schemas import StateParams
-from split_video.ffmpeg import ExtractError, FfmpegNotFoundError, ProbeError, detect_silence, extract_segment, probe_duration
+from split_video.ffmpeg import (
+    ExtractError,
+    FfmpegNotFoundError,
+    ProbeError,
+    detect_silence,
+    extract_segment,
+    probe_duration,
+)
 from split_video.naming import build_manifest, segment_filename, write_manifest
 from split_video.segments import compute_segments
 from split_video.timefmt import format_timestamp
@@ -50,12 +56,12 @@ def split(
         "--silence-padding",
         help="Seconds of near-silence to retain on each side of a cut, to avoid clipping a quiet attack or decay transient.",
     ),
-    output_dir: Optional[Path] = typer.Option(
+    output_dir: Path | None = typer.Option(
         None,
         "--output-dir",
         help="Directory to write split files and manifest into. [default: '<source_basename>_split/' next to SOURCE]",
     ),
-    output_format: Optional[str] = typer.Option(
+    output_format: str | None = typer.Option(
         None,
         "--format",
         help="Force output container/codec (e.g. 'mp4', 'mkv'). Implies re-encoding.",
@@ -68,12 +74,8 @@ def split(
     overwrite: bool = typer.Option(
         False, "--overwrite", help="Allow overwriting existing files in the output directory."
     ),
-    dry_run: bool = typer.Option(
-        False, "--dry-run", help="Print detected segments; write no files."
-    ),
-    manifest: bool = typer.Option(
-        True, "--manifest/--no-manifest", help="Write manifest.json alongside output files."
-    ),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Print detected segments; write no files."),
+    manifest: bool = typer.Option(True, "--manifest/--no-manifest", help="Write manifest.json alongside output files."),
     verbose: bool = typer.Option(
         False, "--verbose", "-v", help="Show ffmpeg commands and raw silencedetect output for debugging."
     ),
@@ -179,9 +181,7 @@ def edit(
         "127.0.0.1", "--host", help="Interface to bind the local editor server to (use 0.0.0.0 in Docker)."
     ),
     port: int = typer.Option(8765, "--port", help="Port for the local editor server."),
-    silence_threshold: float = typer.Option(
-        -35.0, "--silence-threshold", help="Initial silence threshold in dB."
-    ),
+    silence_threshold: float = typer.Option(-35.0, "--silence-threshold", help="Initial silence threshold in dB."),
     min_silence_duration: float = typer.Option(
         2.0,
         "--min-silence-duration",

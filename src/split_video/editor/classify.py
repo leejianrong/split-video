@@ -86,9 +86,7 @@ def load_labels(path: Path = CLASS_MAP_PATH) -> ClassLabels:
         display_names[int(row["index"])] = row["display_name"]
 
     name_to_index = {name: i for i, name in enumerate(display_names)}
-    bucket_indices = {
-        bucket: [name_to_index[name] for name in names] for bucket, names in BUCKET_LABELS.items()
-    }
+    bucket_indices = {bucket: [name_to_index[name] for name in names] for bucket, names in BUCKET_LABELS.items()}
     return ClassLabels(display_names=display_names, bucket_indices=bucket_indices)
 
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import itertools
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
@@ -286,9 +287,7 @@ def create_app(root: Path, defaults: StateParams) -> FastAPI:
     # populated yet, drop a placeholder so the mount doesn't error.
     STATIC_DIR.mkdir(parents=True, exist_ok=True)
     if not any(STATIC_DIR.iterdir()):
-        (STATIC_DIR / "index.html").write_text(
-            "<!doctype html><title>split-video editor</title><p>loading...</p>"
-        )
+        (STATIC_DIR / "index.html").write_text("<!doctype html><title>split-video editor</title><p>loading...</p>")
     app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")
 
     return app
@@ -302,6 +301,6 @@ def _validate_segments(pairs: list[tuple[float, float]]) -> None:
     for start, end in pairs:
         if end <= start:
             raise HTTPException(status_code=422, detail=f"segment end must be after start: ({start}, {end})")
-    for (_, end), (next_start, _) in zip(pairs, pairs[1:]):
+    for (_, end), (next_start, _) in itertools.pairwise(pairs):
         if next_start < end:
             raise HTTPException(status_code=422, detail="segments must not overlap")

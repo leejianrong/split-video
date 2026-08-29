@@ -26,4 +26,13 @@ build-backend = "uv_build"
 dev = [
     "httpx>=0.28.1",
     "pytest>=8.0",
+    "ruff>=0.16.5",
 ]
+
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint.flake8-bugbear]
+# typer's Argument()/Option() calls in parameter defaults are the documented
+# idiom for declaring CLI params, not the mutable-default footgun B008 flags.
+extend-immutable-calls = ["typer.Argument", "typer.Option"]
