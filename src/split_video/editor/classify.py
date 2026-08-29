@@ -1,11 +1,15 @@
 """YAMNet-based coarse audio classification for the timeline's overlay.
 
-Classifies each frame of a recording's audio into one of six coarse buckets
-(music / singing / speech / applause-crowd / laughter / silence-other) using
-Google's YAMNet, run via a locally bundled quantized TFLite model (see
-scripts/fetch_yamnet_model.py for how `models/` gets populated). Consecutive
-frames sharing a bucket are merged into contiguous regions before being
-handed to the API layer.
+Classifies each frame of a recording's audio into scores across six coarse
+buckets (music / singing / speech / applause-crowd / laughter /
+silence-other) using Google's YAMNet, run via a locally bundled quantized
+TFLite model (see scripts/fetch_yamnet_model.py for how `models/` gets
+populated). The per-frame scoring is genuinely multi-label — singing over
+music, crowd noise during a song — so this module hands the API layer two
+views over the same scores: `merge_regions` collapses each frame to one
+winning bucket (with a `secondary` hint for the coarse timeline view), while
+`lane_regions` keeps every bucket's own independently-thresholded presence
+(for the detail view, where overlaps need to be visible simultaneously).
 
 The model and label loading (`get_model_and_labels`) is process-global and
 lazy: it's expensive enough (a few dozen ms) to not want on every request,
@@ -65,6 +69,12 @@ BUCKET_LABELS: dict[str, list[str]] = {
 
 DEFAULT_THRESHOLDS: dict[str, float] = {bucket: 0.3 for bucket in BUCKET_LABELS}
 
+# Buckets that get their own lane in the timeline's detail view. Silence/other
+# is excluded: it's the "nothing confidently classified" fallback, drawn as
+# blank space rather than a bucket in its own right (see `merge_regions` and
+# `lane_regions` below).
+LANE_BUCKETS: list[str] = [bucket for bucket in BUCKET_LABELS if bucket != SILENCE_BUCKET]
+
 
 class ModelNotFoundError(RuntimeError):
     pass
@@ -96,6 +106,14 @@ class ClassificationRegion:
     end: float
     bucket: str
     score: float
+    # The next-highest-scoring bucket that also clears its own threshold
+    # somewhere in this region, if any — lets the timeline's coarse view
+    # hint at overlap (singing over music) without needing its own lane.
+    secondary: str | None
+    # Peak score per bucket across the region's frames, all six buckets —
+    # not just `bucket`/`score` — so a hover tooltip can show the full
+    # breakdown instead of only the winner.
+    bucket_scores: dict[str, float]
 
 
 def bucket_scores_for_frame(scores: np.ndarray, labels: ClassLabels) -> dict[str, float]:
@@ -115,23 +133,85 @@ def winning_bucket(frame_bucket_scores: dict[str, float], thresholds: dict[str, 
     return best_bucket, best_score
 
 
-def merge_regions(frame_buckets: list[tuple[float, float, str, float]]) -> list[ClassificationRegion]:
+def _pick_secondary(bucket_scores: dict[str, float], thresholds: dict[str, float], exclude: str) -> str | None:
+    """The highest-scoring bucket other than `exclude` that clears its own
+    threshold, or None. Silence/other is never picked: it's not a
+    meaningful "also happening here" signal."""
+    best = None
+    best_score = -1.0
+    for bucket, score in bucket_scores.items():
+        if bucket == exclude or bucket == SILENCE_BUCKET:
+            continue
+        if score >= thresholds.get(bucket, 0.0) and score > best_score:
+            best, best_score = bucket, score
+    return best
+
+
+def merge_regions(
+    frame_buckets: list[tuple[float, float, str, float, dict[str, float]]],
+    thresholds: dict[str, float],
+) -> list[ClassificationRegion]:
     """Merge consecutive, contiguous, same-bucket frames into regions.
 
-    `frame_buckets` is `(frame_start, frame_end, bucket, score)` tuples, in
-    time order. A merged region's score is the max of its frames' scores.
-    Frames are only merged when contiguous (allowing float slop) — a gap
-    between frames starts a new region even if the bucket matches, since a
-    gap means something (silence, an unclassified span) happened in between.
+    `frame_buckets` is `(frame_start, frame_end, bucket, score, bucket_scores)`
+    tuples, in time order — `bucket`/`score` is that frame's winner (see
+    `winning_bucket`), `bucket_scores` its full per-bucket breakdown. A
+    merged region's score, secondary bucket, and bucket_scores are all
+    derived from the max of its frames' scores. Frames are only merged when
+    contiguous (allowing float slop) — a gap between frames starts a new
+    region even if the bucket matches, since a gap means something (silence,
+    an unclassified span) happened in between.
     """
     regions: list[ClassificationRegion] = []
-    for start, end, bucket, score in frame_buckets:
+    for start, end, bucket, score, bucket_scores in frame_buckets:
         if regions and regions[-1].bucket == bucket and abs(start - regions[-1].end) < 1e-6:
             prev = regions[-1]
-            regions[-1] = ClassificationRegion(prev.start, end, bucket, max(prev.score, score))
+            merged_scores = {b: max(prev.bucket_scores[b], s) for b, s in bucket_scores.items()}
+            secondary = _pick_secondary(merged_scores, thresholds, bucket)
+            regions[-1] = ClassificationRegion(
+                prev.start, end, bucket, max(prev.score, score), secondary, merged_scores
+            )
         else:
-            regions.append(ClassificationRegion(start, end, bucket, score))
+            secondary = _pick_secondary(bucket_scores, thresholds, bucket)
+            regions.append(ClassificationRegion(start, end, bucket, score, secondary, dict(bucket_scores)))
     return regions
+
+
+def lane_regions(
+    frame_bucket_scores: list[dict[str, float]],
+    thresholds: dict[str, float],
+    total_duration: float,
+) -> dict[str, list[ClassificationRegion]]:
+    """Independent per-bucket presence spans, powering the timeline's detail
+    view.
+
+    Unlike `merge_regions`'s one-winner-per-frame regions, each bucket here
+    is judged only against its own threshold, so overlapping labels (singing
+    over music, crowd noise during a song) show up simultaneously instead of
+    collapsing to a single color. Each span is a `ClassificationRegion` too
+    (`bucket`/`score` are that lane's own; `secondary` is always None — it's
+    not a meaningful concept for an already-single-bucket lane), so the same
+    tooltip rendering works for both views.
+    """
+    lanes: dict[str, list[ClassificationRegion]] = {}
+    for bucket in LANE_BUCKETS:
+        threshold = thresholds.get(bucket, 0.0)
+        regions: list[ClassificationRegion] = []
+        for i, scores in enumerate(frame_bucket_scores):
+            if scores[bucket] < threshold:
+                continue
+            slot_start = i * HOP_SAMPLES / SAMPLE_RATE
+            slot_end = min((i * HOP_SAMPLES + HOP_SAMPLES) / SAMPLE_RATE, total_duration)
+            if regions and abs(slot_start - regions[-1].end) < 1e-6:
+                prev = regions[-1]
+                merged_scores = {b: max(prev.bucket_scores[b], s) for b, s in scores.items()}
+                regions[-1] = ClassificationRegion(
+                    prev.start, slot_end, bucket, merged_scores[bucket], None, merged_scores
+                )
+            else:
+                regions.append(ClassificationRegion(slot_start, slot_end, bucket, scores[bucket], None, dict(scores)))
+        lanes[bucket] = regions
+    return lanes
 
 
 class YamnetModel:
@@ -202,7 +282,7 @@ def classify_audio(
     starts = _frame_starts(samples.size)
 
     frame_bucket_scores: list[dict[str, float]] = []
-    frame_buckets: list[tuple[float, float, str, float]] = []
+    frame_buckets: list[tuple[float, float, str, float, dict[str, float]]] = []
     for i, start in enumerate(starts):
         frame = samples[start : start + FRAME_SAMPLES]
         if frame.size < FRAME_SAMPLES:
@@ -214,12 +294,12 @@ def classify_audio(
         bucket, score = winning_bucket(scores_by_bucket, thresholds)
         slot_start = start / SAMPLE_RATE
         slot_end = min((start + HOP_SAMPLES) / SAMPLE_RATE, total_duration)
-        frame_buckets.append((slot_start, slot_end, bucket, score))
+        frame_buckets.append((slot_start, slot_end, bucket, score, scores_by_bucket))
 
         if on_progress:
             on_progress(i + 1, len(starts))
 
-    return merge_regions(frame_buckets), frame_bucket_scores, total_duration
+    return merge_regions(frame_buckets, thresholds), frame_bucket_scores, total_duration
 
 
 def rethreshold(
@@ -234,5 +314,5 @@ def rethreshold(
         bucket, score = winning_bucket(scores_by_bucket, thresholds)
         slot_start = i * HOP_SAMPLES / SAMPLE_RATE
         slot_end = min((i * HOP_SAMPLES + HOP_SAMPLES) / SAMPLE_RATE, total_duration)
-        frame_buckets.append((slot_start, slot_end, bucket, score))
-    return merge_regions(frame_buckets)
+        frame_buckets.append((slot_start, slot_end, bucket, score, scores_by_bucket))
+    return merge_regions(frame_buckets, thresholds)

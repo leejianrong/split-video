@@ -279,13 +279,22 @@ button, input, output {
 }
 
 .timeline-viewport {
+  --classification-height: 14px;
   position: relative;
   overflow-x: scroll;
   overflow-y: hidden;
-  height: 130px; /* ruler 22 + classification-row 14 + bands 78 + 16 breathing room */
+  /* ruler 22 + classification row + bands 78 + 16 breathing room */
+  height: calc(22px + var(--classification-height) + 78px + 16px);
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 6px;
+}
+
+/* The detail view trades a taller classification row (5 independent
+   per-bucket lanes instead of 1) for showing every overlapping label at
+   once — see timeline.js's renderClassification(). */
+.timeline-viewport.detail-mode {
+  --classification-height: 52px;
 }
 
 .timeline-track {
@@ -301,7 +310,7 @@ button, input, output {
    it, per the default same-stacking-context paint order. */
 .waveform {
   position: absolute;
-  top: 36px; /* .ruler height + .classification-row height */
+  top: calc(22px + var(--classification-height)); /* .ruler height + .classification-row height */
   left: 0;
   height: 78px;
   pointer-events: none;
@@ -326,7 +335,7 @@ button, input, output {
 
 .classification-row {
   position: relative;
-  height: 14px;
+  height: var(--classification-height);
   border-bottom: 1px solid var(--border);
 }
 
@@ -339,29 +348,83 @@ button, input, output {
   cursor: default;
 }
 
+/* One shared color per bucket across the coarse bar, a detail-mode lane,
+   the secondary-overlap marker, and the legend's dot — a single place to
+   change a bucket's color. */
 .classification-region.bucket-music,
+.lane-segment.bucket-music,
+.secondary-marker.bucket-music,
 .swatch.bucket-music {
   background: #7c5cff;
 }
 
 .classification-region.bucket-singing,
+.lane-segment.bucket-singing,
+.secondary-marker.bucket-singing,
 .swatch.bucket-singing {
   background: #ff6fae;
 }
 
 .classification-region.bucket-speech,
+.lane-segment.bucket-speech,
+.secondary-marker.bucket-speech,
 .swatch.bucket-speech {
   background: #35c2c1;
 }
 
 .classification-region.bucket-applause_crowd,
+.lane-segment.bucket-applause_crowd,
+.secondary-marker.bucket-applause_crowd,
 .swatch.bucket-applause_crowd {
   background: #f0b429;
 }
 
 .classification-region.bucket-laughter,
+.lane-segment.bucket-laughter,
+.secondary-marker.bucket-laughter,
 .swatch.bucket-laughter {
   background: #f6e05e;
+}
+
+/* A small dot on a coarse-view bar hinting that another bucket also clears
+   its own threshold somewhere in this region (see ClassificationRegion's
+   `secondary`) — enough to say "something else is here", not what; hover
+   the region for the full breakdown. */
+.secondary-marker {
+  position: absolute;
+  top: -1px;
+  right: -1px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px var(--panel);
+}
+
+/* Detail mode: one independent lane per bucket (see timeline.js), so
+   overlapping labels are visible simultaneously instead of collapsing to a
+   single winner. */
+.lanes-wrap {
+  position: relative;
+  height: 100%;
+}
+
+.lane-segment {
+  position: absolute;
+  border-radius: 2px;
+  opacity: 0.85;
+  cursor: default;
+}
+
+.classification-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.classification-toolbar.hidden {
+  display: none;
 }
 
 .classification-legend {
@@ -370,10 +433,6 @@ button, input, output {
   flex-wrap: wrap;
   font-size: 12px;
   color: var(--text-dim);
-}
-
-.classification-legend.hidden {
-  display: none;
 }
 
 .legend-item {
@@ -388,6 +447,78 @@ button, input, output {
   border-radius: 2px;
   display: inline-block;
   opacity: 0.85;
+}
+
+/* A real hover tooltip for the timeline's classification row (replacing a
+   plain `title` attribute), showing every bucket's score for the hovered
+   region — not just the winner. */
+.classification-tooltip {
+  position: fixed;
+  z-index: 30;
+  pointer-events: none;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 8px 10px;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.4);
+  font-size: 12px;
+  min-width: 160px;
+  opacity: 0;
+  transform: translateY(4px);
+  transition:
+    opacity 0.08s ease,
+    transform 0.08s ease;
+}
+
+.classification-tooltip.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.classification-tooltip .tt-time {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10.5px;
+  color: var(--text-dim);
+  margin-bottom: 6px;
+}
+
+.classification-tooltip .tt-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0;
+}
+
+.classification-tooltip .tt-row .swatch {
+  flex-shrink: 0;
+}
+
+.classification-tooltip .tt-row .tt-name {
+  flex: 1;
+  color: var(--text-dim);
+}
+
+.classification-tooltip .tt-row.cleared .tt-name {
+  color: var(--text);
+  font-weight: 500;
+}
+
+.classification-tooltip .tt-row .tt-pct {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  color: var(--text-dim);
+  min-width: 30px;
+  text-align: right;
+}
+
+.classification-tooltip .tt-row.cleared .tt-pct {
+  color: var(--text);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .classification-tooltip {
+    transition: none;
+  }
 }
 
 .bands {

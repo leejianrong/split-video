@@ -90,7 +90,8 @@ async function bootEditor() {
 
   createAnalysisControl({
     analyzeBtn: document.getElementById("analyze-btn"),
-    legendEl: document.getElementById("classification-legend"),
+    toolbarEl: document.getElementById("classification-toolbar"),
+    detailToggleBtn: document.getElementById("classification-detail-toggle"),
     timeline,
   });
   document.getElementById("analyze-btn").disabled = false;
