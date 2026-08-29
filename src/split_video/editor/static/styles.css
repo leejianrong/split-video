@@ -339,23 +339,28 @@ button, input, output {
   cursor: default;
 }
 
-.classification-region.bucket-music {
+.classification-region.bucket-music,
+.swatch.bucket-music {
   background: #7c5cff;
 }
 
-.classification-region.bucket-singing {
+.classification-region.bucket-singing,
+.swatch.bucket-singing {
   background: #ff6fae;
 }
 
-.classification-region.bucket-speech {
+.classification-region.bucket-speech,
+.swatch.bucket-speech {
   background: #35c2c1;
 }
 
-.classification-region.bucket-applause_crowd {
+.classification-region.bucket-applause_crowd,
+.swatch.bucket-applause_crowd {
   background: #f0b429;
 }
 
-.classification-region.bucket-laughter {
+.classification-region.bucket-laughter,
+.swatch.bucket-laughter {
   background: #f6e05e;
 }
 
