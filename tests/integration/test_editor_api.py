@@ -91,6 +91,7 @@ def test_classification_before_analyze_reports_not_analyzed(three_songs_clip):
     body = response.json()
     assert body["analyzed"] is False
     assert body["regions"] == []
+    assert body["lanes"] == {"music": [], "singing": [], "speech": [], "applause_crowd": [], "laughter": []}
     assert set(body["thresholds"]) == {"music", "singing", "speech", "applause_crowd", "laughter", "silence_other"}
 
 
@@ -126,6 +127,14 @@ def test_analyze_runs_yamnet_and_populates_classification(three_songs_clip):
         assert region["end"] > region["start"]
         assert region["bucket"] in body["thresholds"]
         assert 0.0 <= region["score"] <= 1.0
+        assert region["secondary"] is None or region["secondary"] in body["thresholds"]
+        assert set(region["scores"]) == set(body["thresholds"])
+
+    assert set(body["lanes"]) == {"music", "singing", "speech", "applause_crowd", "laughter"}
+    for lane_regions in body["lanes"].values():
+        for region in lane_regions:
+            assert region["end"] > region["start"]
+            assert region["secondary"] is None
 
     # Retuning a threshold re-derives regions without rerunning inference —
     # exercised here by round-tripping through the endpoint successfully.

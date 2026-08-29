@@ -149,6 +149,15 @@ class ClassificationCache:
         with self._lock:
             return list(self._regions)
 
+    def get_lanes(self) -> dict[str, list[ClassificationRegion]]:
+        """Per-bucket independent presence spans for the timeline's detail
+        view — cheap post-processing over the cached per-frame scores, like
+        `rethreshold`, so it never touches ffmpeg or the model."""
+        with self._lock:
+            if self._frame_bucket_scores is None:
+                return {bucket: [] for bucket in classify.LANE_BUCKETS}
+            return classify.lane_regions(self._frame_bucket_scores, self._thresholds, self._total_duration)
+
     def store_result(
         self,
         frame_bucket_scores: list[dict[str, float]],
