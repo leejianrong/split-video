@@ -190,8 +190,8 @@ make dev
 make dev DIR=~/recordings PORT=9000
 ```
 
-Contributing? See [CONTRIBUTING.md](CONTRIBUTING.md) for running tests and
-the pre-push hook.
+Contributing? See [CONTRIBUTING.md](CONTRIBUTING.md) for running tests,
+the pre-push hook, and cutting a release.
 
 ## License
 
