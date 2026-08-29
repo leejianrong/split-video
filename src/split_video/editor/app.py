@@ -97,7 +97,7 @@ def create_app(root: Path, defaults: StateParams) -> FastAPI:
         session.total_duration = probe_duration(source)
         session.cache = SilenceCache(source)
         session.waveform_cache = WaveformCache(source)
-        session.classification_cache = ClassificationCache()
+        session.classification_cache = ClassificationCache(source)
         session.initial_silences = session.cache.get_raw_silences(defaults.silence_threshold)
         session.initial_segments = compute_segments(
             session.initial_silences,
