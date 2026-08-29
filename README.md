@@ -11,6 +11,8 @@ zoomable timeline for reviewing and hand-adjusting the proposed splits
 before committing to them. A plain `split` command is also available for
 scripting a one-shot split without a browser.
 
+![The visual editor: a video player above a zoomable timeline showing a waveform, colored segment bands, and split markers](docs/editor-screenshot.png)
+
 ## Quickstart (Docker)
 
 No Python/uv/ffmpeg setup required — the image is published on GHCR
@@ -188,23 +190,13 @@ make dev
 make dev DIR=~/recordings PORT=9000
 ```
 
-### Tests
+Contributing? See [CONTRIBUTING.md](CONTRIBUTING.md) for running tests and
+the pre-push hook.
 
-```bash
-uv run pytest
-```
+## License
 
-A few tests exercise real YAMNet inference and skip automatically if you
-haven't run `make fetch-model`.
+[Apache License 2.0](LICENSE).
 
-### Pre-push hook
+## Questions or issues?
 
-A git hook mirrors the fast parts of CI (unit tests, no `ffmpeg` required)
-before every push. Install it once per clone:
-
-```bash
-git config core.hooksPath .githooks
-```
-
-Skip it for a one-off, scoped exception with `git push --no-verify`. CI
-still runs the full suite regardless, so the bypass is safe.
+Open a [GitHub issue](https://github.com/leejianrong/split-video/issues).
