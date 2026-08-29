@@ -5,5 +5,11 @@
 
 set -e
 
+echo "pre-push: running ruff check..."
+uv run ruff check .
+
+echo "pre-push: running ruff format --check..."
+uv run ruff format --check .
+
 echo "pre-push: running unit tests..."
 uv run pytest tests/unit
