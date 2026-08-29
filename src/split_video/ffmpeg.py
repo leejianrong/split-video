@@ -36,9 +36,12 @@ def probe_duration(path: Path) -> float:
     result = subprocess.run(
         [
             ffprobe,
-            "-v", "error",
-            "-show_entries", "format=duration",
-            "-of", "default=noprint_wrappers=1:nokey=1",
+            "-v",
+            "error",
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "default=noprint_wrappers=1:nokey=1",
             str(path),
         ],
         capture_output=True,
@@ -56,9 +59,12 @@ def detect_silence(path: Path, threshold: str, min_silence_duration: float) -> l
     result = subprocess.run(
         [
             ffmpeg,
-            "-i", str(path),
-            "-af", f"silencedetect=noise={threshold}:d={min_silence_duration}",
-            "-f", "null",
+            "-i",
+            str(path),
+            "-af",
+            f"silencedetect=noise={threshold}:d={min_silence_duration}",
+            "-f",
+            "null",
             "-",
         ],
         capture_output=True,
@@ -78,18 +84,24 @@ def extract_pcm_audio(path: Path, sample_rate: int = WAVEFORM_SAMPLE_RATE) -> by
     result = subprocess.run(
         [
             ffmpeg,
-            "-i", str(path),
+            "-i",
+            str(path),
             "-vn",
-            "-ac", "1",
-            "-ar", str(sample_rate),
-            "-f", "s16le",
+            "-ac",
+            "1",
+            "-ar",
+            str(sample_rate),
+            "-f",
+            "s16le",
             "-",
         ],
         capture_output=True,
         check=False,
     )
     if result.returncode != 0:
-        raise ExtractError(f"ffmpeg failed to decode audio from '{path.name}': {result.stderr.decode(errors='replace').strip()[-2000:]}")
+        raise ExtractError(
+            f"ffmpeg failed to decode audio from '{path.name}': {result.stderr.decode(errors='replace').strip()[-2000:]}"
+        )
     return result.stdout
 
 

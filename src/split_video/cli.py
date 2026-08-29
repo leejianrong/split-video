@@ -74,12 +74,8 @@ def split(
     overwrite: bool = typer.Option(
         False, "--overwrite", help="Allow overwriting existing files in the output directory."
     ),
-    dry_run: bool = typer.Option(
-        False, "--dry-run", help="Print detected segments; write no files."
-    ),
-    manifest: bool = typer.Option(
-        True, "--manifest/--no-manifest", help="Write manifest.json alongside output files."
-    ),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Print detected segments; write no files."),
+    manifest: bool = typer.Option(True, "--manifest/--no-manifest", help="Write manifest.json alongside output files."),
     verbose: bool = typer.Option(
         False, "--verbose", "-v", help="Show ffmpeg commands and raw silencedetect output for debugging."
     ),
@@ -185,9 +181,7 @@ def edit(
         "127.0.0.1", "--host", help="Interface to bind the local editor server to (use 0.0.0.0 in Docker)."
     ),
     port: int = typer.Option(8765, "--port", help="Port for the local editor server."),
-    silence_threshold: float = typer.Option(
-        -35.0, "--silence-threshold", help="Initial silence threshold in dB."
-    ),
+    silence_threshold: float = typer.Option(-35.0, "--silence-threshold", help="Initial silence threshold in dB."),
     min_silence_duration: float = typer.Option(
         2.0,
         "--min-silence-duration",

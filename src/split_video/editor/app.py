@@ -287,9 +287,7 @@ def create_app(root: Path, defaults: StateParams) -> FastAPI:
     # populated yet, drop a placeholder so the mount doesn't error.
     STATIC_DIR.mkdir(parents=True, exist_ok=True)
     if not any(STATIC_DIR.iterdir()):
-        (STATIC_DIR / "index.html").write_text(
-            "<!doctype html><title>split-video editor</title><p>loading...</p>"
-        )
+        (STATIC_DIR / "index.html").write_text("<!doctype html><title>split-video editor</title><p>loading...</p>")
     app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")
 
     return app

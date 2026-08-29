@@ -22,13 +22,24 @@ def _make_clip(path, specs):
     concat_filter = "".join(filter_parts) + f"concat=n={len(specs)}:v=0:a=1[aout]"
 
     cmd = [
-        "ffmpeg", "-y",
+        "ffmpeg",
+        "-y",
         *inputs,
-        "-filter_complex", concat_filter,
-        "-map", f"{video_index}:v",
-        "-map", "[aout]",
+        "-filter_complex",
+        concat_filter,
+        "-map",
+        f"{video_index}:v",
+        "-map",
+        "[aout]",
         "-shortest",
-        "-c:v", "libx264", "-g", "25", "-keyint_min", "25", "-c:a", "aac",
+        "-c:v",
+        "libx264",
+        "-g",
+        "25",
+        "-keyint_min",
+        "25",
+        "-c:a",
+        "aac",
         str(path),
     ]
     result = subprocess.run(cmd, capture_output=True, text=True, check=False)
@@ -41,8 +52,10 @@ def three_songs_clip(tmp_path):
     _make_clip(
         path,
         [
-            ("tone", 5), ("silence", 3),
-            ("tone", 5), ("silence", 3),
+            ("tone", 5),
+            ("silence", 3),
+            ("tone", 5),
+            ("silence", 3),
             ("tone", 5),
         ],
     )
@@ -57,7 +70,9 @@ def quiet_bridge_clip(tmp_path):
     _make_clip(
         path,
         [
-            ("tone", 5), ("silence", 0.5), ("tone", 5),
+            ("tone", 5),
+            ("silence", 0.5),
+            ("tone", 5),
         ],
     )
     return path
@@ -69,7 +84,11 @@ def leading_trailing_silence_clip(tmp_path):
     _make_clip(
         path,
         [
-            ("silence", 2), ("tone", 5), ("silence", 3), ("tone", 5), ("silence", 2),
+            ("silence", 2),
+            ("tone", 5),
+            ("silence", 3),
+            ("tone", 5),
+            ("silence", 2),
         ],
     )
     return path

@@ -20,7 +20,9 @@ import urllib.request
 from pathlib import Path
 
 DEFAULT_OUTPUT_DIR = Path(__file__).resolve().parent.parent / "src" / "split_video" / "editor" / "models"
-CLASS_MAP_URL = "https://raw.githubusercontent.com/tensorflow/models/master/research/audioset/yamnet/yamnet_class_map.csv"
+CLASS_MAP_URL = (
+    "https://raw.githubusercontent.com/tensorflow/models/master/research/audioset/yamnet/yamnet_class_map.csv"
+)
 KAGGLE_MODEL_HANDLE = "google/yamnet/tfLite/classification-tflite"
 
 
