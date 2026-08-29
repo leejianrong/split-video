@@ -49,6 +49,9 @@ export function createTimeline({
   let dragging = null; // { index, pointerId, tabEl }
   let waveformBuckets = [];
   let classificationRegions = [];
+  let classificationLanes = {};
+  let classificationThresholds = {};
+  let classificationMode = "coarse"; // or "detail" — see setClassificationMode
 
   function notifyChange() {
     if (onChange) onChange();
@@ -184,6 +187,60 @@ export function createTimeline({
     tabEl.addEventListener("pointercancel", onUp);
   }
 
+  // A real (non-native) hover tooltip for the classification row: every
+  // bucket's score for the hovered region, not just its winner, since the
+  // underlying classification is multi-label even where the coarse view
+  // only draws one color.
+  const BUCKET_DISPLAY_NAME = {
+    music: "Music",
+    singing: "Singing",
+    speech: "Speech",
+    applause_crowd: "Applause/crowd",
+    laughter: "Laughter",
+    silence_other: "Silence/other",
+  };
+
+  function showClassificationTooltip(anchorEl, region) {
+    const tooltip = document.getElementById("classification-tooltip");
+    if (!tooltip) return;
+    const rows = Object.entries(region.scores)
+      .filter(([bucket]) => bucket !== "silence_other")
+      .sort((a, b) => b[1] - a[1]);
+
+    let html = `<div class="tt-time">${formatTime(region.start, state.duration)} – ${formatTime(region.end, state.duration)}</div>`;
+    for (const [bucket, score] of rows) {
+      const cleared = score >= (classificationThresholds[bucket] ?? 0);
+      html += `<div class="tt-row${cleared ? " cleared" : ""}">
+        <span class="swatch bucket-${bucket}"></span>
+        <span class="tt-name">${BUCKET_DISPLAY_NAME[bucket] || bucket}</span>
+        <span class="tt-pct">${Math.round(score * 100)}%</span>
+      </div>`;
+    }
+    tooltip.innerHTML = html;
+    tooltip.classList.add("visible");
+
+    const anchorRect = anchorEl.getBoundingClientRect();
+    const tooltipRect = tooltip.getBoundingClientRect();
+    let left = anchorRect.left + anchorRect.width / 2 - tooltipRect.width / 2;
+    left = Math.max(8, Math.min(left, window.innerWidth - tooltipRect.width - 8));
+    tooltip.style.left = `${left}px`;
+
+    // Prefer above the bar; flip below if there isn't room (e.g. hovering
+    // a region near the top of the page).
+    const above = anchorRect.top - tooltipRect.height - 10;
+    tooltip.style.top = `${above < 8 ? anchorRect.bottom + 10 : above}px`;
+  }
+
+  function hideClassificationTooltip() {
+    const tooltip = document.getElementById("classification-tooltip");
+    if (tooltip) tooltip.classList.remove("visible");
+  }
+
+  function attachClassificationTooltip(el, region) {
+    el.addEventListener("mouseenter", () => showClassificationTooltip(el, region));
+    el.addEventListener("mouseleave", hideClassificationTooltip);
+  }
+
   // Unlike the waveform, classification regions are coarse (merged
   // contiguous same-bucket spans — tens to low hundreds, not thousands), so
   // plain positioned DOM nodes work fine here: no canvas size limits to
@@ -194,13 +251,56 @@ export function createTimeline({
     div.className = `classification-region bucket-${region.bucket}`;
     div.style.left = `${region.start * pxPerSec}px`;
     div.style.width = `${Math.max(0, (region.end - region.start) * pxPerSec)}px`;
-    div.title = `${region.bucket.replace("_", "/")} (${Math.round(region.score * 100)}%)`;
+    // A small corner dot hints that another bucket also clears its own
+    // threshold somewhere in this region (singing over music, crowd noise
+    // during a song) without needing a lane of its own — hover for detail.
+    if (region.secondary) {
+      const marker = document.createElement("div");
+      marker.className = `secondary-marker bucket-${region.secondary}`;
+      div.appendChild(marker);
+    }
+    attachClassificationTooltip(div, region);
     return div;
+  }
+
+  // Detail view: one independent lane per bucket (excluding the
+  // silence/other fallback), each judged only against its own threshold —
+  // so overlapping labels are visible simultaneously instead of collapsing
+  // to a single winner per frame.
+  const LANE_BUCKETS = ["music", "singing", "speech", "applause_crowd", "laughter"];
+  const LANE_HEIGHT = 7;
+  const LANE_GAP = 2;
+  const LANE_TOP_MARGIN = 4;
+
+  function makeLaneSegment(bucket, region, laneIndex) {
+    const div = document.createElement("div");
+    div.className = `lane-segment bucket-${bucket}`;
+    div.style.left = `${region.start * pxPerSec}px`;
+    div.style.width = `${Math.max(0, (region.end - region.start) * pxPerSec)}px`;
+    div.style.top = `${LANE_TOP_MARGIN + laneIndex * (LANE_HEIGHT + LANE_GAP)}px`;
+    div.style.height = `${LANE_HEIGHT}px`;
+    attachClassificationTooltip(div, region);
+    return div;
+  }
+
+  function renderLanes() {
+    const wrap = document.createElement("div");
+    wrap.className = "lanes-wrap";
+    LANE_BUCKETS.forEach((bucket, laneIndex) => {
+      for (const region of classificationLanes[bucket] || []) {
+        wrap.appendChild(makeLaneSegment(bucket, region, laneIndex));
+      }
+    });
+    classificationRow.appendChild(wrap);
   }
 
   function renderClassification() {
     if (!classificationRow) return;
     classificationRow.innerHTML = "";
+    if (classificationMode === "detail") {
+      renderLanes();
+      return;
+    }
     for (const region of classificationRegions) {
       // The fallback bucket (nothing confidently classified) is left blank
       // rather than drawn, so it reads as "no signal" instead of a 6th color.
@@ -418,9 +518,17 @@ export function createTimeline({
       waveformBuckets = buckets || [];
       renderWaveform();
     },
-    setClassification: (regions) => {
-      classificationRegions = regions || [];
+    setClassification: (data) => {
+      classificationRegions = (data && data.regions) || [];
+      classificationLanes = (data && data.lanes) || {};
+      classificationThresholds = (data && data.thresholds) || {};
       renderClassification();
     },
+    setClassificationMode: (mode) => {
+      classificationMode = mode;
+      viewport.classList.toggle("detail-mode", mode === "detail");
+      renderClassification();
+    },
+    getClassificationMode: () => classificationMode,
   };
 }

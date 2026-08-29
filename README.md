@@ -11,6 +11,8 @@ zoomable timeline for reviewing and hand-adjusting the proposed splits
 before committing to them. A plain `split` command is also available for
 scripting a one-shot split without a browser.
 
+![The visual editor: a video player above a zoomable timeline showing a waveform, colored segment bands, and split markers](docs/editor-screenshot.png)
+
 ## Quickstart (Docker)
 
 No Python/uv/ffmpeg setup required — the image is published on GHCR
@@ -97,6 +99,11 @@ In the editor:
   [Development](#development)) and the result is cached per file.
 - **Export** writes the split files and `manifest.json` right there, with a
   progress bar while it runs.
+- Silence detection, the waveform, and audio classification are all cached
+  to disk in a `.split-video-cache/` folder next to whatever file you
+  opened — closing the editor and reopening the same recording later skips
+  straight past re-decoding audio or rerunning YAMNet. That folder is
+  regenerable scratch space, not something to check in.
 
 Useful flags: `--host`, `--port` (default `8765`), `--no-browser`, plus the
 same `--silence-threshold`/`--min-silence-duration`/`--min-song-length`/
@@ -183,37 +190,13 @@ make dev
 make dev DIR=~/recordings PORT=9000
 ```
 
-### Tests
+Contributing? See [CONTRIBUTING.md](CONTRIBUTING.md) for running tests,
+the pre-push hook, and cutting a release.
 
-```bash
-uv run pytest
-```
+## License
 
-A few tests exercise real YAMNet inference and skip automatically if you
-haven't run `make fetch-model`.
+[Apache License 2.0](LICENSE).
 
-### Pre-push hook
+## Questions or issues?
 
-A git hook mirrors the fast parts of CI (unit tests, no `ffmpeg` required)
-before every push. Install it once per clone:
-
-```bash
-git config core.hooksPath .githooks
-```
-
-Skip it for a one-off, scoped exception with `git push --no-verify`. CI
-still runs the full suite regardless, so the bypass is safe.
-
-### Releasing
-
-Every push to `main` publishes `ghcr.io/leejianrong/split-video:latest`
-and a `:sha-<short>` tag — that covers ordinary day-to-day changes. To cut
-a version people can pin to, bump `version` in `pyproject.toml` and tag
-the commit it lands on:
-
-```bash
-git tag -a v0.2.0 -m "0.2.0"
-git push origin v0.2.0
-```
-
-Pushing a `vX.Y.Z` tag additionally publishes `:X.Y.Z` and `:X.Y` images.
+Open a [GitHub issue](https://github.com/leejianrong/split-video/issues).

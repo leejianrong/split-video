@@ -22,3 +22,7 @@ wheels/
 # YAMNet model assets — fetched via `make fetch-model` / the Docker build,
 # not vendored (see scripts/fetch_yamnet_model.py)
 /src/split_video/editor/models/
+
+# Persisted editor analysis caches (silence/waveform/classification),
+# written as sidecars next to whatever video was opened for editing
+.split-video-cache/

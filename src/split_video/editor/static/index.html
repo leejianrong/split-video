@@ -58,12 +58,15 @@
       </div>
     </div>
 
-    <div id="classification-legend" class="classification-legend hidden">
-      <span class="legend-item"><span class="swatch bucket-music"></span>Music</span>
-      <span class="legend-item"><span class="swatch bucket-singing"></span>Singing</span>
-      <span class="legend-item"><span class="swatch bucket-speech"></span>Speech</span>
-      <span class="legend-item"><span class="swatch bucket-applause_crowd"></span>Applause/crowd</span>
-      <span class="legend-item"><span class="swatch bucket-laughter"></span>Laughter</span>
+    <div id="classification-toolbar" class="classification-toolbar hidden">
+      <div id="classification-legend" class="classification-legend">
+        <span class="legend-item"><span class="swatch bucket-music"></span>Music</span>
+        <span class="legend-item"><span class="swatch bucket-singing"></span>Singing</span>
+        <span class="legend-item"><span class="swatch bucket-speech"></span>Speech</span>
+        <span class="legend-item"><span class="swatch bucket-applause_crowd"></span>Applause/crowd</span>
+        <span class="legend-item"><span class="swatch bucket-laughter"></span>Laughter</span>
+      </div>
+      <button id="classification-detail-toggle" class="btn" title="Show every overlapping label in its own lane">Show detail lanes</button>
     </div>
 
     <section class="controls-panel">
@@ -99,6 +102,7 @@
 
   <div id="export-modal" class="modal hidden"></div>
   <div id="app-overlay" class="overlay hidden"></div>
+  <div id="classification-tooltip" class="classification-tooltip"></div>
 
   <script type="module" src="main.js"></script>
 </body>

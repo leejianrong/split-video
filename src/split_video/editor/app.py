@@ -15,6 +15,7 @@ from split_video.editor.browse import (
     resolve_within_root,
 )
 from split_video.editor.cache import ClassificationCache, SilenceCache, WaveformCache
+from split_video.editor.classify import ClassificationRegion
 from split_video.editor.jobs import (
     AnalysisJobStore,
     JobStore,
@@ -97,7 +98,7 @@ def create_app(root: Path, defaults: StateParams) -> FastAPI:
         session.total_duration = probe_duration(source)
         session.cache = SilenceCache(source)
         session.waveform_cache = WaveformCache(source)
-        session.classification_cache = ClassificationCache()
+        session.classification_cache = ClassificationCache(source)
         session.initial_silences = session.cache.get_raw_silences(defaults.silence_threshold)
         session.initial_segments = compute_segments(
             session.initial_silences,
@@ -173,21 +174,36 @@ def create_app(root: Path, defaults: StateParams) -> FastAPI:
         peaks = session.waveform_cache.get_peaks()
         return WaveformResponse(buckets=peaks.buckets)
 
+    def _region_out(region: ClassificationRegion) -> ClassificationRegionOut:
+        return ClassificationRegionOut(
+            start=region.start,
+            end=region.end,
+            bucket=region.bucket,
+            score=region.score,
+            secondary=region.secondary,
+            scores=region.bucket_scores,
+        )
+
     def _classification_out(cache: ClassificationCache, analyzed: bool) -> ClassificationResponse:
         return ClassificationResponse(
             analyzed=analyzed,
-            regions=[
-                ClassificationRegionOut(start=r.start, end=r.end, bucket=r.bucket, score=r.score)
-                for r in cache.get_regions()
-            ],
+            regions=[_region_out(r) for r in cache.get_regions()],
+            lanes={bucket: [_region_out(r) for r in regions] for bucket, regions in cache.get_lanes().items()},
             thresholds=cache.get_thresholds(),
         )
 
     @app.post("/api/analyze", response_model=AnalyzeStartResponse)
     def analyze() -> AnalyzeStartResponse:
         source = _require_open()
-        thresholds = session.classification_cache.get_thresholds()
-        job_id = start_audio_analysis(analysis_job_store, source, session.classification_cache, thresholds)
+        cache = session.classification_cache
+        if cache.is_analyzed:
+            # Already have a result — this session, or loaded from a
+            # sidecar cache on disk. Report a job that's already "done"
+            # instead of re-decoding audio and rerunning inference.
+            job_id, _ = analysis_job_store.create_done(total=0)
+            return AnalyzeStartResponse(job_id=job_id)
+        thresholds = cache.get_thresholds()
+        job_id = start_audio_analysis(analysis_job_store, source, cache, thresholds)
         return AnalyzeStartResponse(job_id=job_id)
 
     @app.get("/api/analyze/{job_id}", response_model=AnalyzeStatusResponse)
