@@ -71,11 +71,14 @@ class ClassificationRegionOut(BaseModel):
     end: float
     bucket: str
     score: float
+    secondary: str | None
+    scores: dict[str, float]
 
 
 class ClassificationResponse(BaseModel):
     analyzed: bool
     regions: list[ClassificationRegionOut]
+    lanes: dict[str, list[ClassificationRegionOut]]
     thresholds: dict[str, float]
 
 
