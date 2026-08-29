@@ -203,3 +203,17 @@ git config core.hooksPath .githooks
 
 Skip it for a one-off, scoped exception with `git push --no-verify`. CI
 still runs the full suite regardless, so the bypass is safe.
+
+### Releasing
+
+Every push to `main` publishes `ghcr.io/leejianrong/split-video:latest`
+and a `:sha-<short>` tag — that covers ordinary day-to-day changes. To cut
+a version people can pin to, bump `version` in `pyproject.toml` and tag
+the commit it lands on:
+
+```bash
+git tag -a v0.2.0 -m "0.2.0"
+git push origin v0.2.0
+```
+
+Pushing a `vX.Y.Z` tag additionally publishes `:X.Y.Z` and `:X.Y` images.
