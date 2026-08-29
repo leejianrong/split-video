@@ -1,6 +1,6 @@
 [project]
 name = "split-video"
-version = "0.1.0"
+version = "0.2.0"
 description = "Split a long recording of back-to-back songs into individual files by detecting silence gaps"
 readme = "README.md"
 license = "Apache-2.0"
