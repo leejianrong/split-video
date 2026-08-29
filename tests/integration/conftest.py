@@ -31,7 +31,7 @@ def _make_clip(path, specs):
         "-c:v", "libx264", "-g", "25", "-keyint_min", "25", "-c:a", "aac",
         str(path),
     ]
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    result = subprocess.run(cmd, capture_output=True, text=True, check=False)
     assert result.returncode == 0, result.stderr
 
 

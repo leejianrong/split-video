@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import itertools
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
@@ -302,6 +303,6 @@ def _validate_segments(pairs: list[tuple[float, float]]) -> None:
     for start, end in pairs:
         if end <= start:
             raise HTTPException(status_code=422, detail=f"segment end must be after start: ({start}, {end})")
-    for (_, end), (next_start, _) in zip(pairs, pairs[1:]):
+    for (_, end), (next_start, _) in itertools.pairwise(pairs):
         if next_start < end:
             raise HTTPException(status_code=422, detail="segments must not overlap")

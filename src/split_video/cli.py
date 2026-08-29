@@ -6,7 +6,6 @@ import threading
 import webbrowser
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
 
 import typer
 import uvicorn
@@ -15,7 +14,14 @@ from rich.table import Table
 
 from split_video.editor.app import create_app
 from split_video.editor.schemas import StateParams
-from split_video.ffmpeg import ExtractError, FfmpegNotFoundError, ProbeError, detect_silence, extract_segment, probe_duration
+from split_video.ffmpeg import (
+    ExtractError,
+    FfmpegNotFoundError,
+    ProbeError,
+    detect_silence,
+    extract_segment,
+    probe_duration,
+)
 from split_video.naming import build_manifest, segment_filename, write_manifest
 from split_video.segments import compute_segments
 from split_video.timefmt import format_timestamp
@@ -50,12 +56,12 @@ def split(
         "--silence-padding",
         help="Seconds of near-silence to retain on each side of a cut, to avoid clipping a quiet attack or decay transient.",
     ),
-    output_dir: Optional[Path] = typer.Option(
+    output_dir: Path | None = typer.Option(
         None,
         "--output-dir",
         help="Directory to write split files and manifest into. [default: '<source_basename>_split/' next to SOURCE]",
     ),
-    output_format: Optional[str] = typer.Option(
+    output_format: str | None = typer.Option(
         None,
         "--format",
         help="Force output container/codec (e.g. 'mp4', 'mkv'). Implies re-encoding.",

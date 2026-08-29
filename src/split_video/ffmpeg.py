@@ -43,6 +43,7 @@ def probe_duration(path: Path) -> float:
         ],
         capture_output=True,
         text=True,
+        check=False,
     )
     if result.returncode != 0 or not result.stdout.strip():
         raise ProbeError(f"could not read '{path}': {result.stderr.strip()}")
@@ -62,6 +63,7 @@ def detect_silence(path: Path, threshold: str, min_silence_duration: float) -> l
         ],
         capture_output=True,
         text=True,
+        check=False,
     )
     return parse_silencedetect_output(result.stderr, total_duration)
 
@@ -84,6 +86,7 @@ def extract_pcm_audio(path: Path, sample_rate: int = WAVEFORM_SAMPLE_RATE) -> by
             "-",
         ],
         capture_output=True,
+        check=False,
     )
     if result.returncode != 0:
         raise ExtractError(f"ffmpeg failed to decode audio from '{path.name}': {result.stderr.decode(errors='replace').strip()[-2000:]}")
@@ -109,6 +112,6 @@ def extract_segment(
         args = [ffmpeg, "-y", "-ss", f"{start:.3f}", "-i", str(path), "-t", f"{duration:.3f}", "-c", "copy"]
 
     args.append(str(out_path))
-    result = subprocess.run(args, capture_output=True, text=True)
+    result = subprocess.run(args, capture_output=True, text=True, check=False)
     if result.returncode != 0:
         raise ExtractError(f"ffmpeg failed for '{out_path.name}': {result.stderr.strip()[-2000:]}")
