@@ -4,6 +4,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 import split_video.editor.cache as cache_module
+from split_video.editor import classify as classify_module
 from split_video.editor.app import create_app
 from split_video.editor.classify import MODEL_PATH
 from split_video.editor.schemas import StateParams
@@ -141,6 +142,33 @@ def test_analyze_runs_yamnet_and_populates_classification(three_songs_clip):
     response = client.post("/api/classification/thresholds", json={"thresholds": {"music": 0.999}})
     assert response.status_code == 200
     assert response.json()["thresholds"]["music"] == 0.999
+
+
+def test_analyze_is_a_no_op_once_already_analyzed(three_songs_clip, monkeypatch):
+    call_count = {"n": 0}
+
+    def fake_classify_audio(pcm, model, labels, thresholds, on_progress=None):
+        call_count["n"] += 1
+        return [], [{"music": 0.1}], 1.0
+
+    monkeypatch.setattr(classify_module, "get_model_and_labels", lambda: (object(), object()))
+    monkeypatch.setattr(classify_module, "classify_audio", fake_classify_audio)
+
+    client = _client(three_songs_clip)
+
+    first = client.post("/api/analyze")
+    assert first.status_code == 200
+    status = _poll_until_done(client, first.json()["job_id"], status_path=f"/api/analyze/{first.json()['job_id']}")
+    assert status["status"] == "done", status.get("error")
+    assert call_count["n"] == 1
+
+    # A second click (or a page reload hitting an already-analyzed source)
+    # should report done immediately rather than rerunning inference.
+    second = client.post("/api/analyze")
+    assert second.status_code == 200
+    status = _poll_until_done(client, second.json()["job_id"], status_path=f"/api/analyze/{second.json()['job_id']}")
+    assert status["status"] == "done"
+    assert call_count["n"] == 1
 
 
 def test_segments_endpoint_is_pure_and_never_touches_ffmpeg(three_songs_clip, monkeypatch):

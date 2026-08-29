@@ -153,6 +153,19 @@ class AnalysisJobStore:
         with self._lock:
             return self._jobs.get(job_id)
 
+    def create_done(self, total: int) -> tuple[str, AnalysisJob]:
+        """A job that reports as already finished — for when the caller
+        (see `analyze()` in app.py) has nothing new to run, e.g. the
+        classification cache was already populated (this session, or
+        loaded from a sidecar cache on disk) before "Analyze audio" was
+        clicked. Keeps the frontend's poll-until-done flow unchanged."""
+        job_id, job = self.create()
+        with job.lock:
+            job.status = "done"
+            job.completed = total
+            job.total = total
+        return job_id, job
+
 
 def start_audio_analysis(
     job_store: AnalysisJobStore,

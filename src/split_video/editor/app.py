@@ -195,8 +195,15 @@ def create_app(root: Path, defaults: StateParams) -> FastAPI:
     @app.post("/api/analyze", response_model=AnalyzeStartResponse)
     def analyze() -> AnalyzeStartResponse:
         source = _require_open()
-        thresholds = session.classification_cache.get_thresholds()
-        job_id = start_audio_analysis(analysis_job_store, source, session.classification_cache, thresholds)
+        cache = session.classification_cache
+        if cache.is_analyzed:
+            # Already have a result — this session, or loaded from a
+            # sidecar cache on disk. Report a job that's already "done"
+            # instead of re-decoding audio and rerunning inference.
+            job_id, _ = analysis_job_store.create_done(total=0)
+            return AnalyzeStartResponse(job_id=job_id)
+        thresholds = cache.get_thresholds()
+        job_id = start_audio_analysis(analysis_job_store, source, cache, thresholds)
         return AnalyzeStartResponse(job_id=job_id)
 
     @app.get("/api/analyze/{job_id}", response_model=AnalyzeStatusResponse)

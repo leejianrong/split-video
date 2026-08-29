@@ -21,21 +21,30 @@ export function createAnalysisControl({ analyzeBtn, toolbarEl, detailToggleBtn, 
   function reveal(data) {
     timeline.setClassification(data);
     toolbarEl.classList.remove("hidden");
+    // A click from here on is a cheap no-op (the backend already has a
+    // result, cached this session or loaded from disk) — reword the
+    // button so that's clear rather than implying more work is needed.
+    analyzeBtn.textContent = "Re-analyze audio";
   }
 
+  // Checks status immediately rather than always sleeping first, so an
+  // already-analyzed source (the backend reports a job as instantly
+  // "done" — see analyze() in app.py) doesn't sit at "Analyzing…" for a
+  // full poll interval before resolving.
   async function poll(jobId) {
-    let status;
-    do {
-      await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
-      status = await api.getAnalysisStatus(jobId);
+    let status = await api.getAnalysisStatus(jobId);
+    while (status.status === "running") {
       if (status.total > 0) {
         analyzeBtn.textContent = `Analyzing… ${Math.round((status.completed / status.total) * 100)}%`;
       }
-    } while (status.status === "running");
+      await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
+      status = await api.getAnalysisStatus(jobId);
+    }
     return status;
   }
 
   async function run() {
+    const wasAnalyzed = !toolbarEl.classList.contains("hidden");
     analyzeBtn.disabled = true;
     analyzeBtn.textContent = "Analyzing…";
     try {
@@ -50,7 +59,11 @@ export function createAnalysisControl({ analyzeBtn, toolbarEl, detailToggleBtn, 
       alert(`Audio analysis failed: ${err.message}`);
     } finally {
       analyzeBtn.disabled = false;
-      analyzeBtn.textContent = "Analyze audio";
+      // reveal() already relabeled the button on success; only restore a
+      // label here if that never happened (the error paths above).
+      if (analyzeBtn.textContent.startsWith("Analyzing")) {
+        analyzeBtn.textContent = wasAnalyzed ? "Re-analyze audio" : "Analyze audio";
+      }
     }
   }
 
