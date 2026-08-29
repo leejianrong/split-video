@@ -97,6 +97,11 @@ In the editor:
   [Development](#development)) and the result is cached per file.
 - **Export** writes the split files and `manifest.json` right there, with a
   progress bar while it runs.
+- Silence detection, the waveform, and audio classification are all cached
+  to disk in a `.split-video-cache/` folder next to whatever file you
+  opened — closing the editor and reopening the same recording later skips
+  straight past re-decoding audio or rerunning YAMNet. That folder is
+  regenerable scratch space, not something to check in.
 
 Useful flags: `--host`, `--port` (default `8765`), `--no-browser`, plus the
 same `--silence-threshold`/`--min-silence-duration`/`--min-song-length`/
