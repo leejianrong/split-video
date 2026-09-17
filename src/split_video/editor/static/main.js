@@ -9,6 +9,7 @@ import { createControls } from "./controls.js";
 import { createExportModal } from "./exportModal.js";
 import { createFilePicker } from "./filePicker.js";
 import { createAnalysisControl } from "./analysis.js";
+import { createShortcuts } from "./shortcuts.js";
 
 function updateHeader() {
   document.getElementById("filename").textContent = state.filename;
@@ -118,6 +119,13 @@ async function bootEditor() {
   const videoEl = document.getElementById("video");
   videoEl.src = state.videoUrl;
   const player = createPlayer(videoEl);
+
+  createShortcuts({
+    player,
+    shortcutsBtn: document.getElementById("shortcuts-btn"),
+    modalEl: document.getElementById("shortcuts-modal"),
+    overlayEl: document.getElementById("app-overlay"),
+  });
 
   const timeline = createTimeline({
     viewport: document.getElementById("timeline-viewport"),

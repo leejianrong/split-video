@@ -383,7 +383,17 @@ export function createTimeline({
       const x = Math.round(px * dpr);
       const yTop = mid - hi * mid;
       const yBot = mid - lo * mid;
-      ctx.fillRect(x, yTop, barWidth, Math.max(1, yBot - yTop));
+      // A silent (or near-silent) stretch collapses yTop/yBot to about the
+      // same value, and flooring at 1 *device* pixel is too thin to see on
+      // a high-DPI screen (half a CSS pixel at 2x) — it reads as a gap in
+      // the waveform rather than the flat, quiet region it actually is. Floor
+      // at a couple of CSS pixels instead, centered on the midline, so quiet
+      // audio still draws a clearly visible flat line.
+      const minHeight = 2 * dpr;
+      const rawHeight = yBot - yTop;
+      const height = Math.max(minHeight, rawHeight);
+      const y = rawHeight >= minHeight ? yTop : mid - minHeight / 2;
+      ctx.fillRect(x, y, barWidth, height);
     }
   }
 
