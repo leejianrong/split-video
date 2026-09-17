@@ -312,6 +312,30 @@ def test_open_rejects_path_escaping_root(three_songs_clip, tmp_path):
     assert response.status_code == 400
 
 
+def test_saved_splits_are_not_resumed_before_a_save(three_songs_clip):
+    client = _client(three_songs_clip)
+    state = client.get("/api/state").json()
+    assert state["resumed"] is False
+
+
+def test_saving_splits_is_resumed_by_a_later_session(three_songs_clip):
+    client = _client(three_songs_clip)
+    custom_splits = [{"start": 0.0, "end": 6.0}, {"start": 6.0, "end": 13.0}, {"start": 13.0, "end": 21.0}]
+
+    save_response = client.post("/api/project", json={"segments": custom_splits})
+    assert save_response.status_code == 200
+    assert save_response.json()["resumed"] is True
+    assert [{"start": s["start"], "end": s["end"]} for s in save_response.json()["segments"]] == custom_splits
+
+    # A brand new server process for the same file (the real-world case:
+    # `edit` is re-run later) should pick the saved splits back up instead
+    # of re-running silence detection from scratch.
+    reopened = _client(three_songs_clip)
+    state = reopened.get("/api/state").json()
+    assert state["resumed"] is True
+    assert [{"start": s["start"], "end": s["end"]} for s in state["segments"]] == custom_splits
+
+
 def _poll_until_done(client, job_id, status_path=None, timeout=30.0):
     status_path = status_path or f"/api/export/{job_id}"
     deadline = time.time() + timeout

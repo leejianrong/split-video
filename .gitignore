@@ -26,3 +26,7 @@ wheels/
 # Persisted editor analysis caches (silence/waveform/classification),
 # written as sidecars next to whatever video was opened for editing
 .split-video-cache/
+
+# Saved split points, written as a sidecar next to whatever video was
+# opened for editing — see editor/project_store.py
+*.split-video-project.json

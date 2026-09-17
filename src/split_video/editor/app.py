@@ -23,6 +23,9 @@ from split_video.editor.jobs import (
     start_audio_analysis,
     start_export,
 )
+from split_video.editor.project_store import SavedSegment
+from split_video.editor.project_store import load as load_project
+from split_video.editor.project_store import save as save_project
 from split_video.editor.schemas import (
     AnalyzeStartResponse,
     AnalyzeStatusResponse,
@@ -36,6 +39,7 @@ from split_video.editor.schemas import (
     ExportStartResponse,
     ExportStatusResponse,
     OpenRequest,
+    ProjectSaveRequest,
     RethresholdRequest,
     SegmentOut,
     SegmentsRequest,
@@ -78,6 +82,12 @@ class _Session:
         # that ffmpeg pass took, which looks exactly like a crashed editor.
         self.segments_ready = True
         self.segments_error: str | None = None
+        # Whether `initial_segments` came from a saved project file rather
+        # than fresh silence detection — see #14. Once resumed, the
+        # background scan below still fills in `initial_silences` (for the
+        # threshold sliders) but must not overwrite these with freshly
+        # detected segments.
+        self.resumed = False
 
 
 def create_app(root: Path, defaults: StateParams) -> FastAPI:
@@ -122,7 +132,8 @@ def create_app(root: Path, defaults: StateParams) -> FastAPI:
             return
         with session.lock:
             session.initial_silences = silences
-            session.initial_segments = segments
+            if not session.resumed:
+                session.initial_segments = segments
             session.segments_ready = True
 
     def _open(source: Path) -> None:
@@ -132,9 +143,18 @@ def create_app(root: Path, defaults: StateParams) -> FastAPI:
         session.waveform_cache = WaveformCache(source)
         session.classification_cache = ClassificationCache(source)
         session.initial_silences = []
-        session.initial_segments = []
         session.segments_error = None
-        session.segments_ready = False
+
+        saved = load_project(source)
+        if saved is not None:
+            session.initial_segments = [Segment(index=i + 1, start=s.start, end=s.end) for i, s in enumerate(saved)]
+            session.resumed = True
+            session.segments_ready = True  # already have splits to show — no need to wait on detection
+        else:
+            session.initial_segments = []
+            session.resumed = False
+            session.segments_ready = False
+
         thread = threading.Thread(
             target=_detect_initial_segments,
             args=(session.cache, session.total_duration),
@@ -154,6 +174,7 @@ def create_app(root: Path, defaults: StateParams) -> FastAPI:
                 segments=_segments_out(session.initial_segments),
                 segments_ready=session.segments_ready,
                 segments_error=session.segments_error,
+                resumed=session.resumed,
             )
 
     if root.is_file():
@@ -193,6 +214,16 @@ def create_app(root: Path, defaults: StateParams) -> FastAPI:
 
     @app.get("/api/state", response_model=StateResponse)
     def get_state() -> StateResponse:
+        return _state_response()
+
+    @app.post("/api/project", response_model=StateResponse)
+    def save_current_project(request: ProjectSaveRequest) -> StateResponse:
+        source = _require_open()
+        segments = [SavedSegment(start=s.start, end=s.end) for s in request.segments]
+        save_project(source, segments)
+        with session.lock:
+            session.initial_segments = [Segment(index=i + 1, start=s.start, end=s.end) for i, s in enumerate(segments)]
+            session.resumed = True
         return _state_response()
 
     @app.get("/media/source")
