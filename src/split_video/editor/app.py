@@ -51,7 +51,7 @@ from split_video.editor.schemas import (
     WaveformResponse,
 )
 from split_video.ffmpeg import probe_duration
-from split_video.naming import segment_filename
+from split_video.naming import resolve_export_filename
 from split_video.segments import Segment, compute_segments
 from split_video.silence import SilenceInterval
 
@@ -74,7 +74,10 @@ class _Session:
         self.waveform_cache: WaveformCache | None = None
         self.classification_cache: ClassificationCache | None = None
         self.initial_silences: list[SilenceInterval] = []
-        self.initial_segments: list[Segment] = []
+        # SavedSegment (not the plain core `Segment`) since these carry the
+        # editor-only label/color/included/export_name metadata from #19/#18
+        # alongside start/end — see project_store.py.
+        self.initial_segments: list[SavedSegment] = []
         # The initial silence scan (see `_open`) runs on a background thread
         # so opening a long recording can't block the HTTP server itself
         # from accepting connections — see #16: pointing `edit` straight at
@@ -101,8 +104,25 @@ def create_app(root: Path, defaults: StateParams) -> FastAPI:
     analysis_job_store = AnalysisJobStore()
     session = _Session()
 
-    def _segments_out(segments: list[Segment]) -> list[SegmentOut]:
-        return [SegmentOut(index=s.index, start=s.start, end=s.end, duration=s.duration) for s in segments]
+    def _segments_out(segments: list[SavedSegment]) -> list[SegmentOut]:
+        return [
+            SegmentOut(
+                index=i + 1,
+                start=s.start,
+                end=s.end,
+                duration=s.end - s.start,
+                label=s.label,
+                color=s.color,
+                included=s.included,
+                export_name=s.export_name,
+            )
+            for i, s in enumerate(segments)
+        ]
+
+    def _to_saved(segments: list[Segment]) -> list[SavedSegment]:
+        """Bare core `Segment`s (e.g. fresh silence detection) as
+        `SavedSegment`s with default (unset) editor metadata."""
+        return [SavedSegment(start=s.start, end=s.end) for s in segments]
 
     def _silences_out(silences: list[SilenceInterval]) -> list[SilenceIntervalOut]:
         return [SilenceIntervalOut(start=s.start, end=s.end) for s in silences]
@@ -133,7 +153,7 @@ def create_app(root: Path, defaults: StateParams) -> FastAPI:
         with session.lock:
             session.initial_silences = silences
             if not session.resumed:
-                session.initial_segments = segments
+                session.initial_segments = _to_saved(segments)
             session.segments_ready = True
 
     def _open(source: Path) -> None:
@@ -147,7 +167,7 @@ def create_app(root: Path, defaults: StateParams) -> FastAPI:
 
         saved = load_project(source)
         if saved is not None:
-            session.initial_segments = [Segment(index=i + 1, start=s.start, end=s.end) for i, s in enumerate(saved)]
+            session.initial_segments = saved
             session.resumed = True
             session.segments_ready = True  # already have splits to show — no need to wait on detection
         else:
@@ -219,10 +239,20 @@ def create_app(root: Path, defaults: StateParams) -> FastAPI:
     @app.post("/api/project", response_model=StateResponse)
     def save_current_project(request: ProjectSaveRequest) -> StateResponse:
         source = _require_open()
-        segments = [SavedSegment(start=s.start, end=s.end) for s in request.segments]
+        segments = [
+            SavedSegment(
+                start=s.start,
+                end=s.end,
+                label=s.label,
+                color=s.color,
+                included=s.included,
+                export_name=s.export_name,
+            )
+            for s in request.segments
+        ]
         save_project(source, segments)
         with session.lock:
-            session.initial_segments = [Segment(index=i + 1, start=s.start, end=s.end) for i, s in enumerate(segments)]
+            session.initial_segments = segments
             session.resumed = True
         return _state_response()
 
@@ -308,7 +338,7 @@ def create_app(root: Path, defaults: StateParams) -> FastAPI:
             request.min_song_length,
             request.padding,
         )
-        return SegmentsResponse(segments=_segments_out(computed))
+        return SegmentsResponse(segments=_segments_out(_to_saved(computed)))
 
     @app.post("/api/export", response_model=ExportStartResponse)
     def export(request: ExportRequest) -> ExportStartResponse:
@@ -318,7 +348,11 @@ def create_app(root: Path, defaults: StateParams) -> FastAPI:
 
         output_dir = source.with_name(f"{source.stem}_split")
         ext = source.suffix if request.output_format is None else f".{request.output_format.lstrip('.')}"
-        filenames = [segment_filename(i + 1, len(pairs), source.stem, ext) for i in range(len(pairs))]
+        filenames = [
+            resolve_export_filename(i + 1, len(pairs), source.stem, ext, s.name) for i, s in enumerate(request.segments)
+        ]
+        if len(set(filenames)) != len(filenames):
+            raise HTTPException(status_code=422, detail="export names must be unique across segments")
 
         if not request.overwrite:
             conflicts = [f for f in filenames if (output_dir / f).exists()]
@@ -335,6 +369,7 @@ def create_app(root: Path, defaults: StateParams) -> FastAPI:
             job_store,
             source,
             pairs,
+            filenames,
             output_dir,
             request.precise,
             request.output_format,

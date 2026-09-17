@@ -21,13 +21,19 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-FORMAT_VERSION = 1
+FORMAT_VERSION = 2
 
 
 @dataclass(frozen=True)
 class SavedSegment:
     start: float
     end: float
+    # Added in format version 2 (#19/#18) — all optional so a version-1 file
+    # (just start/end) still loads fine, with these at their defaults.
+    label: str = ""
+    color: str | None = None
+    included: bool = True
+    export_name: str | None = None
 
 
 def _project_path(source: Path) -> Path:
@@ -44,7 +50,17 @@ def load(source: Path) -> list[SavedSegment] | None:
     except (OSError, json.JSONDecodeError):
         return None
     try:
-        return [SavedSegment(start=float(s["start"]), end=float(s["end"])) for s in data["segments"]]
+        return [
+            SavedSegment(
+                start=float(s["start"]),
+                end=float(s["end"]),
+                label=str(s.get("label", "")),
+                color=s.get("color"),
+                included=bool(s.get("included", True)),
+                export_name=s.get("export_name"),
+            )
+            for s in data["segments"]
+        ]
     except (KeyError, TypeError, ValueError):
         return None
 
@@ -61,7 +77,17 @@ def save(source: Path, segments: list[SavedSegment]) -> None:
     payload = {
         "version": FORMAT_VERSION,
         "source_file": source.name,
-        "segments": [{"start": s.start, "end": s.end} for s in segments],
+        "segments": [
+            {
+                "start": s.start,
+                "end": s.end,
+                "label": s.label,
+                "color": s.color,
+                "included": s.included,
+                "export_name": s.export_name,
+            }
+            for s in segments
+        ],
     }
     tmp_path = path.parent / f"{path.name}.tmp"
     with tmp_path.open("w") as f:

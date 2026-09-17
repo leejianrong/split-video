@@ -25,6 +25,22 @@ export function createExportModal({ modalEl, overlayEl, openBtn }) {
     title.textContent = `Export ${segments.length} segment${segments.length === 1 ? "" : "s"}`;
     box.appendChild(title);
 
+    if (segments.length === 0) {
+      const p = document.createElement("p");
+      p.textContent = "Every segment is excluded — check at least one in the segment table before exporting.";
+      box.appendChild(p);
+      const actions = document.createElement("div");
+      actions.className = "modal-actions";
+      const closeBtn = document.createElement("button");
+      closeBtn.className = "btn";
+      closeBtn.textContent = "Close";
+      closeBtn.addEventListener("click", close);
+      actions.appendChild(closeBtn);
+      box.appendChild(actions);
+      modalEl.appendChild(box);
+      return;
+    }
+
     const preciseLabel = document.createElement("label");
     const preciseCheckbox = document.createElement("input");
     preciseCheckbox.type = "checkbox";
@@ -36,7 +52,7 @@ export function createExportModal({ modalEl, overlayEl, openBtn }) {
     list.className = "export-preview-list";
     segments.forEach((seg, i) => {
       const li = document.createElement("li");
-      const name = previewFilename(i + 1, segments.length);
+      const name = seg.exportName || previewFilename(i + 1, segments.length);
       li.textContent = `${name} — ${formatTime(seg.start, state.duration)} to ${formatTime(seg.end, state.duration)} (${formatTime(seg.duration, state.duration)})`;
       list.appendChild(li);
     });
@@ -60,7 +76,10 @@ export function createExportModal({ modalEl, overlayEl, openBtn }) {
   }
 
   function open() {
-    renderConfirm(derivedSegments());
+    // Only segments left checked in the segment table (#18) actually get
+    // exported — and numbered among themselves, matching how the backend
+    // numbers whatever list it's actually given.
+    renderConfirm(derivedSegments().filter((s) => s.included));
     modalEl.classList.remove("hidden");
   }
 
@@ -75,7 +94,7 @@ export function createExportModal({ modalEl, overlayEl, openBtn }) {
     let jobId;
     try {
       const res = await api.startExport({
-        segments: segments.map((s) => ({ start: s.start, end: s.end })),
+        segments: segments.map((s) => ({ start: s.start, end: s.end, name: s.exportName || null })),
         precise,
       });
       jobId = res.job_id;

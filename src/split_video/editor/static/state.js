@@ -24,7 +24,17 @@ export const state = {
   firstStart: 0,
   lastEnd: 0,
   splitPoints: [], // sorted, strictly between firstStart and lastEnd
+  // Per-segment editor metadata (#19 label/color, #18 include/export name),
+  // one entry per current segment, positionally aligned with
+  // derivedSegments() — segments have no identity of their own (see above),
+  // so a split/merge has to explicitly carry this along; see
+  // addSplitPoint/removeSplitPointAt below.
+  segmentMeta: [],
 };
+
+function defaultMeta() {
+  return { label: "", color: null, included: true, exportName: null };
+}
 
 // Minimum gap kept between any two boundaries (including firstStart/lastEnd)
 // so a drag/add can never produce a zero- or negative-length segment. This
@@ -37,25 +47,44 @@ export function loadSegments(segments) {
     state.firstStart = 0;
     state.lastEnd = state.duration;
     state.splitPoints = [];
+    state.segmentMeta = [];
     return;
   }
   state.firstStart = segments[0].start;
   state.lastEnd = segments[segments.length - 1].end;
   state.splitPoints = segments.slice(0, -1).map((s) => s.end);
+  state.segmentMeta = segments.map((s) => ({
+    label: s.label || "",
+    color: s.color || null,
+    included: s.included !== false,
+    exportName: s.export_name || null,
+  }));
 }
 
 export function derivedSegments() {
   const bounds = [state.firstStart, ...state.splitPoints, state.lastEnd];
   const segments = [];
   for (let i = 0; i < bounds.length - 1; i++) {
+    const meta = state.segmentMeta[i] || defaultMeta();
     segments.push({
       index: i + 1,
       start: bounds[i],
       end: bounds[i + 1],
       duration: bounds[i + 1] - bounds[i],
+      label: meta.label,
+      color: meta.color,
+      included: meta.included,
+      exportName: meta.exportName,
     });
   }
   return segments;
+}
+
+/** Update one segment's editor metadata (label/color/included/exportName —
+ * only the given keys are changed) by its current position. */
+export function updateSegmentMeta(index, patch) {
+  const current = state.segmentMeta[index] || defaultMeta();
+  state.segmentMeta[index] = { ...current, ...patch };
 }
 
 /** Whether a split point could be placed at time `t` (far enough from
@@ -72,6 +101,15 @@ export function canAddSplitPoint(t) {
  * is too close to an existing boundary to place one there. */
 export function addSplitPoint(t) {
   if (!canAddSplitPoint(t)) return null;
+  // The segment this new point falls inside (0-based) is about to become
+  // two segments — carry its label/color/included forward to both halves
+  // rather than losing them; a custom export name doesn't clearly apply to
+  // either half of a merged block, so that alone resets to default.
+  const segmentIndex = state.splitPoints.filter((sp) => sp < t).length;
+  const inherited = { ...(state.segmentMeta[segmentIndex] || defaultMeta()), exportName: null };
+  state.segmentMeta[segmentIndex] = inherited;
+  state.segmentMeta.splice(segmentIndex, 0, { ...inherited });
+
   state.splitPoints.push(t);
   state.splitPoints.sort((a, b) => a - b);
   return state.splitPoints.indexOf(t);
@@ -79,6 +117,9 @@ export function addSplitPoint(t) {
 
 export function removeSplitPointAt(index) {
   state.splitPoints.splice(index, 1);
+  // Removing the boundary between segment `index` and `index + 1` merges
+  // them — keep the earlier one's metadata, drop the later one's.
+  state.segmentMeta.splice(index + 1, 1);
 }
 
 /** Move the split point at `index` to `newT`, clamped so it can never cross

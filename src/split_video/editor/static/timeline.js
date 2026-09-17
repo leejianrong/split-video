@@ -114,11 +114,25 @@ export function createTimeline({
     }
   }
 
-  function makeBand(startT, endT, cls) {
+  function makeBand(startT, endT, cls, seg) {
     const div = document.createElement("div");
     div.className = `band ${cls}`;
     div.style.left = `${startT * pxPerSec}px`;
     div.style.width = `${Math.max(0, (endT - startT) * pxPerSec)}px`;
+    if (seg) {
+      if (seg.color) div.style.background = seg.color;
+      if (!seg.included) div.classList.add("user-excluded");
+      if (seg.label) {
+        const label = document.createElement("span");
+        label.className = "band-label";
+        const dot = document.createElement("span");
+        dot.className = "band-label-dot";
+        dot.style.color = seg.color || "currentColor";
+        label.appendChild(dot);
+        label.appendChild(document.createTextNode(seg.label));
+        div.appendChild(label);
+      }
+    }
     return div;
   }
 
@@ -316,8 +330,8 @@ export function createTimeline({
       bands.appendChild(makeBand(0, state.firstStart, "excluded"));
     }
 
-    derivedSegments().forEach((seg, i) => {
-      bands.appendChild(makeBand(seg.start, seg.end, i % 2 === 0 ? "segment-even" : "segment-odd"));
+    derivedSegments().forEach((seg) => {
+      bands.appendChild(makeBand(seg.start, seg.end, "segment", seg));
     });
 
     if (state.lastEnd < state.duration - 0.001) {

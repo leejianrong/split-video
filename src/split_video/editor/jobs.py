@@ -22,7 +22,7 @@ from split_video.ffmpeg import (
     extract_segment,
     probe_duration,
 )
-from split_video.naming import build_manifest, segment_filename, write_manifest
+from split_video.naming import build_manifest, write_manifest
 from split_video.segments import Segment
 
 
@@ -60,6 +60,7 @@ def start_export(
     job_store: JobStore,
     source: Path,
     segments: list[tuple[float, float]],
+    filenames: list[str],
     output_dir: Path,
     precise: bool,
     output_format: str | None,
@@ -69,7 +70,7 @@ def start_export(
     job_id, job = job_store.create(len(segments))
     thread = threading.Thread(
         target=_run_export,
-        args=(job, source, segments, output_dir, precise, output_format, write_manifest_file, parameters),
+        args=(job, source, segments, filenames, output_dir, precise, output_format, write_manifest_file, parameters),
         daemon=True,
     )
     thread.start()
@@ -80,6 +81,7 @@ def _run_export(
     job: ExportJob,
     source: Path,
     segments: list[tuple[float, float]],
+    filenames: list[str],
     output_dir: Path,
     precise: bool,
     output_format: str | None,
@@ -88,8 +90,6 @@ def _run_export(
 ) -> None:
     try:
         output_dir.mkdir(parents=True, exist_ok=True)
-        ext = source.suffix if output_format is None else f".{output_format.lstrip('.')}"
-        filenames = [segment_filename(i + 1, len(segments), source.stem, ext) for i in range(len(segments))]
         segment_objs = [Segment(index=i + 1, start=start, end=end) for i, (start, end) in enumerate(segments)]
 
         for segment, filename in zip(segment_objs, filenames):

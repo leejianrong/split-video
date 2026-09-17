@@ -15,6 +15,22 @@ def segment_filename(index: int, total: int, basename: str, ext: str) -> str:
     return f"{index:0{width}d} - {basename}{ext}"
 
 
+def resolve_export_filename(index: int, total: int, basename: str, ext: str, custom_name: str | None) -> str:
+    """The output filename for one exported segment.
+
+    `custom_name` (see #18's export-preview naming) is treated as a bare
+    filename, never a path: `Path(...).name` strips any directory
+    components, so a stray "/" or ".." in a user-typed name can't write
+    outside the output directory. Falls back to the default numbered name
+    if `custom_name` is unset, empty, or reduces to nothing (e.g. "..").
+    """
+    if custom_name:
+        safe = Path(custom_name).name.strip()
+        if safe and safe not in (".", ".."):
+            return f"{safe}{ext}"
+    return segment_filename(index, total, basename, ext)
+
+
 def build_manifest(
     source_path: Path,
     segments: list[Segment],
