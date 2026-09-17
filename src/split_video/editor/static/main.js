@@ -10,6 +10,7 @@ import { createExportModal } from "./exportModal.js";
 import { createFilePicker } from "./filePicker.js";
 import { createAnalysisControl } from "./analysis.js";
 import { createSegmentTable } from "./segmentTable.js";
+import { createShortcuts } from "./shortcuts.js";
 
 function updateHeader() {
   document.getElementById("filename").textContent = state.filename;
@@ -120,6 +121,13 @@ async function bootEditor() {
   videoEl.src = state.videoUrl;
   const player = createPlayer(videoEl);
 
+  createShortcuts({
+    player,
+    shortcutsBtn: document.getElementById("shortcuts-btn"),
+    modalEl: document.getElementById("shortcuts-modal"),
+    overlayEl: document.getElementById("app-overlay"),
+  });
+
   // Assigned right below — referenced here only inside a callback that
   // fires later (on a user edit), by which point both exist.
   let timeline;
@@ -196,9 +204,7 @@ async function bootEditor() {
     },
     onSegmentsReplaced: (segments) => {
       loadSegments(segments);
-      timeline.render();
-      updateHeader();
-      saveIndicator.save();
+      handleSegmentsChanged();
     },
   });
   controls.initFromState();
