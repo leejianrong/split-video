@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from pathlib import Path
 
-from split_video.naming import build_manifest, segment_filename
+from split_video.naming import build_manifest, resolve_export_filename, segment_filename
 from split_video.segments import Segment
 
 
@@ -12,6 +12,26 @@ def test_segment_filename_pads_to_two_digits_by_default():
 
 def test_segment_filename_widens_past_ninety_nine_segments():
     assert segment_filename(5, total=120, basename="liveshow", ext=".mp4") == "005 - liveshow.mp4"
+
+
+def test_resolve_export_filename_uses_custom_name_when_given():
+    assert resolve_export_filename(1, 3, "liveshow", ".mp4", "intro") == "intro.mp4"
+
+
+def test_resolve_export_filename_falls_back_to_default_numbering():
+    for custom in (None, "", "   "):
+        assert resolve_export_filename(2, 3, "liveshow", ".mp4", custom) == "02 - liveshow.mp4"
+
+
+def test_resolve_export_filename_strips_directory_components():
+    # A custom name is always a bare filename, never a path — see #18.
+    assert resolve_export_filename(1, 1, "liveshow", ".mp4", "../../etc/evil") == "evil.mp4"
+    assert resolve_export_filename(1, 1, "liveshow", ".mp4", "sub/dir/name") == "name.mp4"
+
+
+def test_resolve_export_filename_falls_back_when_custom_name_is_just_dots():
+    assert resolve_export_filename(1, 1, "liveshow", ".mp4", "..") == "01 - liveshow.mp4"
+    assert resolve_export_filename(1, 1, "liveshow", ".mp4", ".") == "01 - liveshow.mp4"
 
 
 def test_build_manifest_shape():

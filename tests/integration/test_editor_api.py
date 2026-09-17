@@ -1,4 +1,5 @@
 import time
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -334,6 +335,70 @@ def test_saving_splits_is_resumed_by_a_later_session(three_songs_clip):
     state = reopened.get("/api/state").json()
     assert state["resumed"] is True
     assert [{"start": s["start"], "end": s["end"]} for s in state["segments"]] == custom_splits
+
+
+def test_saved_labels_and_colors_are_resumed(three_songs_clip):
+    client = _client(three_songs_clip)
+    segments = [
+        {"start": 0.0, "end": 6.0, "label": "Song 1", "color": "#4a9eff", "included": True, "export_name": "01-song"},
+        {"start": 6.0, "end": 13.0, "label": "Stage talk", "color": None, "included": False, "export_name": None},
+        {"start": 13.0, "end": 21.0, "label": "", "color": "#2f855a", "included": True, "export_name": None},
+    ]
+    client.post("/api/project", json={"segments": segments})
+
+    reopened = _client(three_songs_clip)
+    state = reopened.get("/api/state").json()
+    got = [
+        {
+            "start": s["start"],
+            "end": s["end"],
+            "label": s["label"],
+            "color": s["color"],
+            "included": s["included"],
+            "export_name": s["export_name"],
+        }
+        for s in state["segments"]
+    ]
+    assert got == segments
+
+
+def test_export_uses_custom_names_when_given(three_songs_clip):
+    client = _client(three_songs_clip)
+    response = client.post(
+        "/api/export",
+        json={
+            "segments": [
+                {"start": 0.0, "end": 6.0, "name": "intro"},
+                {"start": 6.0, "end": 13.0, "name": None},
+                {"start": 13.0, "end": 21.0, "name": "outro"},
+            ]
+        },
+    )
+    assert response.status_code == 200
+    status = _poll_until_done(client, response.json()["job_id"])
+    assert status["status"] == "done"
+
+    output_dir = three_songs_clip.with_name("three_songs_split")
+    names = {Path(f).name for f in status["files"]}
+    assert "intro.mp4" in names
+    assert "outro.mp4" in names
+    assert any(f.startswith("02 - ") for f in names)  # the unnamed middle segment keeps default numbering
+    assert len(list(output_dir.glob("*.mp4"))) == 3
+
+
+def test_export_rejects_duplicate_resolved_names(three_songs_clip):
+    client = _client(three_songs_clip)
+    response = client.post(
+        "/api/export",
+        json={
+            "segments": [
+                {"start": 0.0, "end": 6.0, "name": "same"},
+                {"start": 6.0, "end": 13.0, "name": "same"},
+                {"start": 13.0, "end": 21.0, "name": None},
+            ]
+        },
+    )
+    assert response.status_code == 422
 
 
 def _poll_until_done(client, job_id, status_path=None, timeout=30.0):

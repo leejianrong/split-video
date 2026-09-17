@@ -9,6 +9,7 @@ import { createControls } from "./controls.js";
 import { createExportModal } from "./exportModal.js";
 import { createFilePicker } from "./filePicker.js";
 import { createAnalysisControl } from "./analysis.js";
+import { createSegmentTable } from "./segmentTable.js";
 
 function updateHeader() {
   document.getElementById("filename").textContent = state.filename;
@@ -119,7 +120,18 @@ async function bootEditor() {
   videoEl.src = state.videoUrl;
   const player = createPlayer(videoEl);
 
-  const timeline = createTimeline({
+  // Assigned right below — referenced here only inside a callback that
+  // fires later (on a user edit), by which point both exist.
+  let timeline;
+  let segmentTable;
+  function handleSegmentsChanged() {
+    updateHeader();
+    timeline.render();
+    segmentTable.render();
+    saveIndicator.save();
+  }
+
+  timeline = createTimeline({
     viewport: document.getElementById("timeline-viewport"),
     track: document.getElementById("timeline-track"),
     ruler: document.getElementById("ruler"),
@@ -130,12 +142,16 @@ async function bootEditor() {
     player,
     splitBtn: document.getElementById("split-btn"),
     deleteSplitBtn: document.getElementById("delete-split-btn"),
-    onChange: () => {
-      updateHeader();
-      saveIndicator.save();
-    },
+    onChange: handleSegmentsChanged,
   });
   timeline.fit();
+
+  segmentTable = createSegmentTable({
+    bodyEl: document.getElementById("segment-table-body"),
+    countEl: document.getElementById("segment-export-count"),
+    onChange: handleSegmentsChanged,
+  });
+  segmentTable.render();
 
   // Fetched separately (rather than bundled into /api/state) so opening a
   // file isn't blocked on decoding its full audio track — the waveform

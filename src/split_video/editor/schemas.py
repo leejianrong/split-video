@@ -15,6 +15,10 @@ class SegmentOut(BaseModel):
     start: float
     end: float
     duration: float
+    label: str = ""
+    color: str | None = None
+    included: bool = True
+    export_name: str | None = None
 
 
 class StateParams(BaseModel):
@@ -115,10 +119,20 @@ class SegmentsResponse(BaseModel):
 class ExportSegmentIn(BaseModel):
     start: float
     end: float
+    name: str | None = None  # custom output basename (no extension); falls back to default numbering if unset
+
+
+class ProjectSegmentIn(BaseModel):
+    start: float
+    end: float
+    label: str = ""
+    color: str | None = None
+    included: bool = True
+    export_name: str | None = None
 
 
 class ProjectSaveRequest(BaseModel):
-    segments: list[ExportSegmentIn]
+    segments: list[ProjectSegmentIn]
 
 
 class ExportRequest(BaseModel):

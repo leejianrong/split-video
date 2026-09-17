@@ -50,7 +50,16 @@ export async function getState() {
 export async function saveProject(segments) {
   return requestJSON("api/project", {
     method: "POST",
-    body: JSON.stringify({ segments: segments.map((s) => ({ start: s.start, end: s.end })) }),
+    body: JSON.stringify({
+      segments: segments.map((s) => ({
+        start: s.start,
+        end: s.end,
+        label: s.label || "",
+        color: s.color || null,
+        included: s.included !== false,
+        export_name: s.exportName || null,
+      })),
+    }),
   });
 }
 
