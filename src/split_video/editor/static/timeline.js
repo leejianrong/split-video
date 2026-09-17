@@ -10,8 +10,9 @@
 //   - marker hover            -> reveal a delete "x"
 //   - marker click             -> select it (arrow keys nudge it +-0.1s,
 //                                 +-1s with Shift)
-//   - plain wheel over timeline -> zoom, centered on the cursor
-//   - Shift+wheel / scrollbar   -> pan (native browser behavior, no JS)
+//   - mouse wheel / trackpad pinch -> zoom, centered on the cursor
+//   - Shift+wheel, a horizontal trackpad swipe, or the scrollbar -> pan
+//     (native browser behavior, no JS)
 //
 // Splits are deliberately a two-step gesture (position the playhead, then
 // commit) rather than click-to-add: a single misclick used to be enough to
@@ -51,7 +52,11 @@ export function createTimeline({
   let classificationRegions = [];
   let classificationLanes = {};
   let classificationThresholds = {};
-  let classificationMode = "coarse"; // or "detail" — see setClassificationMode
+  // Detail (one lane per bucket) is the default: with YAMNet analysis
+  // available, seeing every label at once is more useful than the
+  // collapsed single-row coarse view — see setClassificationMode.
+  let classificationMode = "detail";
+  viewport.classList.toggle("detail-mode", classificationMode === "detail");
 
   function notifyChange() {
     if (onChange) onChange();
@@ -125,11 +130,7 @@ export function createTimeline({
       if (seg.label) {
         const label = document.createElement("span");
         label.className = "band-label";
-        const dot = document.createElement("span");
-        dot.className = "band-label-dot";
-        dot.style.color = seg.color || "currentColor";
-        label.appendChild(dot);
-        label.appendChild(document.createTextNode(seg.label));
+        label.textContent = seg.label;
         div.appendChild(label);
       }
     }
@@ -481,11 +482,19 @@ export function createTimeline({
   if (splitBtn) splitBtn.addEventListener("click", addAtPlayhead);
   if (deleteSplitBtn) deleteSplitBtn.addEventListener("click", deleteSelected);
 
-  // --- wheel: zoom (plain), pan (shift / native scrollbar) ---
+  // --- wheel: zoom (mouse wheel / pinch), pan (shift, horizontal swipe, scrollbar) ---
   viewport.addEventListener(
     "wheel",
     (e) => {
       if (e.shiftKey) return; // let native horizontal scroll happen
+      // A two-finger trackpad swipe fires a wheel event with both axes
+      // populated; a swipe that's mostly horizontal means "pan", not
+      // "zoom", even without Shift held — only a vertical-dominant
+      // gesture (a mouse wheel, or pinch-to-zoom, which browsers report
+      // with ctrlKey set) should zoom. Returning here (no preventDefault)
+      // lets the browser scroll the viewport horizontally on its own,
+      // same as the Shift+wheel/scrollbar case above.
+      if (!e.ctrlKey && Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
       e.preventDefault();
       const factor = e.deltaY < 0 ? 1.2 : 1 / 1.2;
       setZoom(pxPerSec * factor, e.clientX);
