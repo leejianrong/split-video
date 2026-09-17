@@ -13,7 +13,23 @@ DEFAULTS = StateParams(silence_threshold=-35.0, min_silence_duration=2.0, min_so
 
 
 def _client(source):
-    return TestClient(create_app(source, DEFAULTS))
+    client = TestClient(create_app(source, DEFAULTS))
+    _wait_for_segments(client)
+    return client
+
+
+def _wait_for_segments(client, timeout=10.0):
+    """The initial silence scan now runs on a background thread (see #16 —
+    it used to block the server from even starting to listen), so tests
+    poll /api/state until it's caught up instead of assuming it's done by
+    the time `create_app`/`/api/open` returns."""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        body = client.get("/api/state").json()
+        if body["segments_ready"]:
+            return body
+        time.sleep(0.01)
+    raise TimeoutError("segments_ready never became true")
 
 
 def test_state_returns_initial_segments(three_songs_clip):
@@ -277,8 +293,10 @@ def test_open_then_state_matches_direct_file_mode(three_songs_clip):
     session = client.get("/api/session").json()
     assert session == {"file_open": True, "filename": three_songs_clip.name}
 
-    state = client.get("/api/state").json()
-    assert state == open_response.json()
+    state = _wait_for_segments(client)
+    assert state["filename"] == open_response.json()["filename"]
+    assert state["duration"] == open_response.json()["duration"]
+    assert len(state["segments"]) == 3
 
 
 def test_open_rejects_nonexistent_file(three_songs_clip):
