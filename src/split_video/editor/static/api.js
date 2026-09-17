@@ -47,6 +47,13 @@ export async function getState() {
   return requestJSON("api/state");
 }
 
+export async function saveProject(segments) {
+  return requestJSON("api/project", {
+    method: "POST",
+    body: JSON.stringify({ segments: segments.map((s) => ({ start: s.start, end: s.end })) }),
+  });
+}
+
 export async function detectSilence(silenceThreshold) {
   return requestJSON("api/detect", {
     method: "POST",

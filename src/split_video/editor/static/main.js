@@ -17,6 +17,32 @@ function updateHeader() {
   document.getElementById("segment-count").textContent = `${count} segment${count === 1 ? "" : "s"}`;
 }
 
+// Persists the current splits to the sidecar project file (see #14) so
+// they survive closing and reopening the editor. Every add/move/delete/
+// recompute is already a discrete, infrequent user action — no debouncing
+// needed on top of that.
+function createSaveIndicator() {
+  const el = document.getElementById("save-status");
+  let saveCount = 0;
+
+  async function save() {
+    const thisSave = ++saveCount;
+    el.classList.remove("error");
+    el.textContent = "Saving…";
+    try {
+      await api.saveProject(derivedSegments());
+      if (thisSave === saveCount) el.textContent = "Saved";
+    } catch (err) {
+      if (thisSave === saveCount) {
+        el.classList.add("error");
+        el.textContent = `Save failed: ${err.message}`;
+      }
+    }
+  }
+
+  return { save };
+}
+
 async function main() {
   const session = await api.getSession();
   const filePicker = document.getElementById("file-picker");
@@ -87,6 +113,9 @@ async function bootEditor() {
 
   updateHeader();
 
+  const saveIndicator = createSaveIndicator();
+  if (data.resumed) document.getElementById("save-status").textContent = "Resumed saved splits";
+
   const videoEl = document.getElementById("video");
   videoEl.src = state.videoUrl;
   const player = createPlayer(videoEl);
@@ -109,7 +138,10 @@ async function bootEditor() {
     player,
     splitBtn: document.getElementById("split-btn"),
     deleteSplitBtn: document.getElementById("delete-split-btn"),
-    onChange: updateHeader,
+    onChange: () => {
+      updateHeader();
+      saveIndicator.save();
+    },
   });
   timeline.fit();
 
@@ -158,6 +190,7 @@ async function bootEditor() {
       loadSegments(segments);
       timeline.render();
       updateHeader();
+      saveIndicator.save();
     },
   });
   controls.initFromState();

@@ -54,6 +54,7 @@ class StateResponse(BaseModel):
     segments: list[SegmentOut]
     segments_ready: bool = True
     segments_error: str | None = None
+    resumed: bool = False
 
 
 class DetectRequest(BaseModel):
@@ -114,6 +115,10 @@ class SegmentsResponse(BaseModel):
 class ExportSegmentIn(BaseModel):
     start: float
     end: float
+
+
+class ProjectSaveRequest(BaseModel):
+    segments: list[ExportSegmentIn]
 
 
 class ExportRequest(BaseModel):

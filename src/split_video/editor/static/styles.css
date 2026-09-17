@@ -109,6 +109,28 @@ button, input, output {
   color: var(--text-dim);
 }
 
+.save-status {
+  font-size: 12px;
+  color: var(--text-dim);
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 3px 10px;
+}
+
+/* Empty until the first save/resume this session — no separate hidden
+   class to keep in sync with `.save-status`'s own text updates. */
+.save-status:empty {
+  display: none;
+}
+
+.save-status.error {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
 .app-main {
   max-width: 1100px;
   margin: 0 auto;
