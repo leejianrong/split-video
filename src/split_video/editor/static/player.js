@@ -19,6 +19,10 @@ export function createPlayer(videoEl) {
     pause() {
       videoEl.pause();
     },
+    togglePlay() {
+      if (videoEl.paused) videoEl.play();
+      else videoEl.pause();
+    },
     get currentTime() {
       return videoEl.currentTime;
     },
