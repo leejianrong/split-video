@@ -52,6 +52,8 @@ class StateResponse(BaseModel):
     params: StateParams
     silences: list[SilenceIntervalOut]
     segments: list[SegmentOut]
+    segments_ready: bool = True
+    segments_error: str | None = None
 
 
 class DetectRequest(BaseModel):

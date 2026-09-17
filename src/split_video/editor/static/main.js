@@ -51,8 +51,33 @@ async function main() {
   await bootEditor();
 }
 
+// The initial silence scan runs on the server in the background (see #16 —
+// it used to block the whole editor from starting up on a long recording).
+// Poll /api/state until it's caught up, showing that a long recording is
+// still being processed rather than leaving the page looking stuck.
+async function waitForSegments(initial) {
+  const statusEl = document.getElementById("detect-status");
+  const statusTextEl = document.getElementById("detect-status-text");
+  let data = initial;
+  if (!data.segments_ready) {
+    statusEl.classList.remove("hidden");
+    statusTextEl.textContent = "Detecting splits… this can take a while for a long recording.";
+    while (!data.segments_ready) {
+      await new Promise((resolve) => setTimeout(resolve, 750));
+      data = await api.getState();
+    }
+    statusEl.classList.add("hidden");
+  }
+  if (data.segments_error) {
+    statusEl.classList.remove("hidden");
+    statusEl.classList.add("error");
+    statusTextEl.textContent = `Couldn't detect splits automatically: ${data.segments_error}. You can still play the video and add splits by hand.`;
+  }
+  return data;
+}
+
 async function bootEditor() {
-  const data = await api.getState();
+  const data = await waitForSegments(await api.getState());
   state.filename = data.filename;
   state.duration = data.duration;
   state.videoUrl = data.video_url;

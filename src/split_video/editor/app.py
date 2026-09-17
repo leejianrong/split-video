@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import itertools
+import threading
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
@@ -62,6 +63,7 @@ class _Session:
     """
 
     def __init__(self) -> None:
+        self.lock = threading.Lock()
         self.source: Path | None = None
         self.total_duration: float = 0.0
         self.cache: SilenceCache | None = None
@@ -69,6 +71,13 @@ class _Session:
         self.classification_cache: ClassificationCache | None = None
         self.initial_silences: list[SilenceInterval] = []
         self.initial_segments: list[Segment] = []
+        # The initial silence scan (see `_open`) runs on a background thread
+        # so opening a long recording can't block the HTTP server itself
+        # from accepting connections — see #16: pointing `edit` straight at
+        # a multi-hour file used to leave nothing listening for however long
+        # that ffmpeg pass took, which looks exactly like a crashed editor.
+        self.segments_ready = True
+        self.segments_error: str | None = None
 
 
 def create_app(root: Path, defaults: StateParams) -> FastAPI:
@@ -93,31 +102,59 @@ def create_app(root: Path, defaults: StateParams) -> FastAPI:
             raise HTTPException(status_code=409, detail="no file is open; call /api/open first")
         return session.source
 
+    def _detect_initial_segments(cache: SilenceCache, total_duration: float) -> None:
+        """Runs on a background thread — see `_open`. Only ever touches
+        `session` under `session.lock`, since it races the request thread(s)
+        reading `_state_response()` while this is still running."""
+        try:
+            silences = cache.get_raw_silences(defaults.silence_threshold)
+            segments = compute_segments(
+                silences,
+                total_duration,
+                defaults.min_silence_duration,
+                defaults.min_song_length,
+                defaults.padding,
+            )
+        except (RuntimeError, OSError) as exc:
+            with session.lock:
+                session.segments_error = str(exc)
+                session.segments_ready = True
+            return
+        with session.lock:
+            session.initial_silences = silences
+            session.initial_segments = segments
+            session.segments_ready = True
+
     def _open(source: Path) -> None:
         session.source = source
         session.total_duration = probe_duration(source)
         session.cache = SilenceCache(source)
         session.waveform_cache = WaveformCache(source)
         session.classification_cache = ClassificationCache(source)
-        session.initial_silences = session.cache.get_raw_silences(defaults.silence_threshold)
-        session.initial_segments = compute_segments(
-            session.initial_silences,
-            session.total_duration,
-            defaults.min_silence_duration,
-            defaults.min_song_length,
-            defaults.padding,
+        session.initial_silences = []
+        session.initial_segments = []
+        session.segments_error = None
+        session.segments_ready = False
+        thread = threading.Thread(
+            target=_detect_initial_segments,
+            args=(session.cache, session.total_duration),
+            daemon=True,
         )
+        thread.start()
 
     def _state_response() -> StateResponse:
         source = _require_open()
-        return StateResponse(
-            filename=source.name,
-            duration=session.total_duration,
-            video_url="/media/source",
-            params=defaults,
-            silences=_silences_out(session.initial_silences),
-            segments=_segments_out(session.initial_segments),
-        )
+        with session.lock:
+            return StateResponse(
+                filename=source.name,
+                duration=session.total_duration,
+                video_url="/media/source",
+                params=defaults,
+                silences=_silences_out(session.initial_silences),
+                segments=_segments_out(session.initial_segments),
+                segments_ready=session.segments_ready,
+                segments_error=session.segments_error,
+            )
 
     if root.is_file():
         _open(root)
