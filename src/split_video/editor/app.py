@@ -6,7 +6,7 @@ import itertools
 import threading
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.staticfiles import StaticFiles
 from starlette.responses import FileResponse
 
@@ -98,6 +98,24 @@ def create_app(root: Path, defaults: StateParams) -> FastAPI:
     `split-video edit <file>` behavior, unchanged) or a directory to pick a
     video from via the in-browser file picker."""
     app = FastAPI(title="split-video editor")
+
+    # The static frontend (index.html/*.js/*.css, mounted at the bottom of
+    # this function) has no cache-busting — no content hash or version
+    # query string in its URLs — so absent an explicit header, a browser's
+    # own heuristic caching can keep serving an old index.html or main.js
+    # for a tab that's had this origin open across a rebuild. Since that
+    # rebuild might have renamed or removed a DOM id, the result is a
+    # stale script reaching for an element that no longer exists — a
+    # `Cannot read properties of null` crash that looks like a real bug in
+    # whatever shipped, but is actually just a mismatched old/new asset
+    # pair. This is a local single-user tool on localhost; there's no
+    # meaningful cost to never caching these, so don't.
+    @app.middleware("http")
+    async def no_store_for_static_assets(request: Request, call_next):
+        response = await call_next(request)
+        if not request.url.path.startswith(("/api/", "/media/")):
+            response.headers["Cache-Control"] = "no-store"
+        return response
 
     browse_root = root.parent if root.is_file() else root
     job_store = JobStore()
