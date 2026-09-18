@@ -58,11 +58,6 @@
   </div>
 
   <main id="app-main" class="app-main hidden">
-    <div id="detect-status" class="browse-status hidden">
-      <span class="spinner"></span>
-      <span id="detect-status-text"></span>
-    </div>
-
     <div class="player-wrap">
       <video id="video" controls preload="metadata"></video>
     </div>
@@ -167,28 +162,57 @@
       </div>
     </div>
 
-    <details class="controls-panel">
-      <summary>
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
-          <line x1="4" y1="6" x2="20" y2="6" />
-          <circle cx="9" cy="6" r="2" />
-          <line x1="4" y1="12" x2="20" y2="12" />
-          <circle cx="15" cy="12" r="2" />
-          <line x1="4" y1="18" x2="20" y2="18" />
-          <circle cx="7" cy="18" r="2" />
-        </svg>
-        <span>Manual silence-detection thresholds</span>
-        <span class="controls-panel__hint">optional — Analyze audio usually does better</span>
-        <svg class="chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <polyline points="9 6 15 12 9 18" />
-        </svg>
-      </summary>
-      <div class="controls-panel__body">
+  </main>
+
+  <div id="onboarding-modal" class="modal hidden">
+    <div class="modal-box onboarding-box">
+      <h2>Set up this recording</h2>
+      <p class="caption">
+        These only run once, right when you first open a video — not something you'll be nudged about again.
+        <strong>Analyze audio</strong> can also always be run later from the toolbar.
+      </p>
+
+      <label class="onboarding-option">
+        <input type="checkbox" id="onboarding-analyze" checked />
+        <div>
+          <span class="onboarding-option__title">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
+              <line x1="3" y1="12" x2="3" y2="12.01" />
+              <line x1="7" y1="7" x2="7" y2="17" />
+              <line x1="11" y1="4" x2="11" y2="20" />
+              <line x1="15" y1="8" x2="15" y2="16" />
+              <line x1="19" y1="10" x2="19" y2="14" />
+            </svg>
+            Run audio analysis (YAMNet)
+          </span>
+          <p class="caption">Classifies the recording — music, speech, applause and more — while you start editing. Usually the most reliable way to spot real song boundaries.</p>
+        </div>
+      </label>
+
+      <label class="onboarding-option">
+        <input type="checkbox" id="onboarding-silence" />
+        <div>
+          <span class="onboarding-option__title">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
+              <line x1="4" y1="6" x2="20" y2="6" />
+              <circle cx="9" cy="6" r="2" />
+              <line x1="4" y1="12" x2="20" y2="12" />
+              <circle cx="15" cy="12" r="2" />
+              <line x1="4" y1="18" x2="20" y2="18" />
+              <circle cx="7" cy="18" r="2" />
+            </svg>
+            Detect splits by silence
+          </span>
+          <p class="caption">Finds splits by looking for quiet gaps between songs. Works well when there's a clean pause between each one.</p>
+        </div>
+      </label>
+
+      <div id="onboarding-silence-panel" class="onboarding-silence-panel hidden">
         <div class="slider-row">
           <label for="silence-threshold">Silence threshold</label>
           <input type="range" id="silence-threshold" min="-60" max="-10" step="1" />
           <output id="silence-threshold-value" class="slider-value"></output>
-          <button id="recompute-btn" class="btn">Recompute</button>
+          <button id="recompute-btn" class="btn">Detect</button>
         </div>
         <div class="slider-row">
           <label for="min-silence-duration">Min silence duration</label>
@@ -205,15 +229,15 @@
           <input type="range" id="silence-padding" min="0" max="2" step="0.05" />
           <output id="silence-padding-value" class="slider-value"></output>
         </div>
-        <p class="caption">
-          Recomputing — whether live (the three sliders above) or via
-          <strong>Recompute</strong> (the silence threshold) — replaces
-          <em>all</em> current splits, including any you've dragged, added, or
-          deleted by hand.
-        </p>
+        <p class="caption" id="onboarding-preview-count"></p>
       </div>
-    </details>
-  </main>
+
+      <div class="modal-actions">
+        <button id="onboarding-skip" class="btn">Skip — I'll split it by hand</button>
+        <button id="onboarding-start" class="btn btn-primary">Get started</button>
+      </div>
+    </div>
+  </div>
 
   <div id="export-modal" class="modal hidden"></div>
   <div id="shortcuts-modal" class="modal hidden"></div>

@@ -89,4 +89,9 @@ export function createAnalysisControl({ analyzeBtn, toolbarEl, detailToggleBtn, 
       if (data.analyzed) reveal(data);
     })
     .catch((err) => console.error("classification fetch failed:", err));
+
+  // Exposed so the onboarding modal (see onboarding.js) can kick off
+  // analysis itself when the user checks that option there, instead of
+  // requiring a separate click on the toolbar button afterwards.
+  return { run };
 }

@@ -188,7 +188,7 @@ def edit(
         help="Initial minimum duration (seconds) of a quiet passage to count as a gap between songs.",
     ),
     min_song_length: float = typer.Option(
-        30.0,
+        120.0,
         "--min-song-length",
         help="Initial minimum duration (seconds) for a detected segment to be kept as its own song.",
     ),
