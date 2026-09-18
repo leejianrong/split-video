@@ -414,6 +414,26 @@ def test_export_rejects_duplicate_resolved_names(three_songs_clip):
     assert response.status_code == 422
 
 
+def test_static_assets_are_never_cached(three_songs_clip):
+    # The frontend has no cache-busting (no content hash / version query
+    # string), so a browser's own heuristic caching could otherwise keep
+    # serving a stale index.html or main.js across a rebuild that renamed
+    # or removed a DOM id — a `Cannot read properties of null` crash that
+    # looks like a real bug in whatever shipped, but is actually just a
+    # mismatched old/new asset pair.
+    client = _client(three_songs_clip)
+    response = client.get("/")
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store"
+
+
+def test_api_responses_are_unaffected_by_the_no_store_header(three_songs_clip):
+    client = _client(three_songs_clip)
+    response = client.get("/api/state")
+    assert response.status_code == 200
+    assert "cache-control" not in {k.lower() for k in response.headers}
+
+
 def _poll_until_done(client, job_id, status_path=None, timeout=30.0):
     status_path = status_path or f"/api/export/{job_id}"
     deadline = time.time() + timeout
