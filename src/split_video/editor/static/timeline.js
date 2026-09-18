@@ -29,6 +29,15 @@ import {
 } from "./state.js";
 
 const MAX_PX_PER_SEC = 200;
+// Trackpads report a continuous stream of small wheel deltas rather than a
+// mouse's discrete ~100-per-notch ticks, including a few tiny trailing
+// events as a two-finger swipe decelerates to a stop. WHEEL_DEADZONE drops
+// those as noise; ZOOM_SENSITIVITY scales the zoom step to the delta's own
+// size (tuned so a typical mouse wheel notch, deltaY ~= 100, still lands
+// close to the old fixed 1.2x-per-tick feel) so a real zoom gesture is
+// smooth instead of jumping a fixed amount per wheel event.
+const WHEEL_DEADZONE = 2;
+const ZOOM_SENSITIVITY = 0.0018;
 const TICK_INTERVALS = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600, 7200];
 const MIN_LABEL_SPACING_PX = 70;
 
@@ -487,6 +496,12 @@ export function createTimeline({
     "wheel",
     (e) => {
       if (e.shiftKey) return; // let native horizontal scroll happen
+      const absX = Math.abs(e.deltaX);
+      const absY = Math.abs(e.deltaY);
+      // A stray trailing event right as a trackpad gesture ends (fingers
+      // lifting is rarely perfectly clean) used to register as a small
+      // but jarring zoom blip — ignore anything this tiny outright.
+      if (!e.ctrlKey && Math.max(absX, absY) < WHEEL_DEADZONE) return;
       // A two-finger trackpad swipe fires a wheel event with both axes
       // populated; a swipe that's mostly horizontal means "pan", not
       // "zoom", even without Shift held — only a vertical-dominant
@@ -494,9 +509,9 @@ export function createTimeline({
       // with ctrlKey set) should zoom. Returning here (no preventDefault)
       // lets the browser scroll the viewport horizontally on its own,
       // same as the Shift+wheel/scrollbar case above.
-      if (!e.ctrlKey && Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
+      if (!e.ctrlKey && absX > absY) return;
       e.preventDefault();
-      const factor = e.deltaY < 0 ? 1.2 : 1 / 1.2;
+      const factor = Math.exp(-e.deltaY * ZOOM_SENSITIVITY);
       setZoom(pxPerSec * factor, e.clientX);
     },
     { passive: false }
