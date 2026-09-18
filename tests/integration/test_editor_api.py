@@ -14,33 +14,44 @@ DEFAULTS = StateParams(silence_threshold=-35.0, min_silence_duration=2.0, min_so
 
 
 def _client(source):
-    client = TestClient(create_app(source, DEFAULTS))
-    _wait_for_segments(client)
-    return client
+    return TestClient(create_app(source, DEFAULTS))
 
 
-def _wait_for_segments(client, timeout=10.0):
-    """The initial silence scan now runs on a background thread (see #16 —
-    it used to block the server from even starting to listen), so tests
-    poll /api/state until it's caught up instead of assuming it's done by
-    the time `create_app`/`/api/open` returns."""
-    deadline = time.time() + timeout
-    while time.time() < deadline:
-        body = client.get("/api/state").json()
-        if body["segments_ready"]:
-            return body
-        time.sleep(0.01)
-    raise TimeoutError("segments_ready never became true")
+def _detect_segments(client, duration, **overrides):
+    """Runs the same silence-detect + compute-segments pair the editor's
+    onboarding step (see #14/#19's follow-up) calls on demand — nothing
+    happens automatically on open any more (see #16: it used to, and that's
+    exactly what blocked the server on a long recording)."""
+    params = {
+        "silence_threshold": DEFAULTS.silence_threshold,
+        "min_silence_duration": DEFAULTS.min_silence_duration,
+        "min_song_length": DEFAULTS.min_song_length,
+        "padding": DEFAULTS.padding,
+        **overrides,
+    }
+    silences = client.post("/api/detect", json={"silence_threshold": params["silence_threshold"]}).json()["silences"]
+    response = client.post(
+        "/api/segments",
+        json={
+            "silences": silences,
+            "duration": duration,
+            "min_silence_duration": params["min_silence_duration"],
+            "min_song_length": params["min_song_length"],
+            "padding": params["padding"],
+        },
+    )
+    return response.json()["segments"]
 
 
-def test_state_returns_initial_segments(three_songs_clip):
+def test_state_returns_no_segments_until_something_proposes_them(three_songs_clip):
     client = _client(three_songs_clip)
     response = client.get("/api/state")
     assert response.status_code == 200
     body = response.json()
     assert body["filename"] == three_songs_clip.name
     assert body["duration"] > 20.0
-    assert len(body["segments"]) == 3
+    assert body["segments"] == []
+    assert body["resumed"] is False
     assert body["params"]["silence_threshold"] == -35.0
 
 
@@ -55,7 +66,7 @@ def test_detect_only_calls_ffmpeg_once_per_distinct_threshold(three_songs_clip, 
     monkeypatch.setattr(cache_module, "detect_silence", counting_detect_silence)
 
     client = _client(three_songs_clip)
-    assert call_count["n"] == 1  # the one initial detect at app startup
+    assert call_count["n"] == 0  # nothing runs until explicitly requested
 
     for _ in range(3):
         response = client.post("/api/detect", json={"silence_threshold": -35.0})
@@ -190,7 +201,8 @@ def test_analyze_is_a_no_op_once_already_analyzed(three_songs_clip, monkeypatch)
 
 def test_segments_endpoint_is_pure_and_never_touches_ffmpeg(three_songs_clip, monkeypatch):
     client = _client(three_songs_clip)
-    silences_response = client.get("/api/state").json()["silences"]
+    duration = client.get("/api/state").json()["duration"]
+    silences_response = client.post("/api/detect", json={"silence_threshold": -35.0}).json()["silences"]
 
     def fail_if_called(*args, **kwargs):
         raise AssertionError("detect_silence should not be called by /api/segments")
@@ -201,7 +213,7 @@ def test_segments_endpoint_is_pure_and_never_touches_ffmpeg(three_songs_clip, mo
         "/api/segments",
         json={
             "silences": silences_response,
-            "duration": 21.0,
+            "duration": duration,
             "min_silence_duration": 2.0,
             "min_song_length": 2.0,
             "padding": 0.15,
@@ -213,7 +225,8 @@ def test_segments_endpoint_is_pure_and_never_touches_ffmpeg(three_songs_clip, mo
 
 def test_export_writes_files_and_manifest(three_songs_clip):
     client = _client(three_songs_clip)
-    segments = client.get("/api/state").json()["segments"]
+    duration = client.get("/api/state").json()["duration"]
+    segments = _detect_segments(client, duration)
 
     response = client.post(
         "/api/export",
@@ -294,10 +307,10 @@ def test_open_then_state_matches_direct_file_mode(three_songs_clip):
     session = client.get("/api/session").json()
     assert session == {"file_open": True, "filename": three_songs_clip.name}
 
-    state = _wait_for_segments(client)
+    state = client.get("/api/state").json()
     assert state["filename"] == open_response.json()["filename"]
     assert state["duration"] == open_response.json()["duration"]
-    assert len(state["segments"]) == 3
+    assert state["segments"] == []
 
 
 def test_open_rejects_nonexistent_file(three_songs_clip):
@@ -399,6 +412,26 @@ def test_export_rejects_duplicate_resolved_names(three_songs_clip):
         },
     )
     assert response.status_code == 422
+
+
+def test_static_assets_are_never_cached(three_songs_clip):
+    # The frontend has no cache-busting (no content hash / version query
+    # string), so a browser's own heuristic caching could otherwise keep
+    # serving a stale index.html or main.js across a rebuild that renamed
+    # or removed a DOM id — a `Cannot read properties of null` crash that
+    # looks like a real bug in whatever shipped, but is actually just a
+    # mismatched old/new asset pair.
+    client = _client(three_songs_clip)
+    response = client.get("/")
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store"
+
+
+def test_api_responses_are_unaffected_by_the_no_store_header(three_songs_clip):
+    client = _client(three_songs_clip)
+    response = client.get("/api/state")
+    assert response.status_code == 200
+    assert "cache-control" not in {k.lower() for k in response.headers}
 
 
 def _poll_until_done(client, job_id, status_path=None, timeout=30.0):

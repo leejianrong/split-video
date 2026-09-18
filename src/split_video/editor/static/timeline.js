@@ -10,8 +10,9 @@
 //   - marker hover            -> reveal a delete "x"
 //   - marker click             -> select it (arrow keys nudge it +-0.1s,
 //                                 +-1s with Shift)
-//   - plain wheel over timeline -> zoom, centered on the cursor
-//   - Shift+wheel / scrollbar   -> pan (native browser behavior, no JS)
+//   - mouse wheel / trackpad pinch -> zoom, centered on the cursor
+//   - Shift+wheel, a horizontal trackpad swipe, or the scrollbar -> pan
+//     (native browser behavior, no JS)
 //
 // Splits are deliberately a two-step gesture (position the playhead, then
 // commit) rather than click-to-add: a single misclick used to be enough to
@@ -28,6 +29,15 @@ import {
 } from "./state.js";
 
 const MAX_PX_PER_SEC = 200;
+// Trackpads report a continuous stream of small wheel deltas rather than a
+// mouse's discrete ~100-per-notch ticks, including a few tiny trailing
+// events as a two-finger swipe decelerates to a stop. WHEEL_DEADZONE drops
+// those as noise; ZOOM_SENSITIVITY scales the zoom step to the delta's own
+// size (tuned so a typical mouse wheel notch, deltaY ~= 100, still lands
+// close to the old fixed 1.2x-per-tick feel) so a real zoom gesture is
+// smooth instead of jumping a fixed amount per wheel event.
+const WHEEL_DEADZONE = 2;
+const ZOOM_SENSITIVITY = 0.0018;
 const TICK_INTERVALS = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600, 7200];
 const MIN_LABEL_SPACING_PX = 70;
 
@@ -51,7 +61,11 @@ export function createTimeline({
   let classificationRegions = [];
   let classificationLanes = {};
   let classificationThresholds = {};
-  let classificationMode = "coarse"; // or "detail" — see setClassificationMode
+  // Detail (one lane per bucket) is the default: with YAMNet analysis
+  // available, seeing every label at once is more useful than the
+  // collapsed single-row coarse view — see setClassificationMode.
+  let classificationMode = "detail";
+  viewport.classList.toggle("detail-mode", classificationMode === "detail");
 
   function notifyChange() {
     if (onChange) onChange();
@@ -125,11 +139,7 @@ export function createTimeline({
       if (seg.label) {
         const label = document.createElement("span");
         label.className = "band-label";
-        const dot = document.createElement("span");
-        dot.className = "band-label-dot";
-        dot.style.color = seg.color || "currentColor";
-        label.appendChild(dot);
-        label.appendChild(document.createTextNode(seg.label));
+        label.textContent = seg.label;
         div.appendChild(label);
       }
     }
@@ -481,13 +491,27 @@ export function createTimeline({
   if (splitBtn) splitBtn.addEventListener("click", addAtPlayhead);
   if (deleteSplitBtn) deleteSplitBtn.addEventListener("click", deleteSelected);
 
-  // --- wheel: zoom (plain), pan (shift / native scrollbar) ---
+  // --- wheel: zoom (mouse wheel / pinch), pan (shift, horizontal swipe, scrollbar) ---
   viewport.addEventListener(
     "wheel",
     (e) => {
       if (e.shiftKey) return; // let native horizontal scroll happen
+      const absX = Math.abs(e.deltaX);
+      const absY = Math.abs(e.deltaY);
+      // A stray trailing event right as a trackpad gesture ends (fingers
+      // lifting is rarely perfectly clean) used to register as a small
+      // but jarring zoom blip — ignore anything this tiny outright.
+      if (!e.ctrlKey && Math.max(absX, absY) < WHEEL_DEADZONE) return;
+      // A two-finger trackpad swipe fires a wheel event with both axes
+      // populated; a swipe that's mostly horizontal means "pan", not
+      // "zoom", even without Shift held — only a vertical-dominant
+      // gesture (a mouse wheel, or pinch-to-zoom, which browsers report
+      // with ctrlKey set) should zoom. Returning here (no preventDefault)
+      // lets the browser scroll the viewport horizontally on its own,
+      // same as the Shift+wheel/scrollbar case above.
+      if (!e.ctrlKey && absX > absY) return;
       e.preventDefault();
-      const factor = e.deltaY < 0 ? 1.2 : 1 / 1.2;
+      const factor = Math.exp(-e.deltaY * ZOOM_SENSITIVITY);
       setZoom(pxPerSec * factor, e.clientX);
     },
     { passive: false }

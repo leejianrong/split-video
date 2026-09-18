@@ -12,19 +12,32 @@ import * as api from "./api.js";
 const POLL_INTERVAL_MS = 400;
 
 export function createAnalysisControl({ analyzeBtn, toolbarEl, detailToggleBtn, timeline }) {
+  // The button's own text lives in this child <span> — analyzeBtn also
+  // holds an icon <svg>, so writing analyzeBtn.textContent directly would
+  // silently delete it.
+  const analyzeLabel = document.getElementById("analyze-btn-label");
+
+  function updateDetailToggle() {
+    const mode = timeline.getClassificationMode();
+    detailToggleBtn.classList.toggle("active", mode === "detail");
+    detailToggleBtn.title =
+      mode === "detail" ? "Collapse to one row" : "Show every overlapping label in its own lane";
+  }
+
   function toggleDetail() {
-    const next = timeline.getClassificationMode() === "coarse" ? "detail" : "coarse";
-    timeline.setClassificationMode(next);
-    detailToggleBtn.textContent = next === "coarse" ? "Show detail lanes" : "Show coarse view";
+    timeline.setClassificationMode(timeline.getClassificationMode() === "coarse" ? "detail" : "coarse");
+    updateDetailToggle();
   }
 
   function reveal(data) {
     timeline.setClassification(data);
     toolbarEl.classList.remove("hidden");
+    detailToggleBtn.disabled = false;
+    updateDetailToggle();
     // A click from here on is a cheap no-op (the backend already has a
     // result, cached this session or loaded from disk) — reword the
     // button so that's clear rather than implying more work is needed.
-    analyzeBtn.textContent = "Re-analyze audio";
+    analyzeLabel.textContent = "Re-analyze audio";
   }
 
   // Checks status immediately rather than always sleeping first, so an
@@ -35,7 +48,7 @@ export function createAnalysisControl({ analyzeBtn, toolbarEl, detailToggleBtn, 
     let status = await api.getAnalysisStatus(jobId);
     while (status.status === "running") {
       if (status.total > 0) {
-        analyzeBtn.textContent = `Analyzing… ${Math.round((status.completed / status.total) * 100)}%`;
+        analyzeLabel.textContent = `Analyzing… ${Math.round((status.completed / status.total) * 100)}%`;
       }
       await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
       status = await api.getAnalysisStatus(jobId);
@@ -46,7 +59,7 @@ export function createAnalysisControl({ analyzeBtn, toolbarEl, detailToggleBtn, 
   async function run() {
     const wasAnalyzed = !toolbarEl.classList.contains("hidden");
     analyzeBtn.disabled = true;
-    analyzeBtn.textContent = "Analyzing…";
+    analyzeLabel.textContent = "Analyzing…";
     try {
       const { job_id } = await api.startAnalysis();
       const status = await poll(job_id);
@@ -61,8 +74,8 @@ export function createAnalysisControl({ analyzeBtn, toolbarEl, detailToggleBtn, 
       analyzeBtn.disabled = false;
       // reveal() already relabeled the button on success; only restore a
       // label here if that never happened (the error paths above).
-      if (analyzeBtn.textContent.startsWith("Analyzing")) {
-        analyzeBtn.textContent = wasAnalyzed ? "Re-analyze audio" : "Analyze audio";
+      if (analyzeLabel.textContent.startsWith("Analyzing")) {
+        analyzeLabel.textContent = wasAnalyzed ? "Re-analyze audio" : "Analyze audio";
       }
     }
   }
@@ -76,4 +89,9 @@ export function createAnalysisControl({ analyzeBtn, toolbarEl, detailToggleBtn, 
       if (data.analyzed) reveal(data);
     })
     .catch((err) => console.error("classification fetch failed:", err));
+
+  // Exposed so the onboarding modal (see onboarding.js) can kick off
+  // analysis itself when the user checks that option there, instead of
+  // requiring a separate click on the toolbar button afterwards.
+  return { run };
 }

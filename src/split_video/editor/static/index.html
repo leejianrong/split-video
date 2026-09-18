@@ -14,9 +14,34 @@
     </div>
     <div class="app-header__actions">
       <span id="save-status" class="save-status"></span>
-      <button id="shortcuts-btn" class="btn" title="Keyboard shortcuts (?)">?</button>
-      <button id="analyze-btn" class="btn" title="Classify audio (music/speech/applause/etc.) via YAMNet" disabled>Analyze audio</button>
-      <button id="export-btn" class="btn btn-primary" disabled>Export</button>
+      <button id="shortcuts-btn" class="btn btn-icon" title="Keyboard shortcuts (?)">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <rect x="3" y="6" width="18" height="12" rx="2" />
+          <line x1="7" y1="10" x2="7" y2="10.01" />
+          <line x1="11" y1="10" x2="11" y2="10.01" />
+          <line x1="15" y1="10" x2="15" y2="10.01" />
+          <line x1="7" y1="14" x2="15" y2="14" />
+        </svg>
+        <span class="sr-only">Keyboard shortcuts</span>
+      </button>
+      <button id="analyze-btn" class="btn" title="Classify audio (music/speech/applause/etc.) via YAMNet" disabled>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
+          <line x1="3" y1="12" x2="3" y2="12.01" />
+          <line x1="7" y1="7" x2="7" y2="17" />
+          <line x1="11" y1="4" x2="11" y2="20" />
+          <line x1="15" y1="8" x2="15" y2="16" />
+          <line x1="19" y1="10" x2="19" y2="14" />
+        </svg>
+        <span id="analyze-btn-label">Analyze audio</span>
+      </button>
+      <button id="export-btn" class="btn btn-primary" disabled>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M12 3v12" />
+          <path d="M7 10l5 5 5-5" />
+          <path d="M4 19h16" />
+        </svg>
+        <span>Export</span>
+      </button>
     </div>
   </header>
 
@@ -33,25 +58,67 @@
   </div>
 
   <main id="app-main" class="app-main hidden">
-    <div id="detect-status" class="browse-status hidden">
-      <span class="spinner"></span>
-      <span id="detect-status-text"></span>
-    </div>
-
     <div class="player-wrap">
       <video id="video" controls preload="metadata"></video>
     </div>
 
     <div class="timeline-toolbar">
       <div class="split-controls">
-        <button id="split-btn" class="btn" title="Add a split at the playhead (S)">][</button>
-        <button id="delete-split-btn" class="btn btn-danger" title="Delete the selected split (Delete)" disabled>Delete split</button>
+        <button id="split-btn" class="btn" title="Add a split at the playhead (S)">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="6" cy="6" r="2.5" />
+            <circle cx="6" cy="18" r="2.5" />
+            <line x1="8.5" y1="7.5" x2="20" y2="18" />
+            <line x1="8.5" y1="16.5" x2="20" y2="6" />
+          </svg>
+          <span>Split</span>
+        </button>
+        <button id="delete-split-btn" class="btn btn-danger" title="Delete the selected split (Delete)" disabled>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M4 7h16" />
+            <path d="M9 7V4h6v3" />
+            <path d="M6 7l1 13a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-13" />
+            <line x1="10" y1="11" x2="10" y2="17" />
+            <line x1="14" y1="11" x2="14" y2="17" />
+          </svg>
+          <span>Delete split</span>
+        </button>
       </div>
       <div class="zoom-controls">
-        <button id="zoom-out" class="btn" title="Zoom out">&minus;</button>
+        <button id="zoom-out" class="btn btn-icon" title="Zoom out">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="10.5" cy="10.5" r="6.5" />
+            <line x1="20" y1="20" x2="15.2" y2="15.2" />
+            <line x1="7.5" y1="10.5" x2="13.5" y2="10.5" />
+          </svg>
+          <span class="sr-only">Zoom out</span>
+        </button>
         <span id="zoom-label" class="zoom-label">Fit</span>
-        <button id="zoom-in" class="btn" title="Zoom in">+</button>
-        <button id="zoom-fit" class="btn">Fit</button>
+        <button id="zoom-in" class="btn btn-icon" title="Zoom in">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="10.5" cy="10.5" r="6.5" />
+            <line x1="20" y1="20" x2="15.2" y2="15.2" />
+            <line x1="10.5" y1="7.5" x2="10.5" y2="13.5" />
+            <line x1="7.5" y1="10.5" x2="13.5" y2="10.5" />
+          </svg>
+          <span class="sr-only">Zoom in</span>
+        </button>
+        <button id="zoom-fit" class="btn" title="Fit the whole recording in view">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M4 9V5a1 1 0 0 1 1-1h4" />
+            <path d="M15 4h4a1 1 0 0 1 1 1v4" />
+            <path d="M20 15v4a1 1 0 0 1-1 1h-4" />
+            <path d="M9 20H5a1 1 0 0 1-1-1v-4" />
+          </svg>
+          <span>Fit</span>
+        </button>
+        <button id="classification-detail-toggle" class="btn btn-icon" title="Show every overlapping label in its own lane" disabled>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <polygon points="12 3 3 8 12 13 21 8 12 3" />
+            <polyline points="3 13 12 18 21 13" />
+          </svg>
+          <span class="sr-only">Toggle per-label lanes</span>
+        </button>
       </div>
     </div>
 
@@ -93,39 +160,84 @@
         <span class="legend-item"><span class="swatch bucket-applause_crowd"></span>Applause/crowd</span>
         <span class="legend-item"><span class="swatch bucket-laughter"></span>Laughter</span>
       </div>
-      <button id="classification-detail-toggle" class="btn" title="Show every overlapping label in its own lane">Show detail lanes</button>
     </div>
 
-    <section class="controls-panel">
-      <div class="slider-row">
-        <label for="silence-threshold">Silence threshold</label>
-        <input type="range" id="silence-threshold" min="-60" max="-10" step="1" />
-        <output id="silence-threshold-value" class="slider-value"></output>
-        <button id="recompute-btn" class="btn">Recompute</button>
-      </div>
-      <div class="slider-row">
-        <label for="min-silence-duration">Min silence duration</label>
-        <input type="range" id="min-silence-duration" min="0.2" max="10" step="0.1" />
-        <output id="min-silence-duration-value" class="slider-value"></output>
-      </div>
-      <div class="slider-row">
-        <label for="min-song-length">Min song length</label>
-        <input type="range" id="min-song-length" min="1" max="240" step="1" />
-        <output id="min-song-length-value" class="slider-value"></output>
-      </div>
-      <div class="slider-row">
-        <label for="silence-padding">Silence padding</label>
-        <input type="range" id="silence-padding" min="0" max="2" step="0.05" />
-        <output id="silence-padding-value" class="slider-value"></output>
-      </div>
-      <p class="caption">
-        Recomputing — whether live (the three sliders above) or via
-        <strong>Recompute</strong> (the silence threshold) — replaces
-        <em>all</em> current splits, including any you've dragged, added, or
-        deleted by hand.
-      </p>
-    </section>
   </main>
+
+  <div id="onboarding-modal" class="modal hidden">
+    <div class="modal-box onboarding-box">
+      <h2>Set up this recording</h2>
+      <p class="caption">
+        These only run once, right when you first open a video — not something you'll be nudged about again.
+        <strong>Analyze audio</strong> can also always be run later from the toolbar.
+      </p>
+
+      <label class="onboarding-option">
+        <input type="checkbox" id="onboarding-analyze" checked />
+        <div>
+          <span class="onboarding-option__title">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
+              <line x1="3" y1="12" x2="3" y2="12.01" />
+              <line x1="7" y1="7" x2="7" y2="17" />
+              <line x1="11" y1="4" x2="11" y2="20" />
+              <line x1="15" y1="8" x2="15" y2="16" />
+              <line x1="19" y1="10" x2="19" y2="14" />
+            </svg>
+            Run audio analysis (YAMNet)
+          </span>
+          <p class="caption">Classifies the recording — music, speech, applause and more — while you start editing. Usually the most reliable way to spot real song boundaries.</p>
+        </div>
+      </label>
+
+      <label class="onboarding-option">
+        <input type="checkbox" id="onboarding-silence" />
+        <div>
+          <span class="onboarding-option__title">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
+              <line x1="4" y1="6" x2="20" y2="6" />
+              <circle cx="9" cy="6" r="2" />
+              <line x1="4" y1="12" x2="20" y2="12" />
+              <circle cx="15" cy="12" r="2" />
+              <line x1="4" y1="18" x2="20" y2="18" />
+              <circle cx="7" cy="18" r="2" />
+            </svg>
+            Detect splits by silence
+          </span>
+          <p class="caption">Finds splits by looking for quiet gaps between songs. Works well when there's a clean pause between each one.</p>
+        </div>
+      </label>
+
+      <div id="onboarding-silence-panel" class="onboarding-silence-panel hidden">
+        <div class="slider-row">
+          <label for="silence-threshold">Silence threshold</label>
+          <input type="range" id="silence-threshold" min="-60" max="-10" step="1" />
+          <output id="silence-threshold-value" class="slider-value"></output>
+          <button id="recompute-btn" class="btn">Detect</button>
+        </div>
+        <div class="slider-row">
+          <label for="min-silence-duration">Min silence duration</label>
+          <input type="range" id="min-silence-duration" min="0.2" max="10" step="0.1" />
+          <output id="min-silence-duration-value" class="slider-value"></output>
+        </div>
+        <div class="slider-row">
+          <label for="min-song-length">Min song length</label>
+          <input type="range" id="min-song-length" min="1" max="240" step="1" />
+          <output id="min-song-length-value" class="slider-value"></output>
+        </div>
+        <div class="slider-row">
+          <label for="silence-padding">Silence padding</label>
+          <input type="range" id="silence-padding" min="0" max="2" step="0.05" />
+          <output id="silence-padding-value" class="slider-value"></output>
+        </div>
+        <p class="caption" id="onboarding-preview-count"></p>
+      </div>
+
+      <div class="modal-actions">
+        <button id="onboarding-skip" class="btn">Skip — I'll split it by hand</button>
+        <button id="onboarding-start" class="btn btn-primary">Get started</button>
+      </div>
+    </div>
+  </div>
 
   <div id="export-modal" class="modal hidden"></div>
   <div id="shortcuts-modal" class="modal hidden"></div>
