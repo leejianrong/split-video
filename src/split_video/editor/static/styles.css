@@ -795,55 +795,53 @@ button, input, output {
   z-index: 10;
 }
 
-.controls-panel {
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-}
-
-.controls-panel summary {
+.modal-box.onboarding-box {
+  width: min(560px, 90vw);
+  min-width: 0;
   display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 16px;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.onboarding-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
   cursor: pointer;
-  color: var(--text);
-  list-style: none;
 }
 
-.controls-panel summary::-webkit-details-marker {
-  display: none;
+.onboarding-option:has(input:checked) {
+  border-color: var(--accent);
+  background: rgba(74, 158, 255, 0.08);
 }
 
-.controls-panel summary .chevron {
-  margin-left: auto;
-  color: var(--text-dim);
-  transition: transform 0.15s ease;
+.onboarding-option input[type="checkbox"] {
+  margin-top: 3px;
   flex-shrink: 0;
 }
 
-.controls-panel[open] summary .chevron {
-  transform: rotate(90deg);
+.onboarding-option__title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-weight: 600;
 }
 
-.controls-panel__hint {
-  color: var(--text-dim);
-  font-size: 12px;
-  font-weight: 400;
+.onboarding-option .caption {
+  margin: 4px 0 0;
 }
 
-.controls-panel__body {
-  padding: 12px 16px 14px;
-  border-top: 1px solid var(--border);
+.onboarding-silence-panel {
   display: flex;
   flex-direction: column;
   gap: 10px;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .controls-panel summary .chevron {
-    transition: none;
-  }
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
 }
 
 .slider-row {
