@@ -11,7 +11,7 @@ zoomable timeline for reviewing and hand-adjusting the proposed splits
 before committing to them. A plain `split` command is also available for
 scripting a one-shot split without a browser.
 
-![The visual editor: a video player above a zoomable timeline showing a waveform, colored segment bands, and split markers](docs/editor-screenshot.png)
+![The visual editor: a video player above a zoomable timeline showing a waveform, labeled colored segment bands and split markers, with a segment table below for naming and choosing what to export](docs/editor-screenshot.png)
 
 ## Quickstart (Docker)
 
@@ -102,8 +102,13 @@ In the editor:
   [Development](#development)) and the result is cached per file. Every
   label gets its own lane by default; the icon button next to Fit collapses
   them back to a single row.
-- **Export** writes the split files and `manifest.json` right there, with a
-  progress bar while it runs.
+- **Export** shows a preview of exactly which files will be written (honoring
+  the include/exclude checkboxes and custom names from the segment table),
+  then writes them plus `manifest.json` right there, with a progress bar
+  while it runs.
+- Keyboard shortcuts: `Space`/`K` play/pause, `J`/`L` jump back/forward 5s,
+  `S` split at the playhead, Delete/Backspace remove the selected split,
+  and `?` lists them all in the editor.
 - Your splits, labels, and export choices are saved to a sidecar
   `<video>.split-video-project.json` file next to the video as you go —
   closing the editor and reopening the same recording resumes exactly

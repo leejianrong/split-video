@@ -34,8 +34,8 @@ a version people can pin to, bump `version` in `pyproject.toml` and tag
 the commit it lands on:
 
 ```bash
-git tag -a v0.2.0 -m "0.2.0"
-git push origin v0.2.0
+git tag -a vX.Y.Z -m "X.Y.Z"
+git push origin vX.Y.Z
 ```
 
 Pushing a `vX.Y.Z` tag additionally publishes `:X.Y.Z` and `:X.Y` images.
