@@ -12,6 +12,7 @@ import uvicorn
 from rich.console import Console
 from rich.table import Table
 
+from split_video import project_cli
 from split_video.editor.app import create_app
 from split_video.editor.schemas import StateParams
 from split_video.ffmpeg import (
@@ -219,3 +220,6 @@ def edit(
         threading.Timer(1.0, webbrowser.open, args=[url]).start()
 
     uvicorn.run(editor_app, host=host, port=port, log_level="warning")
+
+
+project_cli.register(app)

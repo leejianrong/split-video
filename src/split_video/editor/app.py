@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import itertools
 import threading
 from pathlib import Path
 
@@ -51,7 +50,7 @@ from split_video.editor.schemas import (
     WaveformResponse,
 )
 from split_video.ffmpeg import probe_duration
-from split_video.naming import resolve_export_filename
+from split_video.project import ExportConflictError, ProjectError, plan_export
 from split_video.segments import Segment, compute_segments
 from split_video.silence import SilenceInterval
 
@@ -319,34 +318,21 @@ def create_app(root: Path, defaults: StateParams) -> FastAPI:
     @app.post("/api/export", response_model=ExportStartResponse)
     def export(request: ExportRequest) -> ExportStartResponse:
         source = _require_open()
-        pairs = [(s.start, s.end) for s in request.segments]
-        _validate_segments(pairs)
-
-        output_dir = source.with_name(f"{source.stem}_split")
-        ext = source.suffix if request.output_format is None else f".{request.output_format.lstrip('.')}"
-        filenames = [
-            resolve_export_filename(i + 1, len(pairs), source.stem, ext, s.name) for i, s in enumerate(request.segments)
-        ]
-        if len(set(filenames)) != len(filenames):
-            raise HTTPException(status_code=422, detail="export names must be unique across segments")
-
-        if not request.overwrite:
-            conflicts = [f for f in filenames if (output_dir / f).exists()]
-            if conflicts:
-                raise HTTPException(
-                    status_code=409,
-                    detail=(
-                        f"{len(conflicts)} output file(s) already exist "
-                        f"(pass overwrite=true to replace): {', '.join(conflicts)}"
-                    ),
-                )
+        try:
+            plan = plan_export(
+                source,
+                [(s.start, s.end, s.name) for s in request.segments],
+                output_format=request.output_format,
+                overwrite=request.overwrite,
+            )
+        except ExportConflictError as exc:
+            raise HTTPException(status_code=409, detail=str(exc))
+        except ProjectError as exc:
+            raise HTTPException(status_code=422, detail=str(exc))
 
         job_id = start_export(
             job_store,
-            source,
-            pairs,
-            filenames,
-            output_dir,
+            plan,
             request.precise,
             request.output_format,
             request.manifest,
@@ -386,16 +372,3 @@ def create_app(root: Path, defaults: StateParams) -> FastAPI:
     app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")
 
     return app
-
-
-def _validate_segments(pairs: list[tuple[float, float]]) -> None:
-    if not pairs:
-        raise HTTPException(status_code=422, detail="segments list must not be empty")
-    if sorted(pairs, key=lambda p: p[0]) != pairs:
-        raise HTTPException(status_code=422, detail="segments must be sorted by start time")
-    for start, end in pairs:
-        if end <= start:
-            raise HTTPException(status_code=422, detail=f"segment end must be after start: ({start}, {end})")
-    for (_, end), (next_start, _) in itertools.pairwise(pairs):
-        if next_start < end:
-            raise HTTPException(status_code=422, detail="segments must not overlap")
