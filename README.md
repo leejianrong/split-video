@@ -102,8 +102,13 @@ In the editor:
   [Development](#development)) and the result is cached per file. Every
   label gets its own lane by default; the icon button next to Fit collapses
   them back to a single row.
-- **Export** writes the split files and `manifest.json` right there, with a
-  progress bar while it runs.
+- **Export** shows a preview of exactly which files will be written (honoring
+  the include/exclude checkboxes and custom names from the segment table),
+  then writes them plus `manifest.json` right there, with a progress bar
+  while it runs.
+- Keyboard shortcuts: `Space`/`K` play/pause, `J`/`L` jump back/forward 5s,
+  `S` split at the playhead, Delete/Backspace remove the selected split,
+  and `?` lists them all in the editor.
 - Your splits, labels, and export choices are saved to a sidecar
   `<video>.split-video-project.json` file next to the video as you go —
   closing the editor and reopening the same recording resumes exactly
