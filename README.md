@@ -191,6 +191,34 @@ split-video analyze liveshow.mp4                                # YAMNet classif
 `propose` only prints unless you pass `--apply`, which replaces any splits
 already saved.
 
+### MCP server (for AI agents)
+
+`split-video mcp` runs a [Model Context Protocol](https://modelcontextprotocol.io)
+server over stdio, so an agent can do everything the project commands above
+do — propose splits, review and adjust them, label segments, optionally
+classify the audio, and export — without a browser or a running editor. It
+reads and writes the same project file, so a human can open the result in
+the visual editor afterward. Tools: `list_videos`, `list_segments`,
+`propose_splits`, `add_split`, `move_split`, `remove_split`, `label_segment`,
+`analyze_audio`, `export`.
+
+Tools only touch files under `--root` (default: the current directory):
+
+```bash
+claude mcp add split-video -- split-video mcp --root ~/recordings
+```
+
+or with Docker (the `-i` keeps stdin open for the stdio transport):
+
+```bash
+claude mcp add split-video -- docker run -i --rm -v ~/recordings:/data \
+  ghcr.io/leejianrong/split-video mcp --root /data
+```
+
+Don't have the visual editor open on a video while an agent edits it: the
+open tab keeps its own copy and would overwrite the agent's changes the
+next time it saves.
+
 ## Development
 
 Requires `ffmpeg`/`ffprobe` on your `PATH`. Install and run locally with `uv`:

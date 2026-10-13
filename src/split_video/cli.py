@@ -222,4 +222,20 @@ def edit(
     uvicorn.run(editor_app, host=host, port=port, log_level="warning")
 
 
+@app.command("mcp")
+def mcp_cmd(
+    root: Path = typer.Option(
+        Path("."),
+        "--root",
+        exists=True,
+        file_okay=False,
+        help="Directory the MCP tools may read and write videos under. Paths outside it are refused.",
+    ),
+) -> None:
+    """Run an MCP server over stdio so an AI agent can inspect, edit and export a video's splits."""
+    from split_video.mcp_server import create_server
+
+    create_server(root).run("stdio")
+
+
 project_cli.register(app)
