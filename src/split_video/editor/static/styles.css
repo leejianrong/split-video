@@ -31,12 +31,33 @@ button, input, output {
 }
 
 .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   background: var(--panel);
   border: 1px solid var(--border);
   color: var(--text);
   padding: 6px 12px;
   border-radius: 6px;
   cursor: pointer;
+}
+
+.btn svg {
+  flex-shrink: 0;
+}
+
+/* Icon-only: a compact square instead of the icon+label pill above. */
+.btn-icon {
+  padding: 6px;
+}
+
+.btn-icon svg {
+  display: block;
+}
+
+.btn.active {
+  background: var(--accent-dim);
+  border-color: var(--accent);
 }
 
 .btn:hover:not(:disabled) {
@@ -280,11 +301,6 @@ button, input, output {
   gap: 8px;
 }
 
-#split-btn {
-  font-weight: 700;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-}
-
 .zoom-controls {
   display: flex;
   align-items: center;
@@ -437,6 +453,20 @@ button, input, output {
 
 .mono {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+/* Visually hidden but still announced by a screen reader — for an
+   icon-only button whose title/tooltip isn't itself accessible text. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .segment-table-wrap {
@@ -667,9 +697,12 @@ button, input, output {
 }
 
 .band-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
+  /* A flex item's default min-width is "auto" (its content size), which
+     overrides overflow/text-overflow and quietly refuses to shrink below
+     that — the bug behind labels vanishing on narrow segments instead of
+     truncating. min-width: 0 here is what lets the ellipsis rule actually
+     engage as the band gets small. */
+  min-width: 0;
   max-width: 100%;
   overflow: hidden;
   white-space: nowrap;
@@ -679,14 +712,6 @@ button, input, output {
   background: rgba(0, 0, 0, 0.28);
   border-radius: 4px;
   padding: 2px 6px;
-}
-
-.band-label .band-label-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  flex-shrink: 0;
-  background: currentColor;
 }
 
 /* A segment the user excluded from export (#18) — same hatched treatment
@@ -770,14 +795,53 @@ button, input, output {
   z-index: 10;
 }
 
-.controls-panel {
-  background: var(--panel);
+.modal-box.onboarding-box {
+  width: min(560px, 90vw);
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.onboarding-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px;
   border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 12px 16px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.onboarding-option:has(input:checked) {
+  border-color: var(--accent);
+  background: rgba(74, 158, 255, 0.08);
+}
+
+.onboarding-option input[type="checkbox"] {
+  margin-top: 3px;
+  flex-shrink: 0;
+}
+
+.onboarding-option__title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-weight: 600;
+}
+
+.onboarding-option .caption {
+  margin: 4px 0 0;
+}
+
+.onboarding-silence-panel {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
 }
 
 .slider-row {

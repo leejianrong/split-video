@@ -5,12 +5,12 @@ import { state, loadSegments, derivedSegments } from "./state.js";
 import * as api from "./api.js";
 import { createPlayer } from "./player.js";
 import { createTimeline } from "./timeline.js";
-import { createControls } from "./controls.js";
 import { createExportModal } from "./exportModal.js";
 import { createFilePicker } from "./filePicker.js";
 import { createAnalysisControl } from "./analysis.js";
 import { createSegmentTable } from "./segmentTable.js";
 import { createShortcuts } from "./shortcuts.js";
+import { createOnboarding } from "./onboarding.js";
 
 function updateHeader() {
   document.getElementById("filename").textContent = state.filename;
@@ -78,40 +78,60 @@ async function main() {
   await bootEditor();
 }
 
-// The initial silence scan runs on the server in the background (see #16 —
-// it used to block the whole editor from starting up on a long recording).
-// Poll /api/state until it's caught up, showing that a long recording is
-// still being processed rather than leaving the page looking stuck.
-async function waitForSegments(initial) {
-  const statusEl = document.getElementById("detect-status");
-  const statusTextEl = document.getElementById("detect-status-text");
-  let data = initial;
-  if (!data.segments_ready) {
-    statusEl.classList.remove("hidden");
-    statusTextEl.textContent = "Detecting splits… this can take a while for a long recording.";
-    while (!data.segments_ready) {
-      await new Promise((resolve) => setTimeout(resolve, 750));
-      data = await api.getState();
-    }
-    statusEl.classList.add("hidden");
-  }
-  if (data.segments_error) {
-    statusEl.classList.remove("hidden");
-    statusEl.classList.add("error");
-    statusTextEl.textContent = `Couldn't detect splits automatically: ${data.segments_error}. You can still play the video and add splits by hand.`;
-  }
-  return data;
+function controlsElementsForOnboarding() {
+  return {
+    thresholdInput: document.getElementById("silence-threshold"),
+    thresholdValue: document.getElementById("silence-threshold-value"),
+    minSilenceInput: document.getElementById("min-silence-duration"),
+    minSilenceValue: document.getElementById("min-silence-duration-value"),
+    minSongInput: document.getElementById("min-song-length"),
+    minSongValue: document.getElementById("min-song-length-value"),
+    paddingInput: document.getElementById("silence-padding"),
+    paddingValue: document.getElementById("silence-padding-value"),
+    recomputeBtn: document.getElementById("recompute-btn"),
+    panelEls: [
+      document.getElementById("silence-threshold"),
+      document.getElementById("min-silence-duration"),
+      document.getElementById("min-song-length"),
+      document.getElementById("silence-padding"),
+      document.getElementById("recompute-btn"),
+    ],
+  };
 }
 
 async function bootEditor() {
-  const data = await waitForSegments(await api.getState());
+  const data = await api.getState();
   state.filename = data.filename;
   state.duration = data.duration;
   state.videoUrl = data.video_url;
   state.params = data.params;
   state.silences = data.silences;
-  loadSegments(data.segments);
 
+  // A never-saved video gets the one-time setup modal instead of any
+  // automatic detection (see #16/#19's follow-up) — nothing proposes
+  // splits until the user asks for it, here or later from the toolbar.
+  let initialSegments = data.segments;
+  let runAnalysisOnStart = false;
+  if (!data.resumed) {
+    const onboarding = createOnboarding({
+      modalEl: document.getElementById("onboarding-modal"),
+      overlayEl: document.getElementById("app-overlay"),
+      elements: {
+        analyzeCheckbox: document.getElementById("onboarding-analyze"),
+        silenceCheckbox: document.getElementById("onboarding-silence"),
+        silencePanel: document.getElementById("onboarding-silence-panel"),
+        previewCountEl: document.getElementById("onboarding-preview-count"),
+        skipBtn: document.getElementById("onboarding-skip"),
+        startBtn: document.getElementById("onboarding-start"),
+        controlsElements: controlsElementsForOnboarding(),
+      },
+    });
+    const result = await onboarding.open();
+    initialSegments = result.segments;
+    runAnalysisOnStart = result.runAnalysis;
+  }
+
+  loadSegments(initialSegments);
   updateHeader();
 
   const saveIndicator = createSaveIndicator();
@@ -169,45 +189,18 @@ async function bootEditor() {
     .then((data) => timeline.setWaveform(data.buckets))
     .catch((err) => console.error("waveform fetch failed:", err));
 
-  createAnalysisControl({
+  const analysisControl = createAnalysisControl({
     analyzeBtn: document.getElementById("analyze-btn"),
     toolbarEl: document.getElementById("classification-toolbar"),
     detailToggleBtn: document.getElementById("classification-detail-toggle"),
     timeline,
   });
   document.getElementById("analyze-btn").disabled = false;
+  if (runAnalysisOnStart) analysisControl.run();
 
   document.getElementById("zoom-in").addEventListener("click", () => timeline.setZoom(timeline.getPxPerSec() * 1.4));
   document.getElementById("zoom-out").addEventListener("click", () => timeline.setZoom(timeline.getPxPerSec() / 1.4));
   document.getElementById("zoom-fit").addEventListener("click", () => timeline.fit());
-
-  const panelEls = [
-    document.getElementById("silence-threshold"),
-    document.getElementById("min-silence-duration"),
-    document.getElementById("min-song-length"),
-    document.getElementById("silence-padding"),
-    document.getElementById("recompute-btn"),
-  ];
-
-  const controls = createControls({
-    elements: {
-      thresholdInput: document.getElementById("silence-threshold"),
-      thresholdValue: document.getElementById("silence-threshold-value"),
-      minSilenceInput: document.getElementById("min-silence-duration"),
-      minSilenceValue: document.getElementById("min-silence-duration-value"),
-      minSongInput: document.getElementById("min-song-length"),
-      minSongValue: document.getElementById("min-song-length-value"),
-      paddingInput: document.getElementById("silence-padding"),
-      paddingValue: document.getElementById("silence-padding-value"),
-      recomputeBtn: document.getElementById("recompute-btn"),
-      panelEls,
-    },
-    onSegmentsReplaced: (segments) => {
-      loadSegments(segments);
-      handleSegmentsChanged();
-    },
-  });
-  controls.initFromState();
 
   createExportModal({
     modalEl: document.getElementById("export-modal"),
