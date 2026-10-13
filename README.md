@@ -167,6 +167,30 @@ If thresholds alone don't get every split right, use the
 - `--output-dir`, `--format`, `--overwrite`, `--manifest/--no-manifest`,
   `-v/--verbose`: see `split-video split --help`.
 
+### Project commands (scripting the editor's splits)
+
+The same saved splits the visual editor keeps in `<video>.split-video-project.json`
+can be read and changed from the command line — handy for scripts and AI
+agents. An edit made here shows up the next time the editor opens that
+video, and vice versa. Segments and splits are numbered from 1, as in the
+editor's segment table (split 1 is the cut between segments 1 and 2), and
+every command takes `--json`:
+
+```bash
+split-video propose liveshow.mp4 --min-song-length 60 --apply   # detect splits, save them
+split-video segments liveshow.mp4                               # list them
+split-video add-split liveshow.mp4 --at 12:34.5                 # seconds or [H:]MM:SS
+split-video move-split liveshow.mp4 2 --to 25:10
+split-video remove-split liveshow.mp4 3
+split-video label liveshow.mp4 1 --label "Opener" --color "#d9822b"
+split-video label liveshow.mp4 4 --exclude                      # leave it out of exports
+split-video export liveshow.mp4 [--only 1,3]                    # same as the editor's Export
+split-video analyze liveshow.mp4                                # YAMNet classification (see Development)
+```
+
+`propose` only prints unless you pass `--apply`, which replaces any splits
+already saved.
+
 ## Development
 
 Requires `ffmpeg`/`ffprobe` on your `PATH`. Install and run locally with `uv`:
