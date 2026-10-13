@@ -11,7 +11,7 @@ zoomable timeline for reviewing and hand-adjusting the proposed splits
 before committing to them. A plain `split` command is also available for
 scripting a one-shot split without a browser.
 
-![The visual editor: a video player above a zoomable timeline showing a waveform, colored segment bands, and split markers](docs/editor-screenshot.png)
+![The visual editor: a video player above a zoomable timeline showing a waveform, labeled colored segment bands and split markers, with a segment table below for naming and choosing what to export](docs/editor-screenshot.png)
 
 ## Quickstart (Docker)
 
