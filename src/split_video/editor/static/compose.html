@@ -41,12 +41,18 @@
     </div>
 
     <div class="compose-toolbar">
-      <button id="add-clip-btn" class="btn">+ Add clip</button>
+      <button id="add-clip-btn" class="btn" title="Add a video or audio file to the selected track">+ Add clip</button>
+      <button id="add-video-track-btn" class="btn">+ Video track</button>
+      <button id="add-audio-track-btn" class="btn">+ Audio track</button>
       <button id="delete-clip-btn" class="btn btn-danger" disabled>Delete clip</button>
-      <span class="compose-hint">Drag a clip's edges to trim, drag its body to reorder, click the join between clips to set a transition.</span>
+      <span class="compose-toolbar__spacer"></span>
+      <button id="zoom-out-btn" class="btn btn-icon" title="Zoom out" aria-label="Zoom out">&minus;</button>
+      <button id="zoom-fit-btn" class="btn" title="Fit the whole project">Fit</button>
+      <button id="zoom-in-btn" class="btn btn-icon" title="Zoom in" aria-label="Zoom in">+</button>
     </div>
+    <p class="compose-hint compose-hint--row">Click a lane name to pick where “Add clip” goes. Drag a clip's edges to trim; drag the main track's clips to reorder; drag other clips to move them in time or to another lane. The preview plays the main track; render to hear and see everything.</p>
 
-    <div id="track" class="compose-track" aria-label="Video track"></div>
+    <div id="timeline" class="tl" aria-label="Timeline"></div>
 
     <div id="transition-editor" class="compose-panel compose-row hidden">
       <span id="transition-label"></span>

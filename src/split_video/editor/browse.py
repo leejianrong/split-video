@@ -11,6 +11,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 VIDEO_EXTENSIONS = {".mp4", ".mkv", ".mov", ".avi", ".webm", ".m4v", ".ts", ".m2ts", ".flv", ".wmv"}
+# Audio files are listed too: the compose page puts them on audio tracks.
+AUDIO_EXTENSIONS = {".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg", ".opus"}
+MEDIA_EXTENSIONS = VIDEO_EXTENSIONS | AUDIO_EXTENSIONS
 
 
 class PathEscapesRootError(ValueError):
@@ -55,7 +58,7 @@ def list_directory(root: Path, rel_path: str = "") -> BrowseListing:
             continue
         if child.is_dir():
             entries.append(BrowseEntry(name=child.name, path=_relative(child, root), is_dir=True))
-        elif child.suffix.lower() in VIDEO_EXTENSIONS:
+        elif child.suffix.lower() in MEDIA_EXTENSIONS:
             entries.append(BrowseEntry(name=child.name, path=_relative(child, root), is_dir=False))
 
     parent = None if target == root else _relative(target.parent, root)

@@ -37,73 +37,6 @@
   font-size: 12px;
 }
 
-.compose-track {
-  display: flex;
-  align-items: stretch;
-  gap: 0;
-  margin: 0 16px;
-  padding: 10px;
-  min-height: 92px;
-  overflow-x: auto;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-}
-
-.compose-empty {
-  color: var(--text-dim);
-  align-self: center;
-}
-
-.clip {
-  position: relative;
-  flex: 0 0 auto;
-  height: 72px;
-  padding: 8px 14px;
-  background: var(--accent-dim);
-  border: 1px solid var(--accent);
-  border-radius: 6px;
-  overflow: hidden;
-  cursor: grab;
-  user-select: none;
-  touch-action: none;
-}
-
-.clip.selected {
-  outline: 2px solid var(--warn);
-}
-
-.clip.dragging {
-  opacity: 0.7;
-  z-index: 5;
-  cursor: grabbing;
-}
-
-.clip__name {
-  font-weight: 600;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.clip__meta {
-  color: var(--text-dim);
-  font-size: 12px;
-  white-space: nowrap;
-}
-
-.clip__edge {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  width: 8px;
-  background: rgba(255, 255, 255, 0.25);
-  cursor: ew-resize;
-}
-
-.clip__edge--l { left: 0; }
-.clip__edge--r { right: 0; }
-
 .join {
   flex: 0 0 auto;
   align-self: center;
@@ -145,3 +78,73 @@
   color: var(--text-dim);
   font-variant-numeric: tabular-nums;
 }
+
+.compose-toolbar__spacer { flex: 1; }
+.compose-hint--row { margin: 0 16px 8px; }
+
+.tl {
+  display: grid;
+  grid-template-columns: 190px 1fr;
+  margin: 0 16px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  min-height: 100px;
+}
+
+.tl__heads { border-right: 1px solid var(--border); }
+.tl__scroll { overflow-x: auto; position: relative; }
+.tl__canvas { position: relative; }
+
+.tl__ruler, .tl__headspacer { height: 22px; border-bottom: 1px solid var(--border); }
+.tl__ruler { position: relative; color: var(--text-dim); font-size: 11px; }
+.tl__tick { position: absolute; top: 0; bottom: 0; border-left: 1px solid var(--border); padding-left: 3px; }
+
+.lane, .lanehead { height: 60px; border-bottom: 1px solid var(--border); }
+.lane { position: relative; }
+.lane.active { background: rgba(74, 158, 255, 0.07); }
+.lane.drop-target { background: rgba(246, 173, 85, 0.12); }
+
+.lanehead {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 6px;
+  cursor: pointer;
+}
+.lanehead.active { background: rgba(74, 158, 255, 0.12); }
+.lanehead__name { flex: 1; min-width: 0; font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lanehead__kind { color: var(--text-dim); font-weight: 400; }
+.lanehead button { padding: 0 5px; font-size: 11px; line-height: 18px; background: none; border: 1px solid var(--border); border-radius: 4px; color: var(--text-dim); cursor: pointer; }
+.lanehead button:hover:not(:disabled) { border-color: var(--accent); color: var(--text); }
+.lanehead button:disabled { opacity: 0.35; cursor: default; }
+
+.tl__playhead { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--danger); pointer-events: none; z-index: 6; }
+
+.clip.audio { background: #2f6b4f; border-color: #4fbf8f; }
+.clip.text { background: #6b4f2f; border-color: #d9a45a; }
+.clip.invalid { outline: 2px solid var(--danger); }
+
+.join.on-lane { position: absolute; top: 4px; margin: 0; z-index: 3; }
+
+.clip {
+  position: absolute;
+  top: 6px;
+  height: 48px;
+  padding: 4px 12px;
+  background: var(--accent-dim);
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  overflow: hidden;
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+
+.clip.selected { outline: 2px solid var(--warn); }
+.clip.dragging { opacity: 0.75; z-index: 5; cursor: grabbing; }
+.clip__name { font-weight: 600; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.clip__meta { color: var(--text-dim); font-size: 11px; white-space: nowrap; overflow: hidden; }
+.clip__edge { position: absolute; top: 0; bottom: 0; width: 7px; background: rgba(255, 255, 255, 0.25); cursor: ew-resize; }
+.clip__edge--l { left: 0; }
+.clip__edge--r { right: 0; }

@@ -63,3 +63,9 @@ def test_absolute_path_cannot_escape_root(tree):
 def test_listing_nonexistent_directory_raises(tree):
     with pytest.raises(NotADirectoryError):
         list_directory(tree, "does-not-exist")
+
+
+def test_audio_files_are_listed_for_audio_tracks(tmp_path):
+    (tmp_path / "song.mp3").write_bytes(b"")
+    (tmp_path / "voice.WAV").write_bytes(b"")
+    assert {e.name for e in list_directory(tmp_path).entries} == {"song.mp3", "voice.WAV"}

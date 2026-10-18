@@ -181,6 +181,10 @@ def add_track(root: Path, name: str, kind: str) -> Project:
     return edit(root, name, change)
 
 
+def move_track(root: Path, name: str, track_id: str, to_index: int) -> Project:
+    return edit(root, name, lambda p: timeline_ops.move_track(p, track_id, to_index))
+
+
 def remove_track(root: Path, name: str, track_id: str) -> Project:
     return edit(root, name, lambda p: timeline_ops.remove_track(p, track_id))
 

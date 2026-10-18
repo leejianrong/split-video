@@ -47,11 +47,23 @@ class ClipOut(BaseModel):
     muted: bool
     transition: str
     transition_duration: float
+    x: float
+    y: float
+    scale: float
+    opacity: float
+    brightness: float
+    contrast: float
+    saturation: float
+    kind: str
+    text: str
+    font_size: float
+    color: str
 
 
 class TrackOut(BaseModel):
     id: str
     kind: str
+    magnetic: bool
     clips: list[ClipOut]
 
 
@@ -72,9 +84,23 @@ class CreateProjectRequest(BaseModel):
 class AddClipRequest(BaseModel):
     track_id: str | None = None  # defaults to the first video track
     path: str  # relative to the browse root
-    index: int | None = None
+    index: int | None = None  # position on the main track
+    start: float | None = None  # seconds, on any other track
     in_point: float = 0.0
     out_point: float | None = None
+
+
+class AddTrackRequest(BaseModel):
+    kind: str
+
+
+class MoveTrackRequest(BaseModel):
+    to_index: int
+
+
+class PlaceRequest(BaseModel):
+    start: float | None = None
+    track_id: str | None = None
 
 
 class TrimRequest(BaseModel):
@@ -147,13 +173,27 @@ def make_router(root: Path) -> APIRouter:
             muted=c.muted,
             transition=c.transition,
             transition_duration=c.transition_duration,
+            x=c.x,
+            y=c.y,
+            scale=c.scale,
+            opacity=c.opacity,
+            brightness=c.brightness,
+            contrast=c.contrast,
+            saturation=c.saturation,
+            kind=c.kind,
+            text=c.text,
+            font_size=c.font_size,
+            color=c.color,
         )
 
     def project_out(name: str, project: Project) -> ProjectOut:
         return ProjectOut(
             name=name,
             duration=project.duration,
-            tracks=[TrackOut(id=t.id, kind=t.kind, clips=[clip_out(c) for c in t.clips]) for t in project.tracks],
+            tracks=[
+                TrackOut(id=t.id, kind=t.kind, magnetic=t.magnetic, clips=[clip_out(c) for c in t.clips])
+                for t in project.tracks
+            ],
         )
 
     def respond(name: str, action: Callable[[], Project]) -> ProjectOut:
@@ -184,6 +224,7 @@ def make_router(root: Path) -> APIRouter:
                 request.path,
                 track_id=request.track_id,
                 index=request.index,
+                start=request.start,
                 in_point=request.in_point,
                 out_point=request.out_point,
             ),
@@ -196,6 +237,25 @@ def make_router(root: Path) -> APIRouter:
             lambda: timeline_service.trim_clip(
                 root, name, clip_id, in_point=request.in_point, out_point=request.out_point
             ),
+        )
+
+    @router.post("/api/compose/projects/{name}/tracks", response_model=ProjectOut)
+    def add_track(name: str, request: AddTrackRequest) -> ProjectOut:
+        return respond(name, lambda: timeline_service.add_track(root, name, request.kind))
+
+    @router.delete("/api/compose/projects/{name}/tracks/{track_id}", response_model=ProjectOut)
+    def remove_track(name: str, track_id: str) -> ProjectOut:
+        return respond(name, lambda: timeline_service.remove_track(root, name, track_id))
+
+    @router.post("/api/compose/projects/{name}/tracks/{track_id}/move", response_model=ProjectOut)
+    def move_track(name: str, track_id: str, request: MoveTrackRequest) -> ProjectOut:
+        return respond(name, lambda: timeline_service.move_track(root, name, track_id, request.to_index))
+
+    @router.post("/api/compose/projects/{name}/clips/{clip_id}/place", response_model=ProjectOut)
+    def place_clip(name: str, clip_id: str, request: PlaceRequest) -> ProjectOut:
+        return respond(
+            name,
+            lambda: timeline_service.place_clip(root, name, clip_id, start=request.start, track_id=request.track_id),
         )
 
     @router.post("/api/compose/projects/{name}/clips/{clip_id}/move", response_model=ProjectOut)
