@@ -69,7 +69,7 @@ def test_missing_source_and_empty_project_are_clear_errors(two_sources):
 def _frame_rgb(path, t, x, y):
     """The (r, g, b) of one pixel of the frame at time `t`."""
     out = subprocess.run(
-        ["ffmpeg", "-v", "error", "-ss", str(t), "-i", str(path), "-frames:v", "1", "-vf", f"crop=1:1:{x}:{y}",
+        ["ffmpeg", "-v", "error", "-ss", str(t), "-i", str(path), "-frames:v", "1", "-vf", f"format=rgb24,crop=1:1:{x}:{y}",
          "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
         capture_output=True, check=True,
     ).stdout  # fmt: skip
