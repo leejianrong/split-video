@@ -187,7 +187,17 @@ class JobOut(BaseModel):
     started_at: float | None = None
     finished_at: float | None = None
     cancel_requested: bool = False
+    owner: str | None = None  # the id of the principal that submitted it (`local` in local mode)
 
 
 class JobListOut(BaseModel):
     jobs: list[JobOut]  # newest first
+
+
+class WhoAmIOut(BaseModel):
+    """The principal making the request (`split_video.identity.Principal`)."""
+
+    id: str
+    name: str | None = None
+    kind: str  # local | token
+    auth_required: bool  # whether the server was started with SPLIT_VIDEO_TOKEN

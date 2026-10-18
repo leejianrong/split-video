@@ -16,6 +16,7 @@ from pydantic import BaseModel
 from starlette.responses import Response
 
 from split_video import assets, timeline_service
+from split_video.editor.context import RequestContext, make_context_dependency
 from split_video.editor.job_routes import cancel_job, job_of_kind
 from split_video.editor.media_response import media_response
 from split_video.editor.revisions import WRITE_RESPONSES, base_revision
@@ -24,7 +25,7 @@ from split_video.ffmpeg import ProbeError
 from split_video.job_work import RENDER_STEPS, render_work
 from split_video.jobs import RENDER, JobInfo, JobQueue
 from split_video.media_store import MediaError, MediaOutsideRootError, MediaStore
-from split_video.store import ProjectStore
+from split_video.store_provider import StoreProvider
 from split_video.timeline import (
     AssetNotFoundError,
     Clip,
@@ -206,8 +207,9 @@ def _http(exc: TimelineError) -> HTTPException:
     return HTTPException(status_code=status, detail=str(exc))
 
 
-def make_router(media: MediaStore, store: ProjectStore, jobs: JobQueue) -> APIRouter:
+def make_router(provider: StoreProvider, jobs: JobQueue) -> APIRouter:
     router = APIRouter()
+    ctx_dep = Depends(make_context_dependency(provider))
 
     def clip_out(c: Clip, row: assets.Located | None) -> ClipOut:
         return ClipOut(
@@ -240,7 +242,7 @@ def make_router(media: MediaStore, store: ProjectStore, jobs: JobQueue) -> APIRo
     def asset_out(book: assets.AssetBook, a: assets.Asset) -> AssetOut:
         return AssetOut(**a.summary(book.present(a)))
 
-    def project_out(name: str, project: Project) -> ProjectOut:
+    def project_out(media: MediaStore, name: str, project: Project) -> ProjectOut:
         # One table load for the whole project; each clip's file is found by asset id.
         with assets.open_book(media) as book:
             rows = {
@@ -261,9 +263,9 @@ def make_router(media: MediaStore, store: ProjectStore, jobs: JobQueue) -> APIRo
             ],
         )
 
-    def respond(name: str, action: Callable[[], Project]) -> ProjectOut:
+    def respond(ctx: RequestContext, name: str, action: Callable[[], Project]) -> ProjectOut:
         try:
-            return project_out(name, action())
+            return project_out(ctx.media, name, action())
         except RevisionConflictError:
             raise  # the app's handler answers it: 409 with the current revision
         except TimelineError as exc:
@@ -277,25 +279,25 @@ def make_router(media: MediaStore, store: ProjectStore, jobs: JobQueue) -> APIRo
         return HTTPException(status_code=404, detail=str(exc))
 
     @router.get("/assets", response_model=AssetListOut)
-    def list_assets() -> AssetListOut:
+    def list_assets(ctx: RequestContext = ctx_dep) -> AssetListOut:
         """The workspace's asset table: every media file a timeline clip has used, by content-derived id."""
-        with assets.open_book(media) as book:
+        with assets.open_book(ctx.media) as book:
             return AssetListOut(assets=[asset_out(book, a) for a in book.list()])
 
     @router.post("/assets/register", response_model=AssetOut)
-    def register_asset(request: RegisterAssetRequest) -> AssetOut:
+    def register_asset(request: RegisterAssetRequest, ctx: RequestContext = ctx_dep) -> AssetOut:
         """Add the file at `path` to the asset table (idempotent; the same bytes at another path are the same asset)."""
         try:
-            with assets.open_book(media) as book:
+            with assets.open_book(ctx.media) as book:
                 return asset_out(book, book.register(request.path))
         except (TimelineError, MediaError, ProbeError) as exc:
             raise asset_error(exc) from None
 
     @router.get("/assets/{asset_id}", response_model=AssetOut)
-    def get_asset(asset_id: str) -> AssetOut:
+    def get_asset(asset_id: str, ctx: RequestContext = ctx_dep) -> AssetOut:
         """One asset; if its file was renamed or moved it is found again and the table updated."""
         try:
-            with assets.open_book(media) as book:
+            with assets.open_book(ctx.media) as book:
                 book.require(asset_id)
                 try:
                     row = book.locate(asset_id)
@@ -306,24 +308,27 @@ def make_router(media: MediaStore, store: ProjectStore, jobs: JobQueue) -> APIRo
             raise asset_error(exc) from None
 
     @router.get("/compose/projects", response_model=ProjectListOut)
-    def list_projects() -> ProjectListOut:
-        return ProjectListOut(projects=store.list_timelines())
+    def list_projects(ctx: RequestContext = ctx_dep) -> ProjectListOut:
+        return ProjectListOut(projects=ctx.store.list_timelines())
 
     @router.post("/compose/projects", response_model=ProjectOut)
-    def create_project(request: CreateProjectRequest) -> ProjectOut:
-        return respond(request.name, lambda: timeline_service.create_project(store, request.name))
+    def create_project(request: CreateProjectRequest, ctx: RequestContext = ctx_dep) -> ProjectOut:
+        return respond(ctx, request.name, lambda: timeline_service.create_project(ctx.store, request.name))
 
     @router.get("/compose/projects/{name}", response_model=ProjectOut)
-    def get_project(name: str) -> ProjectOut:
-        return respond(name, lambda: timeline_service.load_existing(store, name, media))
+    def get_project(name: str, ctx: RequestContext = ctx_dep) -> ProjectOut:
+        return respond(ctx, name, lambda: timeline_service.load_existing(ctx.store, name, ctx.media))
 
     @router.post("/compose/projects/{name}/clips", response_model=ProjectOut, responses=WRITE_RESPONSES)
-    def add_clip(name: str, request: AddClipRequest, base: int | None = Depends(base_revision)) -> ProjectOut:
+    def add_clip(
+        name: str, request: AddClipRequest, base: int | None = Depends(base_revision), ctx: RequestContext = ctx_dep
+    ) -> ProjectOut:
         return respond(
+            ctx,
             name,
             lambda: timeline_service.add_clip(
-                store,
-                media,
+                ctx.store,
+                ctx.media,
                 name,
                 request.path,
                 asset=request.asset,
@@ -338,45 +343,76 @@ def make_router(media: MediaStore, store: ProjectStore, jobs: JobQueue) -> APIRo
 
     @router.patch("/compose/projects/{name}/clips/{clip_id}", response_model=ProjectOut, responses=WRITE_RESPONSES)
     def trim_clip(
-        name: str, clip_id: str, request: TrimRequest, base: int | None = Depends(base_revision)
+        name: str,
+        clip_id: str,
+        request: TrimRequest,
+        base: int | None = Depends(base_revision),
+        ctx: RequestContext = ctx_dep,
     ) -> ProjectOut:
         return respond(
+            ctx,
             name,
             lambda: timeline_service.trim_clip(
-                store, media, name, clip_id, in_point=request.in_point, out_point=request.out_point, base_revision=base
+                ctx.store,
+                ctx.media,
+                name,
+                clip_id,
+                in_point=request.in_point,
+                out_point=request.out_point,
+                base_revision=base,
             ),
         )
 
     @router.post("/compose/projects/{name}/tracks", response_model=ProjectOut, responses=WRITE_RESPONSES)
-    def add_track(name: str, request: AddTrackRequest, base: int | None = Depends(base_revision)) -> ProjectOut:
-        return respond(name, lambda: timeline_service.add_track(store, name, request.kind, media, base_revision=base))
+    def add_track(
+        name: str, request: AddTrackRequest, base: int | None = Depends(base_revision), ctx: RequestContext = ctx_dep
+    ) -> ProjectOut:
+        return respond(
+            ctx, name, lambda: timeline_service.add_track(ctx.store, name, request.kind, ctx.media, base_revision=base)
+        )
 
     @router.delete("/compose/projects/{name}/tracks/{track_id}", response_model=ProjectOut, responses=WRITE_RESPONSES)
-    def remove_track(name: str, track_id: str, base: int | None = Depends(base_revision)) -> ProjectOut:
-        return respond(name, lambda: timeline_service.remove_track(store, name, track_id, media, base_revision=base))
+    def remove_track(
+        name: str, track_id: str, base: int | None = Depends(base_revision), ctx: RequestContext = ctx_dep
+    ) -> ProjectOut:
+        return respond(
+            ctx, name, lambda: timeline_service.remove_track(ctx.store, name, track_id, ctx.media, base_revision=base)
+        )
 
     @router.post(
         "/compose/projects/{name}/tracks/{track_id}/move", response_model=ProjectOut, responses=WRITE_RESPONSES
     )
     def move_track(
-        name: str, track_id: str, request: MoveTrackRequest, base: int | None = Depends(base_revision)
+        name: str,
+        track_id: str,
+        request: MoveTrackRequest,
+        base: int | None = Depends(base_revision),
+        ctx: RequestContext = ctx_dep,
     ) -> ProjectOut:
         return respond(
+            ctx,
             name,
-            lambda: timeline_service.move_track(store, name, track_id, request.to_index, media, base_revision=base),
+            lambda: timeline_service.move_track(
+                ctx.store, name, track_id, request.to_index, ctx.media, base_revision=base
+            ),
         )
 
     @router.patch(
         "/compose/projects/{name}/clips/{clip_id}/properties", response_model=ProjectOut, responses=WRITE_RESPONSES
     )
     def set_properties(
-        name: str, clip_id: str, request: PropertiesRequest, base: int | None = Depends(base_revision)
+        name: str,
+        clip_id: str,
+        request: PropertiesRequest,
+        base: int | None = Depends(base_revision),
+        ctx: RequestContext = ctx_dep,
     ) -> ProjectOut:
         changes = request.model_dump(exclude_none=True)
         return respond(
+            ctx,
             name,
             lambda: timeline_service.set_clip_properties(
-                store, name, clip_id, media=media, base_revision=base, **changes
+                ctx.store, name, clip_id, media=ctx.media, base_revision=base, **changes
             ),
         )
 
@@ -384,75 +420,120 @@ def make_router(media: MediaStore, store: ProjectStore, jobs: JobQueue) -> APIRo
         "/compose/projects/{name}/tracks/{track_id}/text", response_model=ProjectOut, responses=WRITE_RESPONSES
     )
     def add_text(
-        name: str, track_id: str, request: AddTextRequest, base: int | None = Depends(base_revision)
+        name: str,
+        track_id: str,
+        request: AddTextRequest,
+        base: int | None = Depends(base_revision),
+        ctx: RequestContext = ctx_dep,
     ) -> ProjectOut:
         options = request.model_dump(exclude={"text", "duration"})
         return respond(
+            ctx,
             name,
             lambda: timeline_service.add_text_clip(
-                store, name, track_id, request.text, request.duration, media=media, base_revision=base, **options
+                ctx.store,
+                name,
+                track_id,
+                request.text,
+                request.duration,
+                media=ctx.media,
+                base_revision=base,
+                **options,
             ),
         )
 
     @router.patch("/compose/projects/{name}/clips/{clip_id}/text", response_model=ProjectOut, responses=WRITE_RESPONSES)
     def set_text(
-        name: str, clip_id: str, request: TextRequest, base: int | None = Depends(base_revision)
+        name: str,
+        clip_id: str,
+        request: TextRequest,
+        base: int | None = Depends(base_revision),
+        ctx: RequestContext = ctx_dep,
     ) -> ProjectOut:
         changes = request.model_dump(exclude_none=True)
         return respond(
+            ctx,
             name,
             lambda: timeline_service.set_text_properties(
-                store, name, clip_id, media=media, base_revision=base, **changes
+                ctx.store, name, clip_id, media=ctx.media, base_revision=base, **changes
             ),
         )
 
     @router.post("/compose/projects/{name}/clips/{clip_id}/place", response_model=ProjectOut, responses=WRITE_RESPONSES)
     def place_clip(
-        name: str, clip_id: str, request: PlaceRequest, base: int | None = Depends(base_revision)
+        name: str,
+        clip_id: str,
+        request: PlaceRequest,
+        base: int | None = Depends(base_revision),
+        ctx: RequestContext = ctx_dep,
     ) -> ProjectOut:
         return respond(
+            ctx,
             name,
             lambda: timeline_service.place_clip(
-                store, name, clip_id, start=request.start, track_id=request.track_id, media=media, base_revision=base
+                ctx.store,
+                name,
+                clip_id,
+                start=request.start,
+                track_id=request.track_id,
+                media=ctx.media,
+                base_revision=base,
             ),
         )
 
     @router.post("/compose/projects/{name}/clips/{clip_id}/move", response_model=ProjectOut, responses=WRITE_RESPONSES)
     def move_clip(
-        name: str, clip_id: str, request: MoveRequest, base: int | None = Depends(base_revision)
+        name: str,
+        clip_id: str,
+        request: MoveRequest,
+        base: int | None = Depends(base_revision),
+        ctx: RequestContext = ctx_dep,
     ) -> ProjectOut:
         return respond(
-            name, lambda: timeline_service.move_clip(store, name, clip_id, request.to_index, media, base_revision=base)
+            ctx,
+            name,
+            lambda: timeline_service.move_clip(
+                ctx.store, name, clip_id, request.to_index, ctx.media, base_revision=base
+            ),
         )
 
     @router.delete("/compose/projects/{name}/clips/{clip_id}", response_model=ProjectOut, responses=WRITE_RESPONSES)
-    def remove_clip(name: str, clip_id: str, base: int | None = Depends(base_revision)) -> ProjectOut:
-        return respond(name, lambda: timeline_service.remove_clip(store, name, clip_id, media, base_revision=base))
+    def remove_clip(
+        name: str, clip_id: str, base: int | None = Depends(base_revision), ctx: RequestContext = ctx_dep
+    ) -> ProjectOut:
+        return respond(
+            ctx, name, lambda: timeline_service.remove_clip(ctx.store, name, clip_id, ctx.media, base_revision=base)
+        )
 
     @router.put(
         "/compose/projects/{name}/clips/{clip_id}/transition", response_model=ProjectOut, responses=WRITE_RESPONSES
     )
     def set_transition(
-        name: str, clip_id: str, request: TransitionRequest, base: int | None = Depends(base_revision)
+        name: str,
+        clip_id: str,
+        request: TransitionRequest,
+        base: int | None = Depends(base_revision),
+        ctx: RequestContext = ctx_dep,
     ) -> ProjectOut:
         return respond(
+            ctx,
             name,
             lambda: timeline_service.set_transition(
-                store, name, clip_id, request.transition, request.duration, media, base_revision=base
+                ctx.store, name, clip_id, request.transition, request.duration, ctx.media, base_revision=base
             ),
         )
 
     @router.post("/compose/projects/{name}/render", response_model=RenderStartOut)
-    def start_render(name: str, request: RenderRequest) -> RenderStartOut:
+    def start_render(name: str, request: RenderRequest, ctx: RequestContext = ctx_dep) -> RenderStartOut:
         try:
             project, filename, out_id = timeline_service.plan_render(
-                store, media, name, request.output, request.overwrite
+                ctx.store, ctx.media, name, request.output, request.overwrite
             )
         except TimelineError as exc:
             raise _http(exc) from None
 
-        work = render_work(project, media, out_id, filename)
-        job_id = jobs.submit(RENDER, work, label=filename, total=RENDER_STEPS)
+        work = render_work(project, ctx.media, out_id, filename)
+        job_id = jobs.submit(RENDER, work, label=filename, total=RENDER_STEPS, owner=ctx.principal.id)
         return RenderStartOut(job_id=job_id)
 
     def render_out(job: JobInfo) -> RenderStatusOut:
@@ -467,39 +548,40 @@ def make_router(media: MediaStore, store: ProjectStore, jobs: JobQueue) -> APIRo
         )
 
     @router.get("/compose/render/{job_id}", response_model=RenderStatusOut)
-    def render_status(job_id: str) -> RenderStatusOut:
-        return render_out(job_of_kind(jobs, job_id, RENDER))
+    def render_status(job_id: str, ctx: RequestContext = ctx_dep) -> RenderStatusOut:
+        return render_out(job_of_kind(jobs, job_id, RENDER, ctx.principal))
 
     @router.post("/compose/render/{job_id}/cancel", response_model=RenderStatusOut)
-    def render_cancel(job_id: str) -> RenderStatusOut:
+    def render_cancel(job_id: str, ctx: RequestContext = ctx_dep) -> RenderStatusOut:
         """Stop a render: ffmpeg is terminated and the partial output file deleted (the same as
         `POST /jobs/{job_id}/cancel`, answering in the polling shape)."""
-        return render_out(cancel_job(jobs, job_id, RENDER))
+        return render_out(cancel_job(jobs, job_id, RENDER, ctx.principal))
 
     return router
 
 
-def make_media_router(media: MediaStore) -> APIRouter:
+def make_media_router(provider: StoreProvider) -> APIRouter:
     router = APIRouter()
+    ctx_dep = Depends(make_context_dependency(provider))
 
     @router.get("/media/file")
-    def media_file(path: str, request: Request) -> Response:
+    def media_file(path: str, request: Request, ctx: RequestContext = ctx_dep) -> Response:
         """A video under the browse root, for the compose page's preview player."""
         try:
-            media_id = media.resolve(path)
+            media_id = ctx.media.resolve(path)
         except MediaOutsideRootError:
             raise HTTPException(status_code=400, detail="path escapes the browse root") from None
-        if not media.is_file(media_id):
+        if not ctx.media.is_file(media_id):
             raise HTTPException(status_code=404, detail="file not found")
-        return media_response(media, media_id, request)
+        return media_response(ctx.media, media_id, request)
 
     @router.get("/media/asset/{asset_id}")
-    def media_asset(asset_id: str, request: Request) -> Response:
+    def media_asset(asset_id: str, request: Request, ctx: RequestContext = ctx_dep) -> Response:
         """The file of an asset (see /assets), found by id even if it was renamed since."""
         try:
-            media_id = assets.media_id_of(media, asset_id)
+            media_id = assets.media_id_of(ctx.media, asset_id)
         except (TimelineError, MediaError) as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from None
-        return media_response(media, media_id, request)
+        return media_response(ctx.media, media_id, request)
 
     return router

@@ -2,7 +2,7 @@
 
 Export, audio analysis and timeline renders (and, later, transcription) are all "a function
 that takes a while". They run through one `JobQueue` interface instead of ad hoc threads, so
-the editor's HTTP API, a future event stream (SPL-37) and a hosted worker pool (SPL-38 adds
+the editor's HTTP API, a future event stream (SPL-37) and a hosted worker pool (SPL-38 added
 who owns a job) all talk to the same thing. `InProcessJobQueue` is the local implementation:
 a bounded pool of daemon threads inside the server process. It is not a distributed queue.
 
@@ -92,7 +92,7 @@ class JobInfo:
     started_at: float | None = None
     finished_at: float | None = None
     cancel_requested: bool = False
-    owner: str | None = None  # placeholder for SPL-38's principal; nothing sets or checks it yet
+    owner: str | None = None  # the id of the principal that submitted it (see identity.py); None: no request
 
     @property
     def finished(self) -> bool:

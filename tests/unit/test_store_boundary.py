@@ -41,6 +41,8 @@ ENGINE = [
     "editor/cache.py",
     "jobs.py",
     "job_work.py",
+    "identity.py",
+    "store_provider.py",
     "editor/compose.py",
 ]
 # Adapters may take a `Path` root at their entry point (and app.py serves its static dir) but
@@ -83,6 +85,12 @@ def test_engine_modules_do_not_resolve_paths(module):
 @pytest.mark.parametrize("module", ENGINE)
 def test_engine_modules_import_no_pathlib(module):
     assert not PATHLIB_IMPORT.search(_code(module)), f"{module} imports pathlib"
+
+
+def test_identity_has_no_framework_imports():
+    # Principal is engine-level; the FastAPI wiring (authenticators, middleware) lives under editor/.
+    for module in ("identity.py", "store_provider.py"):
+        assert not re.search(r"^\s*(from|import) (fastapi|starlette|uvicorn)", _code(module), re.MULTILINE), module
 
 
 def test_the_browse_and_cache_helpers_are_gone():
