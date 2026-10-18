@@ -103,6 +103,36 @@ class PlaceRequest(BaseModel):
     track_id: str | None = None
 
 
+class PropertiesRequest(BaseModel):
+    """Any subset of a clip's gain/mute, overlay placement and colour adjustment."""
+
+    gain: float | None = None
+    muted: bool | None = None
+    x: float | None = None
+    y: float | None = None
+    scale: float | None = None
+    opacity: float | None = None
+    brightness: float | None = None
+    contrast: float | None = None
+    saturation: float | None = None
+
+
+class AddTextRequest(BaseModel):
+    text: str
+    duration: float = 3.0
+    start: float = 0.0
+    font_size: float = 0.08
+    color: str = "#ffffff"
+    x: float = 0.5
+    y: float = 0.85
+
+
+class TextRequest(BaseModel):
+    text: str | None = None
+    font_size: float | None = None
+    color: str | None = None
+
+
 class TrimRequest(BaseModel):
     in_point: float | None = None
     out_point: float | None = None
@@ -250,6 +280,24 @@ def make_router(root: Path) -> APIRouter:
     @router.post("/api/compose/projects/{name}/tracks/{track_id}/move", response_model=ProjectOut)
     def move_track(name: str, track_id: str, request: MoveTrackRequest) -> ProjectOut:
         return respond(name, lambda: timeline_service.move_track(root, name, track_id, request.to_index))
+
+    @router.patch("/api/compose/projects/{name}/clips/{clip_id}/properties", response_model=ProjectOut)
+    def set_properties(name: str, clip_id: str, request: PropertiesRequest) -> ProjectOut:
+        changes = request.model_dump(exclude_none=True)
+        return respond(name, lambda: timeline_service.set_clip_properties(root, name, clip_id, **changes))
+
+    @router.post("/api/compose/projects/{name}/tracks/{track_id}/text", response_model=ProjectOut)
+    def add_text(name: str, track_id: str, request: AddTextRequest) -> ProjectOut:
+        options = request.model_dump(exclude={"text", "duration"})
+        return respond(
+            name,
+            lambda: timeline_service.add_text_clip(root, name, track_id, request.text, request.duration, **options),
+        )
+
+    @router.patch("/api/compose/projects/{name}/clips/{clip_id}/text", response_model=ProjectOut)
+    def set_text(name: str, clip_id: str, request: TextRequest) -> ProjectOut:
+        changes = request.model_dump(exclude_none=True)
+        return respond(name, lambda: timeline_service.set_text_properties(root, name, clip_id, **changes))
 
     @router.post("/api/compose/projects/{name}/clips/{clip_id}/place", response_model=ProjectOut)
     def place_clip(name: str, clip_id: str, request: PlaceRequest) -> ProjectOut:
