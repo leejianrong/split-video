@@ -32,14 +32,14 @@ def resolve_export_filename(index: int, total: int, basename: str, ext: str, cus
 
 
 def build_manifest(
-    source_path: Path,
+    source_name: str,
     segments: list[Segment],
     filenames: list[str],
     parameters: dict[str, Any],
     generated_at: datetime,
 ) -> dict[str, Any]:
     return {
-        "source_file": source_path.name,
+        "source_file": source_name,
         "generated_at": generated_at.isoformat(),
         "parameters": parameters,
         "segments": [
@@ -55,7 +55,11 @@ def build_manifest(
     }
 
 
+def manifest_text(manifest: dict[str, Any]) -> str:
+    return json.dumps(manifest, indent=2) + "\n"
+
+
 def write_manifest(manifest: dict[str, Any], output_dir: Path) -> Path:
     manifest_path = output_dir / "manifest.json"
-    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
+    manifest_path.write_text(manifest_text(manifest))
     return manifest_path

@@ -9,13 +9,8 @@ from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request
 from fastapi.staticfiles import StaticFiles
-from starlette.responses import FileResponse
+from starlette.responses import Response
 
-from split_video.editor.browse import (
-    PathEscapesRootError,
-    list_directory,
-    resolve_within_root,
-)
 from split_video.editor.cache import ClassificationCache, SilenceCache, WaveformCache
 from split_video.editor.classify import ClassificationRegion
 from split_video.editor.compose import make_media_router as make_compose_media_router
@@ -26,6 +21,7 @@ from split_video.editor.jobs import (
     start_audio_analysis,
     start_export,
 )
+from split_video.editor.media_response import media_response
 from split_video.editor.schemas import (
     PROJECT_PATH_DESCRIPTION,
     AnalyzeStartResponse,
@@ -51,8 +47,9 @@ from split_video.editor.schemas import (
     StateResponse,
     WaveformResponse,
 )
-from split_video.ffmpeg import probe_duration
+from split_video.local_media_store import LocalMediaStore
 from split_video.local_store import LocalProjectStore
+from split_video.media_store import MediaNotFoundError, MediaOutsideRootError, MediaStore
 from split_video.project import ExportConflictError, ProjectError, plan_export
 from split_video.segments import Segment, compute_segments
 from split_video.silence import SilenceInterval
@@ -83,8 +80,8 @@ class _ProjectState:
     registry (see `create_app`); nothing here is shared between projects.
     """
 
-    source: Path
-    # The project's id in the `ProjectStore`: the video's path relative to the browse root.
+    source: str  # the video's media id in the `MediaStore`
+    # The project's id in the `ProjectStore`: the same id (the video's path relative to the browse root).
     project_id: str
     total_duration: float
     cache: SilenceCache
@@ -100,25 +97,28 @@ class _ProjectState:
     lock: threading.Lock = field(default_factory=threading.Lock)
 
 
-def _build_project_state(source: Path, project_id: str, store: ProjectStore) -> _ProjectState:
+def _build_project_state(source: str, project_id: str, store: ProjectStore, media: MediaStore) -> _ProjectState:
     saved = store.load_split(project_id)
     return _ProjectState(
         source=source,
         project_id=project_id,
-        total_duration=probe_duration(source),
-        cache=SilenceCache(source),
-        waveform_cache=WaveformCache(source),
-        classification_cache=ClassificationCache(source),
+        total_duration=media.probe(source).duration,
+        cache=SilenceCache(media, source),
+        waveform_cache=WaveformCache(media, source),
+        classification_cache=ClassificationCache(media, source),
         initial_segments=saved if saved is not None else [],
         resumed=saved is not None,
     )
 
 
-def create_app(root: Path, defaults: StateParams, store: ProjectStore | None = None) -> FastAPI:
+def create_app(
+    root: Path, defaults: StateParams, store: ProjectStore | None = None, media: MediaStore | None = None
+) -> FastAPI:
     """`root` is either a video file to open immediately (the historical
     `split-video edit <file>` behavior, unchanged) or a directory to pick a
     video from via the in-browser file picker. Projects are read and written
-    through `store`, by default sidecar files in the browse root."""
+    through `store` and media (sources, outputs, caches) through `media`; by default
+    both are local-disk stores rooted at the browse root."""
     # `version` is the API version, not the package version, so the committed
     # openapi.json only changes when the API does.
     app = FastAPI(title="split-video editor", version="1")
@@ -126,7 +126,7 @@ def create_app(root: Path, defaults: StateParams, store: ProjectStore | None = N
     # /media prefix) and mounted twice at the bottom: under /api/v1 (the
     # schema) and as deprecated /api and /media aliases (hidden from it).
     api = APIRouter()
-    media = APIRouter()
+    media_routes = APIRouter()
 
     # The static frontend (index.html/*.js/*.css, mounted at the bottom of
     # this function) has no cache-busting — no content hash or version
@@ -153,12 +153,14 @@ def create_app(root: Path, defaults: StateParams, store: ProjectStore | None = N
     browse_root = root.parent if root.is_file() else root
     if store is None:
         store = LocalProjectStore(browse_root.resolve())
+    if media is None:
+        media = LocalMediaStore(browse_root.resolve())
     job_store = JobStore()
     analysis_job_store = AnalysisJobStore()
-    # Registry of per-project state, keyed by resolved source path and built
+    # Registry of per-project state, keyed by canonical source media id and built
     # lazily on first use. The project id a client sends is the video's path
     # relative to the browse root; there is no "currently open" file.
-    projects: dict[Path, _ProjectState] = {}
+    projects: dict[str, _ProjectState] = {}
     projects_lock = threading.Lock()
     default_project_id = root.name if root.is_file() else None
 
@@ -185,14 +187,14 @@ def create_app(root: Path, defaults: StateParams, store: ProjectStore | None = N
     def _silences_out(silences: list[SilenceInterval]) -> list[SilenceIntervalOut]:
         return [SilenceIntervalOut(start=s.start, end=s.end) for s in silences]
 
-    def _resolve(path: str) -> Path:
+    def _resolve(path: str) -> str:
         try:
-            resolved = resolve_within_root(browse_root, path)
-        except PathEscapesRootError:
+            media_id = media.resolve(path)
+        except MediaOutsideRootError:
             raise HTTPException(status_code=400, detail="path escapes the browse root")
-        if not resolved.is_file():
+        if not media.is_file(media_id):
             raise HTTPException(status_code=404, detail="file not found")
-        return resolved
+        return media_id
 
     def _get_project(path: str, refresh: bool = False) -> _ProjectState:
         """The state for project `path`, built on first use. `refresh`
@@ -202,10 +204,9 @@ def create_app(root: Path, defaults: StateParams, store: ProjectStore | None = N
         with projects_lock:
             project = projects.get(source)
         if project is None:
-            # The id is the resolved source relative to the (resolved) root,
+            # The id is the canonical (symlink-resolved) source id,
             # so a symlinked video keeps its project beside the real file.
-            project_id = source.relative_to(browse_root.resolve()).as_posix()
-            built = _build_project_state(source, project_id, store)  # outside the lock: probes with ffmpeg
+            built = _build_project_state(source, source, store, media)  # outside the lock: probes with ffmpeg
             with projects_lock:
                 project = projects.setdefault(source, built)
         if refresh:
@@ -223,7 +224,7 @@ def create_app(root: Path, defaults: StateParams, store: ProjectStore | None = N
     def _state_response(project: _ProjectState, path: str) -> StateResponse:
         with project.lock:
             return StateResponse(
-                filename=project.source.name,
+                filename=media.name(project.source),
                 duration=project.total_duration,
                 video_url=f"{API_PREFIX}/media/source?path={quote(path, safe='/')}",
                 params=defaults,
@@ -245,10 +246,10 @@ def create_app(root: Path, defaults: StateParams, store: ProjectStore | None = N
     @api.get("/browse", response_model=BrowseResponse)
     def browse(path: str = "") -> BrowseResponse:
         try:
-            listing = list_directory(browse_root, path)
-        except PathEscapesRootError:
+            listing = media.list_dir(path)
+        except MediaOutsideRootError:
             raise HTTPException(status_code=400, detail="path escapes the browse root")
-        except (FileNotFoundError, NotADirectoryError):
+        except MediaNotFoundError:
             raise HTTPException(status_code=404, detail="directory not found")
         return BrowseResponse(
             cwd=listing.cwd,
@@ -286,9 +287,9 @@ def create_app(root: Path, defaults: StateParams, store: ProjectStore | None = N
             project.resumed = True
         return _state_response(project, path)
 
-    @media.get("/media/source")
-    def get_media(project: _ProjectState = project_dependency) -> FileResponse:
-        return FileResponse(project.source)
+    @media_routes.get("/media/source")
+    def get_media(request: Request, project: _ProjectState = project_dependency) -> Response:
+        return media_response(media, project.source, request)
 
     @api.post("/detect", response_model=DetectResponse)
     def detect(request: DetectRequest, project: _ProjectState = project_dependency) -> DetectResponse:
@@ -328,7 +329,7 @@ def create_app(root: Path, defaults: StateParams, store: ProjectStore | None = N
             job_id, _ = analysis_job_store.create_done(total=0)
             return AnalyzeStartResponse(job_id=job_id)
         thresholds = cache.get_thresholds()
-        job_id = start_audio_analysis(analysis_job_store, project.source, cache, thresholds)
+        job_id = start_audio_analysis(analysis_job_store, media, project.source, cache, thresholds)
         return AnalyzeStartResponse(job_id=job_id)
 
     @api.get("/analyze/{job_id}", response_model=AnalyzeStatusResponse)
@@ -371,6 +372,7 @@ def create_app(root: Path, defaults: StateParams, store: ProjectStore | None = N
     def export(request: ExportRequest, project: _ProjectState = project_dependency) -> ExportStartResponse:
         try:
             plan = plan_export(
+                media,
                 project.source,
                 [(s.start, s.end, s.name) for s in request.segments],
                 output_format=request.output_format,
@@ -383,6 +385,7 @@ def create_app(root: Path, defaults: StateParams, store: ProjectStore | None = N
 
         job_id = start_export(
             job_store,
+            media,
             plan,
             request.precise,
             request.output_format,
@@ -413,16 +416,16 @@ def create_app(root: Path, defaults: StateParams, store: ProjectStore | None = N
                 error=job.error,
             )
 
-    api.include_router(make_compose_router(browse_root, store))
-    media.include_router(make_compose_media_router(browse_root))
+    api.include_router(make_compose_router(media, store))
+    media_routes.include_router(make_compose_media_router(media))
 
     app.include_router(api, prefix=API_PREFIX)
-    app.include_router(media, prefix=API_PREFIX)
+    app.include_router(media_routes, prefix=API_PREFIX)
     # Deprecated aliases for one release: /api/... and /media/... as they were
     # before versioning. Not in the OpenAPI schema; responses carry a
     # `Deprecation` header (set by the middleware above). Registered after /api/v1 so it can't shadow it.
     app.include_router(api, prefix="/api", include_in_schema=False)
-    app.include_router(media, include_in_schema=False)
+    app.include_router(media_routes, include_in_schema=False)
 
     # Mounted last: Starlette matches routes in registration order, and this
     # catch-all static mount must not shadow the /api/* and /media/* routes.

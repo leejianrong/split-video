@@ -1,5 +1,4 @@
 from datetime import datetime, timezone
-from pathlib import Path
 
 from split_video.naming import build_manifest, resolve_export_filename, segment_filename
 from split_video.segments import Segment
@@ -38,7 +37,7 @@ def test_build_manifest_shape():
     segments = [Segment(index=1, start=0.0, end=10.0), Segment(index=2, start=10.0, end=25.5)]
     filenames = ["01 - show.mp4", "02 - show.mp4"]
     manifest = build_manifest(
-        source_path=Path("show.mp4"),
+        source_name="show.mp4",
         segments=segments,
         filenames=filenames,
         parameters={"silence_threshold": "-35dB"},

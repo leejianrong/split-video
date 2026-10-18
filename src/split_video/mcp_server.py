@@ -27,11 +27,12 @@ from mcp.server.mcpserver.exceptions import ToolError
 from mcp_types import ToolAnnotations
 
 from split_video import project, timeline, timeline_service
-from split_video.editor.browse import PathEscapesRootError, list_directory, resolve_within_root
 from split_video.editor.cache import ClassificationCache
 from split_video.editor.classify import ModelNotFoundError
 from split_video.ffmpeg import ExtractError, FfmpegNotFoundError, ProbeError
+from split_video.local_media_store import LocalMediaStore
 from split_video.local_store import LocalProjectStore
+from split_video.media_store import MediaNotFoundError, MediaOutsideRootError, MediaStore
 from split_video.store import ProjectStore
 from split_video.timeline import TimelineError
 
@@ -75,36 +76,29 @@ add_timeline_text puts titles over the picture. Later video tracks draw on top.
 """
 
 
-def create_server(root: Path, store: ProjectStore | None = None) -> MCPServer:
-    """`store` defaults to sidecar files under `root`; tests pass an in-memory one."""
+def create_server(root: Path, store: ProjectStore | None = None, media: MediaStore | None = None) -> MCPServer:
+    """`store` and `media` default to local-disk stores under `root` (sidecar
+    files next to the videos); tests pass in-memory ones."""
     root = root.resolve()
     store = store if store is not None else LocalProjectStore(root)
+    media = media if media is not None else LocalMediaStore(root)
     server = MCPServer("split-video", instructions=INSTRUCTIONS)
 
-    def resolve(video: str) -> Path:
-        p = Path(video)
-        if p.is_absolute():
-            try:
-                video = p.resolve().relative_to(root).as_posix()
-            except ValueError:
-                raise ToolError(f"{video} is outside the allowed root directory") from None
+    def resolve(video: str) -> str:
+        """A video's canonical media id (also its id in the project store)."""
         try:
-            path = resolve_within_root(root, video)
-        except PathEscapesRootError:
+            media_id = media.resolve_user_path(video)
+        except MediaOutsideRootError:
             raise ToolError(f"{video} is outside the allowed root directory") from None
-        if not path.is_file():
+        if not media.is_file(media_id):
             raise ToolError(f"video not found: {video}")
-        return path
+        return media_id
 
-    def project_id(source: Path) -> str:
-        """A resolved video's id in the store: its path relative to the root."""
-        return source.relative_to(root).as_posix()
+    def current_segments(source: str) -> list:
+        return project.current_segments(store, media, source)
 
-    def current_segments(source: Path) -> list:
-        return project.current_segments(store, project_id(source), source)
-
-    def save_segments(source: Path, segments: list) -> None:
-        project.save_segments(store, project_id(source), segments)
+    def save_segments(source: str, segments: list) -> None:
+        project.save_segments(store, source, segments)
 
     async def run(fn, *args, **kwargs):
         """Run blocking work (ffmpeg, YAMNet) off the event loop, turning the
@@ -114,9 +108,9 @@ def create_server(root: Path, store: ProjectStore | None = None) -> MCPServer:
         except _EXPECTED_ERRORS as exc:
             raise ToolError(str(exc)) from None
 
-    def result(source: Path, segments: list, **extra: Any) -> dict[str, Any]:
+    def result(source: str, segments: list, **extra: Any) -> dict[str, Any]:
         return {
-            "video": source.relative_to(root).as_posix(),
+            "video": source,
             **extra,
             "segments": project.describe_segments(segments),
         }
@@ -126,10 +120,10 @@ def create_server(root: Path, store: ProjectStore | None = None) -> MCPServer:
         """List the videos and folders under `directory` (relative to the root; empty = the root),
         noting which videos already have saved splits."""
         try:
-            listing = await anyio.to_thread.run_sync(list_directory, root, directory)
-        except PathEscapesRootError:
+            listing = await anyio.to_thread.run_sync(media.list_dir, directory)
+        except MediaOutsideRootError:
             raise ToolError(f"{directory} is outside the allowed root directory") from None
-        except (FileNotFoundError, NotADirectoryError):
+        except MediaNotFoundError:
             raise ToolError(f"directory not found: {directory}") from None
         return {
             "directory": listing.cwd,
@@ -148,7 +142,7 @@ def create_server(root: Path, store: ProjectStore | None = None) -> MCPServer:
         """Show a video's saved segments (start/end/label/color/included/export_name), or the whole
         recording as one segment with saved=false if nothing has been saved yet."""
         source = resolve(video)
-        saved = project.has_project(store, project_id(source))
+        saved = project.has_project(store, source)
         segments = await run(current_segments, source)
         return result(source, segments, saved=saved)
 
@@ -168,6 +162,7 @@ def create_server(root: Path, store: ProjectStore | None = None) -> MCPServer:
         source = resolve(video)
         segments = await run(
             project.propose_segments,
+            media,
             source,
             silence_threshold=silence_threshold,
             min_silence_duration=min_silence_duration,
@@ -260,13 +255,13 @@ def create_server(root: Path, store: ProjectStore | None = None) -> MCPServer:
         source = resolve(video)
 
         def work() -> dict[str, Any]:
-            cache = ClassificationCache(source)
+            cache = ClassificationCache(media, source)
             if force or not cache.is_analyzed:
-                project.run_analysis(source, cache, cache.get_thresholds())
+                project.run_analysis(media, source, cache, cache.get_thresholds())
             return project.summarize_classification(cache)
 
         summary = await run(work)
-        return {"video": source.relative_to(root).as_posix(), **summary}
+        return {"video": source, **summary}
 
     @server.tool(annotations=ToolAnnotations(read_only_hint=False, destructive_hint=True, open_world_hint=False))
     async def export(
@@ -283,31 +278,32 @@ def create_server(root: Path, store: ProjectStore | None = None) -> MCPServer:
         land a second or two off a keyframe. Refuses to replace existing files unless overwrite=true."""
         source = resolve(video)
 
-        def work() -> tuple[project.ExportPlan, list[Path], Path | None]:
+        def work() -> tuple[project.ExportPlan, list[str], str | None]:
             chosen = project.select_for_export(current_segments(source), only)
             plan = project.plan_export(
+                media,
                 source,
                 [(s.start, s.end, s.export_name) for s in chosen],
                 output_format=output_format,
                 overwrite=overwrite,
             )
             written, manifest_path = project.run_export(
-                plan, precise=precise, output_format=output_format, write_manifest_file=manifest
+                media, plan, precise=precise, output_format=output_format, write_manifest_file=manifest
             )
             return plan, written, manifest_path
 
         plan, written, manifest_path = await run(work)
         return {
-            "video": source.relative_to(root).as_posix(),
-            "output_dir": plan.output_dir.relative_to(root).as_posix(),
-            "files": [p.relative_to(root).as_posix() for p in written],
-            "manifest": manifest_path.relative_to(root).as_posix() if manifest_path else None,
+            "video": source,
+            "output_dir": plan.output_dir,
+            "files": written,
+            "manifest": manifest_path,
         }
 
     # --- timeline (multi-clip) projects ---------------------------------------
 
     def timeline_result(name: str, project_: timeline.Project, **extra: Any) -> dict[str, Any]:
-        return {**extra, **timeline_service.describe(root, name, project_)}
+        return {**extra, **timeline_service.describe(media, name, project_)}
 
     def timeline_clip(name: str, clip: int, track: int | None = None) -> str:
         return timeline_service.clip_id_at(timeline_service.load_existing(store, name), clip, track)
@@ -349,7 +345,7 @@ def create_server(root: Path, store: ProjectStore | None = None) -> MCPServer:
         project_ = await run(
             lambda: timeline_service.add_clip(
                 store,
-                root,
+                media,
                 name,
                 video,
                 track_id=None if track is None else timeline_track(name, track),
@@ -372,7 +368,7 @@ def create_server(root: Path, store: ProjectStore | None = None) -> MCPServer:
             raise ToolError("pass in_point and/or out_point")
         project_ = await run(
             lambda: timeline_service.trim_clip(
-                store, root, name, timeline_clip(name, clip, track), in_point=in_point, out_point=out_point
+                store, media, name, timeline_clip(name, clip, track), in_point=in_point, out_point=out_point
             )
         )
         return timeline_result(name, project_)
@@ -529,8 +525,8 @@ def create_server(root: Path, store: ProjectStore | None = None) -> MCPServer:
         existing file unless overwrite=true. Re-encodes, so it can take a while for long clips."""
 
         def work() -> dict[str, Any]:
-            project_, filename, out_path = timeline_service.plan_render(store, root, name, output, overwrite)
-            timeline_service.run_render(project_, root, out_path)
+            project_, filename, out_id = timeline_service.plan_render(store, media, name, output, overwrite)
+            timeline_service.run_render(project_, media, out_id)
             return {"name": name, "output": filename, "duration": project_.duration}
 
         return await run(work)

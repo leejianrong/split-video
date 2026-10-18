@@ -23,17 +23,18 @@ map it to its own error style.
 from __future__ import annotations
 
 import itertools
+import posixpath
 import re
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any
 
 from split_video.editor import classify
 from split_video.editor.cache import ClassificationCache, SilenceCache
-from split_video.ffmpeg import extract_pcm_audio, extract_segment, probe_duration
-from split_video.naming import build_manifest, resolve_export_filename, write_manifest
+from split_video.ffmpeg import extract_pcm_audio, extract_segment
+from split_video.media_store import MediaStore
+from split_video.naming import build_manifest, manifest_text, resolve_export_filename
 from split_video.segments import Segment, compute_segments
 from split_video.store import ProjectStore, SavedSegment
 
@@ -58,14 +59,14 @@ class ExportConflictError(ProjectError):
 # --- loading / saving -------------------------------------------------------
 
 
-def current_segments(store: ProjectStore, project_id: str, source: Path) -> list[SavedSegment]:
-    """The saved segments for project `project_id`, or one segment covering
-    the whole recording `source` if nothing has been saved yet (the editor's
-    skip-setup state)."""
+def current_segments(store: ProjectStore, media: MediaStore, project_id: str) -> list[SavedSegment]:
+    """The saved segments for project `project_id` (the video's media id), or
+    one segment covering the whole recording if nothing has been saved yet (the
+    editor's skip-setup state)."""
     saved = store.load_split(project_id)
     if saved:
         return saved
-    return [SavedSegment(start=0.0, end=probe_duration(source))]
+    return [SavedSegment(start=0.0, end=media.probe(project_id).duration)]
 
 
 def has_project(store: ProjectStore, project_id: str) -> bool:
@@ -116,7 +117,8 @@ def contiguous(computed: list[Segment]) -> list[SavedSegment]:
 
 
 def propose_segments(
-    source: Path,
+    media: MediaStore,
+    source: str,
     *,
     silence_threshold: float = -35.0,
     min_silence_duration: float = 2.0,
@@ -126,8 +128,8 @@ def propose_segments(
     """Splits proposed by silence detection — the same scan + post-processing
     the editor's setup step runs (and cached the same way, so a later `edit`
     reuses the scan). Does not save; pair with `save_segments`."""
-    duration = probe_duration(source)
-    silences = SilenceCache(source).get_raw_silences(silence_threshold)
+    duration = media.probe(source).duration
+    silences = SilenceCache(media, source).get_raw_silences(silence_threshold)
     computed = compute_segments(silences, duration, min_silence_duration, min_song_length, padding)
     return contiguous(computed)
 
@@ -227,10 +229,10 @@ def update_segment(
 
 @dataclass(frozen=True)
 class ExportPlan:
-    source: Path
+    source: str  # media ids, as in the `MediaStore`
     segments: list[tuple[float, float]]
     filenames: list[str]
-    output_dir: Path
+    output_dir: str
 
 
 def select_for_export(segments: list[SavedSegment], only: list[int] | None = None) -> list[SavedSegment]:
@@ -258,7 +260,8 @@ def validate_pairs(pairs: list[tuple[float, float]]) -> None:
 
 
 def plan_export(
-    source: Path,
+    media: MediaStore,
+    source: str,
     segments: list[tuple[float, float, str | None]],
     *,
     output_format: str | None = None,
@@ -269,15 +272,17 @@ def plan_export(
     written. Raises `ExportConflictError` if files exist and `overwrite` is off."""
     pairs = [(start, end) for start, end, _ in segments]
     validate_pairs(pairs)
-    output_dir = source.with_name(f"{source.stem}_split")
-    ext = source.suffix if output_format is None else f".{output_format.lstrip('.')}"
+    output_dir = media.export_dir(source)
+    name = media.name(source)
+    stem, suffix = posixpath.splitext(name)
+    ext = suffix if output_format is None else f".{output_format.lstrip('.')}"
     filenames = [
-        resolve_export_filename(i + 1, len(pairs), source.stem, ext, name) for i, (_, _, name) in enumerate(segments)
+        resolve_export_filename(i + 1, len(pairs), stem, ext, custom) for i, (_, _, custom) in enumerate(segments)
     ]
     if len(set(filenames)) != len(filenames):
         raise ProjectError("export names must be unique across segments")
     if not overwrite:
-        conflicts = [f for f in filenames if (output_dir / f).exists()]
+        conflicts = [f for f in filenames if media.exists(media.join(output_dir, f))]
         if conflicts:
             raise ExportConflictError(
                 f"{len(conflicts)} output file(s) already exist (pass overwrite to replace): {', '.join(conflicts)}"
@@ -286,6 +291,7 @@ def plan_export(
 
 
 def run_export(
+    media: MediaStore,
     plan: ExportPlan,
     *,
     precise: bool = False,
@@ -294,32 +300,33 @@ def run_export(
     parameters: dict[str, Any] | None = None,
     on_file_start: Callable[[str], None] | None = None,
     on_file_done: Callable[[str], None] | None = None,
-) -> tuple[list[Path], Path | None]:
+) -> tuple[list[str], str | None]:
     """Write the planned files (and `manifest.json`). Blocking; the editor
     calls this on a worker thread, the CLI and MCP server call it inline.
-    Returns the written paths and the manifest path, if one was written."""
-    plan.output_dir.mkdir(parents=True, exist_ok=True)
+    Returns the written media ids and the manifest's, if one was written."""
     objs = [Segment(index=i + 1, start=a, end=b) for i, (a, b) in enumerate(plan.segments)]
-    written: list[Path] = []
+    written: list[str] = []
     for seg, filename in zip(objs, plan.filenames):
-        out_path = plan.output_dir / filename
+        out_id = media.join(plan.output_dir, filename)
         if on_file_start:
             on_file_start(filename)
-        extract_segment(plan.source, seg.start, seg.end, out_path, precise, output_format)
-        written.append(out_path)
+        with media.local_path(plan.source) as source, media.write_local(out_id) as out_path:
+            extract_segment(source, seg.start, seg.end, out_path, precise, output_format)
+        written.append(out_id)
         if on_file_done:
-            on_file_done(str(out_path))
+            on_file_done(out_id)
 
     manifest_path = None
     if write_manifest_file:
         data = build_manifest(
-            source_path=plan.source,
+            source_name=media.name(plan.source),
             segments=objs,
             filenames=plan.filenames,
             parameters=parameters if parameters is not None else {"precise": precise},
             generated_at=datetime.now(timezone.utc),
         )
-        manifest_path = write_manifest(data, plan.output_dir)
+        manifest_path = media.join(plan.output_dir, "manifest.json")
+        media.write_bytes(manifest_path, manifest_text(data).encode())
     return written, manifest_path
 
 
@@ -327,7 +334,8 @@ def run_export(
 
 
 def run_analysis(
-    source: Path,
+    media: MediaStore,
+    source: str,
     cache: ClassificationCache,
     thresholds: dict[str, float],
     on_progress: Callable[[int, int], None] | None = None,
@@ -335,7 +343,8 @@ def run_analysis(
     """Run YAMNet over `source` and store the result in `cache` (which writes
     the sidecar cache file). Blocking and potentially slow on a long recording."""
     model, labels = classify.get_model_and_labels()
-    pcm = extract_pcm_audio(source, sample_rate=classify.SAMPLE_RATE)
+    with media.local_path(source) as path:
+        pcm = extract_pcm_audio(path, sample_rate=classify.SAMPLE_RATE)
     regions, frame_bucket_scores, total_duration = classify.classify_audio(pcm, model, labels, thresholds, on_progress)
     cache.store_result(frame_bucket_scores, total_duration, regions)
 

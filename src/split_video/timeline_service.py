@@ -15,11 +15,11 @@ from __future__ import annotations
 
 import threading
 from collections.abc import Callable
-from pathlib import Path
 from typing import Any
 
 from split_video import timeline, timeline_ops
-from split_video.ffmpeg import MediaInfo, ProbeError, probe_media
+from split_video.ffmpeg import MediaInfo, ProbeError
+from split_video.media_store import MediaError, MediaOutsideRootError, MediaStore
 from split_video.render import render
 from split_video.store import ProjectStore
 from split_video.timeline import (
@@ -31,33 +31,28 @@ from split_video.timeline import (
 )
 
 _lock = threading.Lock()
-_duration_cache: dict[tuple[str, int], float] = {}
 
 
-def source_duration(root: Path, source: str) -> float | None:
+def source_duration(media: MediaStore, source: str) -> float | None:
     """Duration of a clip's source file, or None if it's missing or unreadable."""
     if not source:  # text clips have no source
         return None
     try:
-        path = timeline.resolve_source(root, source)
-        key = (str(path), path.stat().st_mtime_ns)
-        if key not in _duration_cache:
-            _duration_cache[key] = probe_media(path).duration
-        return _duration_cache[key]
-    except (TimelineError, OSError, ProbeError):
+        return media.probe(timeline.source_media_id(media, source)).duration
+    except (TimelineError, MediaError, OSError, ProbeError):
         return None
 
 
-def _probe_new_source(root: Path, rel: str) -> tuple[str, MediaInfo]:
-    """A root-relative source string and its media info, for a path the caller named."""
-    root = root.resolve()
-    path = (root / rel.lstrip("/")).resolve()
-    if path != root and root not in path.parents:
-        raise OutsideRootError(f"{rel!r} is outside the project directory")
-    if not path.is_file():
+def _probe_new_source(media: MediaStore, rel: str) -> tuple[str, MediaInfo]:
+    """A canonical source id and its media info, for a path the caller named."""
+    try:
+        media_id = media.resolve(rel)
+    except MediaOutsideRootError:
+        raise OutsideRootError(f"{rel!r} is outside the project directory") from None
+    if not media.is_file(media_id):
         raise SourceNotFoundError(f"file not found: {rel}")
     try:
-        return timeline.relative_source(root, path), probe_media(path)
+        return media_id, media.probe(media_id)
     except ProbeError as exc:
         raise TimelineError(str(exc)) from None
 
@@ -113,7 +108,7 @@ def clip_id_at(project: Project, position: int, track: int | None = None) -> str
 
 def add_clip(
     store: ProjectStore,
-    root: Path,
+    media: MediaStore,
     name: str,
     path: str,
     *,
@@ -123,7 +118,7 @@ def add_clip(
     in_point: float = 0.0,
     out_point: float | None = None,
 ) -> Project:
-    source, info = _probe_new_source(root, path)
+    source, info = _probe_new_source(media, path)
 
     def change(project: Project) -> Project:
         target = timeline_ops.find_track(project, track_id) if track_id else video_track(project)
@@ -148,7 +143,7 @@ def add_clip(
 
 def trim_clip(
     store: ProjectStore,
-    root: Path,
+    media: MediaStore,
     name: str,
     clip_id: str,
     *,
@@ -157,7 +152,7 @@ def trim_clip(
 ) -> Project:
     def change(project: Project) -> Project:
         track, i = timeline_ops.find_clip(project, clip_id)
-        duration = float("inf") if track.clips[i].kind == "text" else source_duration(root, track.clips[i].source)
+        duration = float("inf") if track.clips[i].kind == "text" else source_duration(media, track.clips[i].source)
         if duration is None:
             raise TimelineError("the clip's source file is missing or unreadable")
         return timeline_ops.trim_clip(project, clip_id, duration, in_point=in_point, out_point=out_point)
@@ -219,31 +214,33 @@ def set_transition(store: ProjectStore, name: str, clip_id: str, transition: str
 
 
 def plan_render(
-    store: ProjectStore, root: Path, name: str, output: str | None, overwrite: bool
-) -> tuple[Project, str, Path]:
-    """Check a render request and return the project, output filename and path."""
+    store: ProjectStore, media: MediaStore, name: str, output: str | None, overwrite: bool
+) -> tuple[Project, str, str]:
+    """Check a render request and return the project, output filename and the
+    output's media id (a plain filename is a file in the root)."""
     project = load_existing(store, name)
     filename = output or f"{name}-render.mp4"
     if "/" in filename or "\\" in filename or filename.startswith("."):
         raise TimelineError("output must be a plain filename")
     if not filename.lower().endswith(".mp4"):
         raise TimelineError("output must end in .mp4")
-    out_path = root / filename
-    if out_path.exists() and not overwrite:
+    if media.exists(filename) and not overwrite:
         raise OutputExistsError(f"{filename} already exists")
     if not any(t.clips for t in project.tracks):
         raise TimelineError("the timeline has no clips to render")
-    return project, filename, out_path
+    return project, filename, filename
 
 
-def run_render(project: Project, root: Path, out_path: Path, progress: Callable[[float], None] | None = None) -> None:
-    render(project, root, out_path, progress)
+def run_render(
+    project: Project, media: MediaStore, out_id: str, progress: Callable[[float], None] | None = None
+) -> None:
+    render(project, media, out_id, progress)
 
 
 # --- describing ---------------------------------------------------------------
 
 
-def describe(root: Path, name: str, project: Project) -> dict[str, Any]:
+def describe(media: MediaStore, name: str, project: Project) -> dict[str, Any]:
     """JSON-friendly view of a project, with clips numbered from 1 per track."""
     return {
         "name": name,
@@ -264,7 +261,7 @@ def describe(root: Path, name: str, project: Project) -> dict[str, Any]:
                         "start": c.start,
                         "end": c.end,
                         "duration": c.duration,
-                        "source_duration": source_duration(root, c.source),
+                        "source_duration": source_duration(media, c.source),
                         "gain": c.gain,
                         "muted": c.muted,
                         "transition": c.transition,

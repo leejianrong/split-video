@@ -9,8 +9,8 @@ timeline projects); a hosted deployment would supply a database-backed
 implementation of the same interface. `InMemoryProjectStore` is the
 reference implementation and what the unit tests run the engine against.
 
-Source media, the derived caches and file-path handling are deliberately not
-part of this interface (see the MediaStore card).
+Source media, written outputs and the derived caches are not part of this
+interface: they live behind `media_store.MediaStore`.
 """
 
 from __future__ import annotations

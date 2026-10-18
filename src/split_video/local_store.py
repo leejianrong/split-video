@@ -7,7 +7,7 @@ like `~/.cache/`: `make dev` runs the editor in a `--rm`'d container with only
 the video directory bind-mounted, so anything written elsewhere is wiped on
 the next run. This is the only module that knows those file names.
 
-Deliberately separate from `editor/cache_store.py`, which holds *derived*
+Deliberately separate from `local_media_store.py`, which holds *derived*
 results that are safe to lose; these files hold what the user placed by hand.
 """
 

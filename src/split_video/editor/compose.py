@@ -13,15 +13,15 @@ import threading
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
-from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
-from starlette.responses import FileResponse
+from starlette.responses import Response
 
 from split_video import timeline_service
-from split_video.editor.browse import PathEscapesRootError, resolve_within_root
+from split_video.editor.media_response import media_response
 from split_video.ffmpeg import ExtractError, ProbeError
+from split_video.media_store import MediaError, MediaOutsideRootError, MediaStore
 from split_video.store import ProjectStore
 from split_video.timeline import (
     Clip,
@@ -185,9 +185,8 @@ def _http(exc: TimelineError) -> HTTPException:
     return HTTPException(status_code=status, detail=str(exc))
 
 
-def make_router(root: Path, store: ProjectStore) -> APIRouter:
+def make_router(media: MediaStore, store: ProjectStore) -> APIRouter:
     router = APIRouter()
-    root = root.resolve()
     jobs: dict[str, _RenderJob] = {}
 
     def clip_out(c: Clip) -> ClipOut:
@@ -199,7 +198,7 @@ def make_router(root: Path, store: ProjectStore) -> APIRouter:
             start=c.start,
             end=c.end,
             duration=c.duration,
-            source_duration=timeline_service.source_duration(root, c.source),
+            source_duration=timeline_service.source_duration(media, c.source),
             gain=c.gain,
             muted=c.muted,
             transition=c.transition,
@@ -251,7 +250,7 @@ def make_router(root: Path, store: ProjectStore) -> APIRouter:
             name,
             lambda: timeline_service.add_clip(
                 store,
-                root,
+                media,
                 name,
                 request.path,
                 track_id=request.track_id,
@@ -267,7 +266,7 @@ def make_router(root: Path, store: ProjectStore) -> APIRouter:
         return respond(
             name,
             lambda: timeline_service.trim_clip(
-                store, root, name, clip_id, in_point=request.in_point, out_point=request.out_point
+                store, media, name, clip_id, in_point=request.in_point, out_point=request.out_point
             ),
         )
 
@@ -326,8 +325,8 @@ def make_router(root: Path, store: ProjectStore) -> APIRouter:
     @router.post("/compose/projects/{name}/render", response_model=RenderStartOut)
     def start_render(name: str, request: RenderRequest) -> RenderStartOut:
         try:
-            project, filename, out_path = timeline_service.plan_render(
-                store, root, name, request.output, request.overwrite
+            project, filename, out_id = timeline_service.plan_render(
+                store, media, name, request.output, request.overwrite
             )
         except TimelineError as exc:
             raise _http(exc) from None
@@ -341,10 +340,10 @@ def make_router(root: Path, store: ProjectStore) -> APIRouter:
                 job.progress = fraction
 
             try:
-                timeline_service.run_render(project, root, out_path, on_progress)
+                timeline_service.run_render(project, media, out_id, on_progress)
                 job.output = filename
                 job.status = "done"
-            except (TimelineError, ExtractError, ProbeError, OSError) as exc:
+            except (TimelineError, ExtractError, ProbeError, MediaError, OSError) as exc:
                 job.error = str(exc)
                 job.status = "error"
 
@@ -361,19 +360,18 @@ def make_router(root: Path, store: ProjectStore) -> APIRouter:
     return router
 
 
-def make_media_router(root: Path) -> APIRouter:
+def make_media_router(media: MediaStore) -> APIRouter:
     router = APIRouter()
-    root = root.resolve()
 
     @router.get("/media/file")
-    def media_file(path: str) -> FileResponse:
+    def media_file(path: str, request: Request) -> Response:
         """A video under the browse root, for the compose page's preview player."""
         try:
-            resolved = resolve_within_root(root, path)
-        except PathEscapesRootError:
+            media_id = media.resolve(path)
+        except MediaOutsideRootError:
             raise HTTPException(status_code=400, detail="path escapes the browse root") from None
-        if not resolved.is_file():
+        if not media.is_file(media_id):
             raise HTTPException(status_code=404, detail="file not found")
-        return FileResponse(resolved)
+        return media_response(media, media_id, request)
 
     return router

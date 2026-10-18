@@ -22,7 +22,9 @@ from split_video import project
 from split_video.editor.cache import ClassificationCache
 from split_video.editor.classify import ModelNotFoundError
 from split_video.ffmpeg import ExtractError, FfmpegNotFoundError, ProbeError
+from split_video.local_media_store import LocalMediaStore
 from split_video.local_store import LocalProjectStore
+from split_video.media_store import MediaStore
 from split_video.store import ProjectStore, SavedSegment
 from split_video.timefmt import format_timestamp, parse_time
 
@@ -40,22 +42,25 @@ def _fail(exc: Exception) -> typer.Exit:
     return typer.Exit(code=1)
 
 
-def _store(source: Path) -> tuple[ProjectStore, str]:
-    """The store holding `source`'s project, and the project's id in it: the
-    sidecar sits next to the video, so the video's directory is the root."""
-    return LocalProjectStore(source.parent), source.name
+def _stores(source: Path) -> tuple[ProjectStore, MediaStore, str]:
+    """The stores holding `source`'s project and media, and its id in both: the
+    sidecars sit next to the video, so the video's directory is the root."""
+    return LocalProjectStore(source.parent), LocalMediaStore(source.parent), source.name
 
 
 def _has_project(source: Path) -> bool:
-    return project.has_project(*_store(source))
+    store, _, source_id = _stores(source)
+    return project.has_project(store, source_id)
 
 
 def _current(source: Path) -> list[SavedSegment]:
-    return project.current_segments(*_store(source), source)
+    store, media, source_id = _stores(source)
+    return project.current_segments(store, media, source_id)
 
 
 def _save(source: Path, segments: list[SavedSegment]) -> None:
-    project.save_segments(*_store(source), segments)
+    store, _, source_id = _stores(source)
+    project.save_segments(store, source_id, segments)
 
 
 def _time(text: str) -> float:
@@ -117,8 +122,10 @@ def propose_cmd(
 ) -> None:
     """Propose splits by silence detection. Shows them; saves only with --apply."""
     try:
+        _, media, source_id = _stores(source)
         segments = project.propose_segments(
-            source,
+            media,
+            source_id,
             silence_threshold=silence_threshold,
             min_silence_duration=min_silence_duration,
             min_song_length=min_song_length,
@@ -224,14 +231,17 @@ def export_cmd(
     except ValueError:
         raise typer.BadParameter("--only takes comma-separated segment numbers, e.g. 1,3") from None
     try:
+        _, media, source_id = _stores(source)
         chosen = project.select_for_export(_current(source), only_numbers)
         plan = project.plan_export(
-            source,
+            media,
+            source_id,
             [(s.start, s.end, s.export_name) for s in chosen],
             output_format=output_format,
             overwrite=overwrite,
         )
         written, manifest_path = project.run_export(
+            media,
             plan,
             precise=precise,
             output_format=output_format,
@@ -244,13 +254,13 @@ def export_cmd(
         _emit_json(
             {
                 "source": str(source),
-                "output_dir": str(plan.output_dir),
-                "files": [str(p) for p in written],
-                "manifest": str(manifest_path) if manifest_path else None,
+                "output_dir": media.display_path(plan.output_dir),
+                "files": [media.display_path(p) for p in written],
+                "manifest": media.display_path(manifest_path) if manifest_path else None,
             }
         )
     else:
-        console.print(f"[green]Done.[/green] Wrote {len(written)} file(s) to '{plan.output_dir}'")
+        console.print(f"[green]Done.[/green] Wrote {len(written)} file(s) to '{media.display_path(plan.output_dir)}'")
 
 
 def analyze_cmd(
@@ -263,10 +273,11 @@ def analyze_cmd(
     Needs the YAMNet model (`make fetch-model`; the Docker image has it). Slow on long recordings.
     """
     try:
-        cache = ClassificationCache(source)
+        _, media, source_id = _stores(source)
+        cache = ClassificationCache(media, source_id)
         if force or not cache.is_analyzed:
             with console.status("Analyzing audio…") if not as_json else nullcontext():
-                project.run_analysis(source, cache, cache.get_thresholds())
+                project.run_analysis(media, source_id, cache, cache.get_thresholds())
         summary = project.summarize_classification(cache)
     except _EXPECTED_ERRORS as exc:
         raise _fail(exc)
