@@ -51,11 +51,11 @@ def test_split_sidecar_sits_next_to_the_video_in_subdirectories(tmp_path):
     assert store.load_split("other.mp4") == [SavedSegment(start=0.0, end=2.0)]
 
 
-def test_split_file_format_is_unchanged(tmp_path):
+def test_split_file_format_only_gained_a_revision_key(tmp_path):
     LocalProjectStore(tmp_path).save_split("gigs/set.mp4", [SavedSegment(start=0.0, end=1.5, label="A")])
     text = (tmp_path / "gigs/set.mp4.split-video-project.json").read_text()
     assert text == (
-        '{"version":2,"source_file":"set.mp4","segments":[{"start":0.0,"end":1.5,"label":"A",'
+        '{"version":2,"revision":1,"source_file":"set.mp4","segments":[{"start":0.0,"end":1.5,"label":"A",'
         '"color":null,"included":true,"export_name":null}]}'
     )
 
@@ -82,9 +82,12 @@ def test_atomic_save_goes_through_a_temp_file_and_leaves_none_behind(tmp_path, m
     store.save_split("v.mp4", [SavedSegment(start=0.0, end=1.0)])
     store.save_timeline("show", _project())
     assert len(replaced) == 2
+    # No temp files left behind; each project file has only its (empty) lock file next to it.
     assert sorted(p.name for p in tmp_path.iterdir()) == [
         "show.split-video-timeline.json",
+        "show.split-video-timeline.json.lock",
         "v.mp4.split-video-project.json",
+        "v.mp4.split-video-project.json.lock",
     ]
 
 
@@ -163,9 +166,9 @@ def test_version_1_split_file_loads_with_defaults_and_resaves_as_v2(tmp_path):
     assert store.load_split("old.mp4") == loaded
 
 
-def test_version_2_split_file_round_trips_byte_for_byte(tmp_path):
+def test_version_2_split_file_round_trips_byte_for_byte_apart_from_the_revision(tmp_path):
     text = (
-        '{"version":2,"source_file":"new.mp4","segments":[{"start":0.0,"end":10.0,"label":"Intro",'
+        '{"version":2,"revision":4,"source_file":"new.mp4","segments":[{"start":0.0,"end":10.0,"label":"Intro",'
         '"color":"#ff0000","included":false,"export_name":"intro"},{"start":10.0,"end":20.5,"label":"",'
         '"color":null,"included":true,"export_name":null}]}'
     )
@@ -175,7 +178,7 @@ def test_version_2_split_file_round_trips_byte_for_byte(tmp_path):
     loaded = store.load_split("new.mp4")
     assert loaded is not None and loaded[0].label == "Intro" and loaded[0].included is False
     store.save_split("new.mp4", loaded)
-    assert path.read_text() == text
+    assert path.read_text() == text.replace('"revision":4', '"revision":5')
 
 
 def test_hand_written_timeline_without_magnetic_flags_loads_and_round_trips(tmp_path):
@@ -190,6 +193,7 @@ def test_hand_written_timeline_without_magnetic_flags_loads_and_round_trips(tmp_
     assert loaded.tracks[0].clips[0].gain == 1.0
     store.save_timeline("old", loaded)
     resaved = json.loads(path.read_text())
+    assert resaved.pop("revision") == 1  # a file without one was revision 0
     assert resaved == timeline.to_dict(loaded)
     assert resaved["version"] == 2 and resaved["tracks"][0]["magnetic"] is True  # re-saved in the current format
     assert store.load_timeline("old") == loaded

@@ -22,6 +22,7 @@ from split_video.editor.jobs import (
     start_export,
 )
 from split_video.editor.media_response import media_response
+from split_video.editor.revisions import WRITE_RESPONSES, base_revision, conflict_response
 from split_video.editor.schemas import (
     PROJECT_PATH_DESCRIPTION,
     AnalyzeStartResponse,
@@ -47,6 +48,7 @@ from split_video.editor.schemas import (
     StateResponse,
     WaveformResponse,
 )
+from split_video.errors import RevisionConflictError
 from split_video.local_media_store import LocalMediaStore
 from split_video.local_store import LocalProjectStore
 from split_video.media_store import MediaNotFoundError, MediaOutsideRootError, MediaStore
@@ -87,18 +89,12 @@ class _ProjectState:
     cache: SilenceCache
     waveform_cache: WaveformCache
     classification_cache: ClassificationCache
-    # SavedSegment (not the plain core `Segment`) since these carry the
-    # editor-only label/color/included/export_name metadata alongside
-    # start/end — see store.py. A never-saved file starts empty; the
-    # frontend's onboarding step is what proposes splits (see #16).
-    initial_segments: list[SavedSegment]
-    # Whether `initial_segments` came from a saved project file (see #14).
-    resumed: bool
+    # The saved segments and revision are not held here: the project file is the truth (the CLI and
+    # MCP server edit it too), so every state response reads it afresh from the store.
     lock: threading.Lock = field(default_factory=threading.Lock)
 
 
-def _build_project_state(source: str, project_id: str, store: ProjectStore, media: MediaStore) -> _ProjectState:
-    saved = store.load_split(project_id)
+def _build_project_state(source: str, project_id: str, media: MediaStore) -> _ProjectState:
     return _ProjectState(
         source=source,
         project_id=project_id,
@@ -106,8 +102,6 @@ def _build_project_state(source: str, project_id: str, store: ProjectStore, medi
         cache=SilenceCache(media, source),
         waveform_cache=WaveformCache(media, source),
         classification_cache=ClassificationCache(media, source),
-        initial_segments=saved if saved is not None else [],
-        resumed=saved is not None,
     )
 
 
@@ -122,6 +116,11 @@ def create_app(
     # `version` is the API version, not the package version, so the committed
     # openapi.json only changes when the API does.
     app = FastAPI(title="split-video editor", version="1")
+
+    @app.exception_handler(RevisionConflictError)
+    async def revision_conflict(request: Request, exc: RevisionConflictError) -> Response:
+        return conflict_response(exc)
+
     # Routes are declared once on these two routers (no /api prefix, no
     # /media prefix) and mounted twice at the bottom: under /api/v1 (the
     # schema) and as deprecated /api and /media aliases (hidden from it).
@@ -196,24 +195,17 @@ def create_app(
             raise HTTPException(status_code=404, detail="file not found")
         return media_id
 
-    def _get_project(path: str, refresh: bool = False) -> _ProjectState:
-        """The state for project `path`, built on first use. `refresh`
-        re-reads the saved project sidecar (what `/api/open` means) while
-        keeping the already-built caches."""
+    def _get_project(path: str) -> _ProjectState:
+        """The state for project `path`, built on first use (probing and the caches)."""
         source = _resolve(path)
         with projects_lock:
             project = projects.get(source)
         if project is None:
             # The id is the canonical (symlink-resolved) source id,
             # so a symlinked video keeps its project beside the real file.
-            built = _build_project_state(source, source, store, media)  # outside the lock: probes with ffmpeg
+            built = _build_project_state(source, source, media)  # outside the lock: probes with ffmpeg
             with projects_lock:
                 project = projects.setdefault(source, built)
-        if refresh:
-            saved = store.load_split(project.project_id)
-            with project.lock:
-                project.initial_segments = saved if saved is not None else []
-                project.resumed = saved is not None
         return project
 
     def project_dep(path: str = Query(..., description=PROJECT_PATH_DESCRIPTION)) -> _ProjectState:
@@ -222,16 +214,18 @@ def create_app(
     project_dependency = Depends(project_dep)
 
     def _state_response(project: _ProjectState, path: str) -> StateResponse:
-        with project.lock:
-            return StateResponse(
-                filename=media.name(project.source),
-                duration=project.total_duration,
-                video_url=f"{API_PREFIX}/media/source?path={quote(path, safe='/')}",
-                params=defaults,
-                silences=[],
-                segments=_segments_out(project.initial_segments),
-                resumed=project.resumed,
-            )
+        # A never-saved project has no segments: the frontend's onboarding step proposes them (#16).
+        saved = store.load_split_versioned(project.project_id)
+        return StateResponse(
+            filename=media.name(project.source),
+            duration=project.total_duration,
+            video_url=f"{API_PREFIX}/media/source?path={quote(path, safe='/')}",
+            params=defaults,
+            silences=[],
+            segments=_segments_out(saved.value or []),
+            resumed=saved.value is not None,
+            revision=saved.revision,
+        )
 
     @api.get("/session", response_model=SessionResponse)
     def get_session() -> SessionResponse:
@@ -259,16 +253,20 @@ def create_app(
 
     @api.post("/open", response_model=StateResponse)
     def open_file(request: OpenRequest) -> StateResponse:
-        return _state_response(_get_project(request.path, refresh=True), request.path)
+        return _state_response(_get_project(request.path), request.path)
 
     @api.get("/state", response_model=StateResponse)
     def get_state(path: str = Query(..., description=PROJECT_PATH_DESCRIPTION)) -> StateResponse:
         return _state_response(_get_project(path), path)
 
-    @api.post("/project", response_model=StateResponse)
+    @api.post("/project", response_model=StateResponse, responses=WRITE_RESPONSES)
     def save_current_project(
-        request: ProjectSaveRequest, path: str = Query(..., description=PROJECT_PATH_DESCRIPTION)
+        request: ProjectSaveRequest,
+        path: str = Query(..., description=PROJECT_PATH_DESCRIPTION),
+        base: int | None = Depends(base_revision),
     ) -> StateResponse:
+        """Replace the project's segments. Send `If-Match` with the revision they were edited from;
+        409 `revision_conflict` if the project changed since (the response says its current revision)."""
         project = _get_project(path)
         segments = [
             SavedSegment(
@@ -281,10 +279,7 @@ def create_app(
             )
             for s in request.segments
         ]
-        store.save_split(project.project_id, segments)
-        with project.lock:
-            project.initial_segments = segments
-            project.resumed = True
+        store.save_split(project.project_id, segments, base)
         return _state_response(project, path)
 
     @media_routes.get("/media/source")

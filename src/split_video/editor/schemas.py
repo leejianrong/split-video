@@ -67,6 +67,8 @@ class StateResponse(BaseModel):
     silences: list[SilenceIntervalOut]
     segments: list[SegmentOut]
     resumed: bool = False
+    # The project file's revision (0 if never saved). Send it back as `If-Match` on writes.
+    revision: int = 0
 
 
 class DetectRequest(BaseModel):

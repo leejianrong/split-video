@@ -105,3 +105,23 @@ def test_the_local_media_store_is_the_one_place_with_the_asset_table_file_name()
     assert ".split-video-assets.json" in (SRC / "local_media_store.py").read_text()
     others = [p for p in SRC.rglob("*.py") if p.name != "local_media_store.py"]
     assert not [p.name for p in others if ".split-video-assets.json" in _code(str(p.relative_to(SRC)))]
+
+
+def test_the_local_store_is_the_one_place_with_the_project_lock_file():
+    # Lock files sit next to the project files, so only the store that names those files knows them.
+    text = (SRC / "local_store.py").read_text()
+    assert 'LOCK_SUFFIX = ".lock"' in text and "fcntl.flock" in text
+    others = [p for p in SRC.rglob("*.py") if p.name not in ("local_store.py",)]
+    leaks = [
+        p.name
+        for p in others
+        if re.search(r"fcntl|flock|LOCK_SUFFIX|\.lock[\"']", _code(str(p.relative_to(SRC))))
+        and p.name != "local_media_store.py"
+    ]
+    assert not leaks, f"{leaks} handle project lock files"
+
+
+def test_the_revision_bump_has_one_announcement_point():
+    # SPL-37 hooks `store.announce_revision`; both stores must go through it and nothing else may fire it.
+    callers = [p.name for p in SRC.rglob("*.py") if "announce_revision(" in _code(str(p.relative_to(SRC)))]
+    assert sorted(callers) == ["local_store.py", "store.py"]

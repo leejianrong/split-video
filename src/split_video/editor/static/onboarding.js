@@ -62,6 +62,12 @@ export function createOnboarding({ modalEl, overlayEl, elements }) {
           cleanup();
           resolve({ segments: toSave, runAnalysis: !skip && analyzeCheckbox.checked });
         } catch (err) {
+          if (err.isRevisionConflict) {
+            // Someone saved this video's project while the setup dialog was open: show what they saved.
+            alert(api.CONFLICT_MESSAGE);
+            location.reload();
+            return;
+          }
           alert(`Couldn't finish setup: ${err.message}`);
           startBtn.disabled = false;
           skipBtn.disabled = false;

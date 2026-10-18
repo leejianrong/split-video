@@ -25,6 +25,7 @@ from rich.console import Console
 from rich.table import Table
 
 from split_video import assets, timeline_service
+from split_video.errors import RevisionConflictError
 from split_video.ffmpeg import ExtractError, FfmpegNotFoundError, ProbeError
 from split_video.local_media_store import LocalMediaStore
 from split_video.local_store import LocalProjectStore
@@ -46,10 +47,42 @@ _Name = typer.Argument(..., help="Project name (no extension).")
 _Clip = typer.Argument(..., min=1, help="Clip number on its track, from 1.")
 _Track = typer.Option(None, "--track", min=1, help="Track number (see `show`); default: the main video track.")
 
+_BaseRevision = typer.Option(
+    None,
+    "--base-revision",
+    min=0,
+    help="The project revision (shown by `show`) this change is based on. If the project has changed "
+    "since, nothing is written and the command exits with code 3. Omit to edit the latest version.",
+)
+
 _EXPECTED_ERRORS = (TimelineError, FfmpegNotFoundError, ProbeError, ExtractError)
 
+CONFLICT_EXIT_CODE = 3
 
-def _fail(exc: Exception) -> typer.Exit:
+
+def _fail(exc: Exception, as_json: bool = False) -> typer.Exit:
+    """Report `exc` and return the exit to raise. A revision conflict exits with code 3 and says how
+    to retry; with `--json` it is also printed to stdout as `{"error": "revision_conflict", ...}`."""
+    if isinstance(exc, RevisionConflictError):
+        error_console.print(
+            f"[red]Error:[/red] revision conflict: project {exc.project!r} is at revision {exc.current}, but this "
+            f"change was based on revision {exc.base}, so nothing was written. Run "
+            f"`split-video compose show {exc.project}` to see the latest, re-apply your change, and retry with "
+            f"--base-revision {exc.current}."
+        )
+        if as_json:
+            typer.echo(
+                json.dumps(
+                    {
+                        "error": "revision_conflict",
+                        "current_revision": exc.current,
+                        "base_revision": exc.base,
+                        "message": str(exc),
+                    },
+                    indent=2,
+                )
+            )
+        return typer.Exit(code=CONFLICT_EXIT_CODE)
     error_console.print(f"[red]Error:[/red] {exc}")
     return typer.Exit(code=1)
 
@@ -67,7 +100,7 @@ def _show(media: MediaStore, name: str, project: Project, as_json: bool, **extra
         typer.echo(json.dumps({**extra, **info}, indent=2))
         return
     total = max(project.duration, 1.0)
-    table = Table(title=f"{name} — {format_timestamp(project.duration, total)}")
+    table = Table(title=f"{name} — {format_timestamp(project.duration, total)} — revision {project.revision}")
     for col in ("Track", "#", "Source", "Asset", "In", "Out", "Start", "Length", "Details"):
         # An asset id is useless cut short, so that column never wraps or shrinks.
         table.add_column(
@@ -100,12 +133,17 @@ def _show(media: MediaStore, name: str, project: Project, as_json: bool, **extra
     console.print(table)
 
 
-def _clip_id(store: ProjectStore, name: str, clip: int, track: int | None = None) -> str:
-    return timeline_service.clip_id_at(timeline_service.load_existing(store, name), clip, track)
+def _clip_id(
+    store: ProjectStore, name: str, clip: int, track: int | None = None, base_revision: int | None = None
+) -> str:
+    """The id of clip number `clip`, numbered in the version of the project at `base_revision` (which
+    must still be the current one, else `RevisionConflictError`: the number would mean another clip)."""
+    loaded = timeline_service.load_existing(store, name, base_revision=base_revision)
+    return timeline_service.clip_id_at(loaded, clip, track)
 
 
-def _track_id(store: ProjectStore, name: str, track: int | None) -> str:
-    return timeline_service.track_at(timeline_service.load_existing(store, name), track).id
+def _track_id(store: ProjectStore, name: str, track: int | None, base_revision: int | None = None) -> str:
+    return timeline_service.track_at(timeline_service.load_existing(store, name, base_revision=base_revision), track).id
 
 
 def list_cmd(root: Path = _Root, as_json: bool = _Json) -> None:
@@ -125,7 +163,7 @@ def new_cmd(name: str = _Name, root: Path = _Root, as_json: bool = _Json) -> Non
     try:
         project = timeline_service.create_project(store, name)
     except _EXPECTED_ERRORS as exc:
-        raise _fail(exc)
+        raise _fail(exc, as_json)
     _show(media, name, project, as_json)
 
 
@@ -137,7 +175,7 @@ def show_cmd(name: str = _Name, root: Path = _Root, as_json: bool = _Json) -> No
     try:
         project = timeline_service.load_existing(store, name, media)
     except _EXPECTED_ERRORS as exc:
-        raise _fail(exc)
+        raise _fail(exc, as_json)
     _show(media, name, project, as_json)
 
 
@@ -154,6 +192,7 @@ def add_clip_cmd(
     track: int | None = _Track,
     in_point: str | None = typer.Option(None, "--in", help="Start within the video: seconds or [H:]MM:SS."),
     out_point: str | None = typer.Option(None, "--out", help="End within the video (default: its end)."),
+    base_revision: int | None = _BaseRevision,
     root: Path = _Root,
     as_json: bool = _Json,
 ) -> None:
@@ -170,14 +209,15 @@ def add_clip_cmd(
             name,
             video,
             asset=asset,
-            track_id=None if track is None else _track_id(store, name, track),
+            track_id=None if track is None else _track_id(store, name, track, base_revision),
             index=None if at is None else at - 1,
             start=None if start is None else _time(start),
             in_point=0.0 if in_point is None else _time(in_point),
             out_point=None if out_point is None else _time(out_point),
+            base_revision=base_revision,
         )
     except _EXPECTED_ERRORS as exc:
-        raise _fail(exc)
+        raise _fail(exc, as_json)
     _show(media, name, project, as_json)
 
 
@@ -187,6 +227,7 @@ def trim_cmd(
     in_point: str | None = typer.Option(None, "--in", help="New start within the source."),
     out_point: str | None = typer.Option(None, "--out", help="New end within the source."),
     track: int | None = _Track,
+    base_revision: int | None = _BaseRevision,
     root: Path = _Root,
     as_json: bool = _Json,
 ) -> None:
@@ -201,12 +242,13 @@ def trim_cmd(
             store,
             media,
             name,
-            _clip_id(store, name, clip, track),
+            _clip_id(store, name, clip, track, base_revision),
             in_point=None if in_point is None else _time(in_point),
             out_point=None if out_point is None else _time(out_point),
+            base_revision=base_revision,
         )
     except _EXPECTED_ERRORS as exc:
-        raise _fail(exc)
+        raise _fail(exc, as_json)
     _show(media, name, project, as_json)
 
 
@@ -215,6 +257,7 @@ def move_cmd(
     clip: int = _Clip,
     to: int = typer.Option(..., "--to", min=1, help="New clip number."),
     track: int | None = _Track,
+    base_revision: int | None = _BaseRevision,
     root: Path = _Root,
     as_json: bool = _Json,
 ) -> None:
@@ -223,23 +266,32 @@ def move_cmd(
     store = LocalProjectStore(root)
     media = LocalMediaStore(root)
     try:
-        project = timeline_service.move_clip(store, name, _clip_id(store, name, clip, track), to - 1, media)
+        project = timeline_service.move_clip(
+            store, name, _clip_id(store, name, clip, track, base_revision), to - 1, media, base_revision=base_revision
+        )
     except _EXPECTED_ERRORS as exc:
-        raise _fail(exc)
+        raise _fail(exc, as_json)
     _show(media, name, project, as_json)
 
 
 def remove_cmd(
-    name: str = _Name, clip: int = _Clip, track: int | None = _Track, root: Path = _Root, as_json: bool = _Json
+    name: str = _Name,
+    clip: int = _Clip,
+    track: int | None = _Track,
+    base_revision: int | None = _BaseRevision,
+    root: Path = _Root,
+    as_json: bool = _Json,
 ) -> None:
     """Remove a clip."""
     root = root.resolve()
     store = LocalProjectStore(root)
     media = LocalMediaStore(root)
     try:
-        project = timeline_service.remove_clip(store, name, _clip_id(store, name, clip, track), media)
+        project = timeline_service.remove_clip(
+            store, name, _clip_id(store, name, clip, track, base_revision), media, base_revision=base_revision
+        )
     except _EXPECTED_ERRORS as exc:
-        raise _fail(exc)
+        raise _fail(exc, as_json)
     _show(media, name, project, as_json)
 
 
@@ -249,6 +301,7 @@ def transition_cmd(
     kind: str = typer.Option(..., "--kind", help="cut or crossfade."),
     duration: float = typer.Option(1.0, "--duration", help="Crossfade length in seconds."),
     track: int | None = _Track,
+    base_revision: int | None = _BaseRevision,
     root: Path = _Root,
     as_json: bool = _Json,
 ) -> None:
@@ -258,16 +311,23 @@ def transition_cmd(
     media = LocalMediaStore(root)
     try:
         project = timeline_service.set_transition(
-            store, name, _clip_id(store, name, clip, track), kind, 0.0 if kind == "cut" else duration, media
+            store,
+            name,
+            _clip_id(store, name, clip, track, base_revision),
+            kind,
+            0.0 if kind == "cut" else duration,
+            media,
+            base_revision=base_revision,
         )
     except _EXPECTED_ERRORS as exc:
-        raise _fail(exc)
+        raise _fail(exc, as_json)
     _show(media, name, project, as_json)
 
 
 def add_track_cmd(
     name: str = _Name,
     kind: str = typer.Option("video", "--kind", help="video or audio."),
+    base_revision: int | None = _BaseRevision,
     root: Path = _Root,
     as_json: bool = _Json,
 ) -> None:
@@ -276,15 +336,16 @@ def add_track_cmd(
     store = LocalProjectStore(root)
     media = LocalMediaStore(root)
     try:
-        project = timeline_service.add_track(store, name, kind, media)
+        project = timeline_service.add_track(store, name, kind, media, base_revision=base_revision)
     except _EXPECTED_ERRORS as exc:
-        raise _fail(exc)
+        raise _fail(exc, as_json)
     _show(media, name, project, as_json)
 
 
 def remove_track_cmd(
     name: str = _Name,
     track: int = typer.Argument(..., min=1, help="Track number (see `show`)."),
+    base_revision: int | None = _BaseRevision,
     root: Path = _Root,
     as_json: bool = _Json,
 ) -> None:
@@ -293,9 +354,11 @@ def remove_track_cmd(
     store = LocalProjectStore(root)
     media = LocalMediaStore(root)
     try:
-        project = timeline_service.remove_track(store, name, _track_id(store, name, track), media)
+        project = timeline_service.remove_track(
+            store, name, _track_id(store, name, track, base_revision), media, base_revision=base_revision
+        )
     except _EXPECTED_ERRORS as exc:
-        raise _fail(exc)
+        raise _fail(exc, as_json)
     _show(media, name, project, as_json)
 
 
@@ -303,6 +366,7 @@ def move_track_cmd(
     name: str = _Name,
     track: int = typer.Argument(..., min=1, help="Track number (see `show`)."),
     to: int = typer.Option(..., "--to", min=1, help="New track number; later tracks draw on top."),
+    base_revision: int | None = _BaseRevision,
     root: Path = _Root,
     as_json: bool = _Json,
 ) -> None:
@@ -311,9 +375,11 @@ def move_track_cmd(
     store = LocalProjectStore(root)
     media = LocalMediaStore(root)
     try:
-        project = timeline_service.move_track(store, name, _track_id(store, name, track), to - 1, media)
+        project = timeline_service.move_track(
+            store, name, _track_id(store, name, track, base_revision), to - 1, media, base_revision=base_revision
+        )
     except _EXPECTED_ERRORS as exc:
-        raise _fail(exc)
+        raise _fail(exc, as_json)
     _show(media, name, project, as_json)
 
 
@@ -325,6 +391,7 @@ def place_cmd(
     to_track: int | None = typer.Option(
         None, "--to-track", min=1, help="Move it to this other track of the same kind."
     ),
+    base_revision: int | None = _BaseRevision,
     root: Path = _Root,
     as_json: bool = _Json,
 ) -> None:
@@ -338,13 +405,14 @@ def place_cmd(
         project = timeline_service.place_clip(
             store,
             name,
-            _clip_id(store, name, clip, from_track),
+            _clip_id(store, name, clip, from_track, base_revision),
             start=None if start is None else _time(start),
-            track_id=None if to_track is None else _track_id(store, name, to_track),
+            track_id=None if to_track is None else _track_id(store, name, to_track, base_revision),
             media=media,
+            base_revision=base_revision,
         )
     except _EXPECTED_ERRORS as exc:
-        raise _fail(exc)
+        raise _fail(exc, as_json)
     _show(media, name, project, as_json)
 
 
@@ -361,6 +429,7 @@ def set_cmd(
     brightness: float | None = typer.Option(None, "--brightness", help="-1..1 (0 = unchanged)."),
     contrast: float | None = typer.Option(None, "--contrast", help="0..3 (1 = unchanged)."),
     saturation: float | None = typer.Option(None, "--saturation", help="0..3 (1 = unchanged, 0 = greyscale)."),
+    base_revision: int | None = _BaseRevision,
     root: Path = _Root,
     as_json: bool = _Json,
 ) -> None:
@@ -377,10 +446,15 @@ def set_cmd(
     media = LocalMediaStore(root)
     try:
         project = timeline_service.set_clip_properties(
-            store, name, _clip_id(store, name, clip, track), media=media, **changes
+            store,
+            name,
+            _clip_id(store, name, clip, track, base_revision),
+            media=media,
+            base_revision=base_revision,
+            **changes,
         )
     except _EXPECTED_ERRORS as exc:
-        raise _fail(exc)
+        raise _fail(exc, as_json)
     _show(media, name, project, as_json)
 
 
@@ -394,6 +468,7 @@ def add_text_cmd(
     color: str = typer.Option("#ffffff", "--color", help="#rrggbb."),
     x: float = typer.Option(0.5, "--x", help="Centre, 0..1 across the frame."),
     y: float = typer.Option(0.85, "--y", help="Centre, 0..1 down the frame."),
+    base_revision: int | None = _BaseRevision,
     root: Path = _Root,
     as_json: bool = _Json,
 ) -> None:
@@ -402,7 +477,7 @@ def add_text_cmd(
     store = LocalProjectStore(root)
     media = LocalMediaStore(root)
     try:
-        loaded = timeline_service.load_existing(store, name, media)
+        loaded = timeline_service.load_existing(store, name, media, base_revision=base_revision)
         if track is None:
             chosen = next((t for t in loaded.tracks if t.kind == "video" and not t.magnetic), None)
             if chosen is None:
@@ -417,6 +492,7 @@ def add_text_cmd(
             text,
             duration,
             media=media,
+            base_revision=base_revision,
             start=_time(start),
             font_size=size,
             color=color,
@@ -424,7 +500,7 @@ def add_text_cmd(
             y=y,
         )
     except _EXPECTED_ERRORS as exc:
-        raise _fail(exc)
+        raise _fail(exc, as_json)
     _show(media, name, project, as_json)
 
 
@@ -435,6 +511,7 @@ def set_text_cmd(
     text: str | None = typer.Option(None, "--text", help="New words."),
     size: float | None = typer.Option(None, "--size", help="Text height as a fraction of the frame height."),
     color: str | None = typer.Option(None, "--color", help="#rrggbb."),
+    base_revision: int | None = _BaseRevision,
     root: Path = _Root,
     as_json: bool = _Json,
 ) -> None:
@@ -446,10 +523,17 @@ def set_text_cmd(
     media = LocalMediaStore(root)
     try:
         project = timeline_service.set_text_properties(
-            store, name, _clip_id(store, name, clip, track), media=media, text=text, font_size=size, color=color
+            store,
+            name,
+            _clip_id(store, name, clip, track, base_revision),
+            media=media,
+            base_revision=base_revision,
+            text=text,
+            font_size=size,
+            color=color,
         )
     except _EXPECTED_ERRORS as exc:
-        raise _fail(exc)
+        raise _fail(exc, as_json)
     _show(media, name, project, as_json)
 
 
@@ -476,15 +560,17 @@ def assets_cmd(root: Path = _Root, as_json: bool = _Json) -> None:
     console.print(table)
 
 
-def migrate_cmd(name: str = _Name, root: Path = _Root, as_json: bool = _Json) -> None:
+def migrate_cmd(
+    name: str = _Name, base_revision: int | None = _BaseRevision, root: Path = _Root, as_json: bool = _Json
+) -> None:
     """Link a project's clips to assets and rewrite its file in the current format now."""
     root = root.resolve()
     store = LocalProjectStore(root)
     media = LocalMediaStore(root)
     try:
-        project = timeline_service.migrate_project(store, media, name)
+        project = timeline_service.migrate_project(store, media, name, base_revision=base_revision)
     except _EXPECTED_ERRORS as exc:
-        raise _fail(exc)
+        raise _fail(exc, as_json)
     _show(media, name, project, as_json)
 
 
@@ -503,7 +589,7 @@ def render_cmd(
         project, filename, out_id = timeline_service.plan_render(store, media, name, output, overwrite)
         timeline_service.run_render(project, media, out_id)
     except _EXPECTED_ERRORS as exc:
-        raise _fail(exc)
+        raise _fail(exc, as_json)
     if as_json:
         typer.echo(json.dumps({"name": name, "output": filename, "duration": project.duration}, indent=2))
     else:

@@ -104,6 +104,10 @@ class Track:
 @dataclass(frozen=True)
 class Project:
     tracks: tuple[Track, ...] = field(default_factory=tuple)
+    # The stored revision this value was loaded at or saved as (0 for a project never saved). Stamped
+    # by the `ProjectStore`, which owns it; editing functions build new `Project`s without it and the
+    # store ignores whatever they carry. Not part of equality: two projects with the same tracks are equal.
+    revision: int = field(default=0, compare=False)
 
     @property
     def duration(self) -> float:
