@@ -1,6 +1,7 @@
 # 0001: Local-first web app, Docker stays supported
 
 Status: accepted (2026-10-14, recorded 2026-10-19). Board card: SPL-12.
+Partially superseded by [0002](0002-agent-first-hosted-ready.md): auth and hosting positions revised.
 
 ## Context
 
