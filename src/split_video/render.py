@@ -27,9 +27,10 @@ from collections.abc import Callable
 from contextlib import ExitStack
 from dataclasses import dataclass
 
+from split_video import assets
 from split_video.ffmpeg import ExtractError, MediaInfo, _require_binary
 from split_video.media_store import MediaStore
-from split_video.timeline import Clip, Project, TimelineError, Track, source_media_id
+from split_video.timeline import Clip, Project, TimelineError, Track
 
 FPS = 30
 AUDIO_RATE = 48000
@@ -232,22 +233,22 @@ def render(
     out_id: str,
     progress: Callable[[float], None] | None = None,
 ) -> None:
-    """Write the project to `out_id` (an mp4 in `media`). `progress` gets 0.0..1.0."""
+    """Write the project to `out_id` (an mp4 in `media`). `progress` gets 0.0..1.0.
+
+    Clips are found by asset id (relinked if their file moved); a clip that can't be found
+    is a `SourceNotFoundError` naming the asset and its last known path."""
+    project = assets.resolve_project(media, project)  # every clip's `source` is now its file's current media id
     video_clips = [c for t in project.tracks if t.kind == "video" for c in t.clips]
     if not video_clips:
         raise TimelineError("the timeline has no clips to render")
 
     infos: dict[str, MediaInfo] = {}
-    ids: dict[str, str] = {}  # clip source -> canonical media id
     for track in project.tracks:
         for clip in track.clips:
             if clip.kind == "text":
                 continue
             if clip.source not in infos:
-                ids[clip.source] = source_media_id(media, clip.source)
-                if not media.is_file(ids[clip.source]):
-                    raise TimelineError(f"source file not found: {clip.source}")
-                infos[clip.source] = media.probe(ids[clip.source])
+                infos[clip.source] = media.probe(clip.source)
             if track.kind == "video" and infos[clip.source].width is None:
                 raise TimelineError(f"{clip.source} has no video stream")
             if track.kind == "audio" and not infos[clip.source].has_audio:
@@ -265,7 +266,7 @@ def render(
 
     with ExitStack() as stack:
         # Every input, and the output, as real paths for ffmpeg for the whole run.
-        inputs = [str(stack.enter_context(media.local_path(ids[c.source]))) for c in plan.clips]
+        inputs = [str(stack.enter_context(media.local_path(c.source))) for c in plan.clips]
         out_path = stack.enter_context(media.write_local(out_id))
         _run_ffmpeg(plan, inputs, str(out_path), total, progress)
 

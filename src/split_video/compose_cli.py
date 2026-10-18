@@ -6,6 +6,12 @@ A project is a named `<name>.split-video-timeline.json` file in `--root`
 (default: the current directory); clip sources are paths under that root.
 Clips are numbered from 1 in track order, as in the editor. Every command
 takes `--json`.
+
+Clips reference media by asset id (`a_` + 16 hex digits, the content-derived ids
+listed by `compose assets` and shown by `compose show`), so a renamed or moved
+file is found again. `add-clip` takes a path or `--asset ID`. Opening a project
+made before asset ids existed links its clips automatically; the first edit (or
+`compose migrate`) rewrites the project file in the current format.
 """
 
 from __future__ import annotations
@@ -18,7 +24,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from split_video import timeline_service
+from split_video import assets, timeline_service
 from split_video.ffmpeg import ExtractError, FfmpegNotFoundError, ProbeError
 from split_video.local_media_store import LocalMediaStore
 from split_video.local_store import LocalProjectStore
@@ -62,8 +68,13 @@ def _show(media: MediaStore, name: str, project: Project, as_json: bool, **extra
         return
     total = max(project.duration, 1.0)
     table = Table(title=f"{name} — {format_timestamp(project.duration, total)}")
-    for col in ("Track", "#", "Source", "In", "Out", "Start", "Length", "Details"):
-        table.add_column(col, justify="right" if col == "#" else "left")
+    for col in ("Track", "#", "Source", "Asset", "In", "Out", "Start", "Length", "Details"):
+        # An asset id is useless cut short, so that column never wraps or shrinks.
+        table.add_column(
+            col,
+            justify="right" if col == "#" else "left",
+            **({"min_width": 18, "no_wrap": True} if col == "Asset" else {}),
+        )
     for track in info["tracks"]:
         for c in track["clips"]:
             details = []
@@ -79,6 +90,7 @@ def _show(media: MediaStore, name: str, project: Project, as_json: bool, **extra
                 f"{track['index']} {track['kind']}",
                 str(c["index"]),
                 f"“{c['text']}”" if c["kind"] == "text" else c["source"],
+                c["asset"] or ("" if c["kind"] == "text" else "(unlinked)"),
                 format_timestamp(c["in"], total),
                 format_timestamp(c["out"], total),
                 format_timestamp(c["start"], total),
@@ -123,7 +135,7 @@ def show_cmd(name: str = _Name, root: Path = _Root, as_json: bool = _Json) -> No
     store = LocalProjectStore(root)
     media = LocalMediaStore(root)
     try:
-        project = timeline_service.load_existing(store, name)
+        project = timeline_service.load_existing(store, name, media)
     except _EXPECTED_ERRORS as exc:
         raise _fail(exc)
     _show(media, name, project, as_json)
@@ -131,7 +143,8 @@ def show_cmd(name: str = _Name, root: Path = _Root, as_json: bool = _Json) -> No
 
 def add_clip_cmd(
     name: str = _Name,
-    video: str = typer.Argument(..., help="Video path, relative to --root."),
+    video: str | None = typer.Argument(None, help="Video path, relative to --root (or use --asset)."),
+    asset: str | None = typer.Option(None, "--asset", help="An asset id from `compose assets`, instead of a path."),
     at: int | None = typer.Option(
         None, "--at", min=1, help="Main track: insert as this clip number (default: the end)."
     ),
@@ -144,7 +157,9 @@ def add_clip_cmd(
     root: Path = _Root,
     as_json: bool = _Json,
 ) -> None:
-    """Add a clip of a video to the video track."""
+    """Add a clip of a video (a path, or --asset ID) to the video track."""
+    if (video is None) == (asset is None):
+        raise typer.BadParameter("give a video path or --asset ID, not both")
     root = root.resolve()
     store = LocalProjectStore(root)
     media = LocalMediaStore(root)
@@ -154,6 +169,7 @@ def add_clip_cmd(
             media,
             name,
             video,
+            asset=asset,
             track_id=None if track is None else _track_id(store, name, track),
             index=None if at is None else at - 1,
             start=None if start is None else _time(start),
@@ -207,7 +223,7 @@ def move_cmd(
     store = LocalProjectStore(root)
     media = LocalMediaStore(root)
     try:
-        project = timeline_service.move_clip(store, name, _clip_id(store, name, clip, track), to - 1)
+        project = timeline_service.move_clip(store, name, _clip_id(store, name, clip, track), to - 1, media)
     except _EXPECTED_ERRORS as exc:
         raise _fail(exc)
     _show(media, name, project, as_json)
@@ -221,7 +237,7 @@ def remove_cmd(
     store = LocalProjectStore(root)
     media = LocalMediaStore(root)
     try:
-        project = timeline_service.remove_clip(store, name, _clip_id(store, name, clip, track))
+        project = timeline_service.remove_clip(store, name, _clip_id(store, name, clip, track), media)
     except _EXPECTED_ERRORS as exc:
         raise _fail(exc)
     _show(media, name, project, as_json)
@@ -242,7 +258,7 @@ def transition_cmd(
     media = LocalMediaStore(root)
     try:
         project = timeline_service.set_transition(
-            store, name, _clip_id(store, name, clip, track), kind, 0.0 if kind == "cut" else duration
+            store, name, _clip_id(store, name, clip, track), kind, 0.0 if kind == "cut" else duration, media
         )
     except _EXPECTED_ERRORS as exc:
         raise _fail(exc)
@@ -260,7 +276,7 @@ def add_track_cmd(
     store = LocalProjectStore(root)
     media = LocalMediaStore(root)
     try:
-        project = timeline_service.add_track(store, name, kind)
+        project = timeline_service.add_track(store, name, kind, media)
     except _EXPECTED_ERRORS as exc:
         raise _fail(exc)
     _show(media, name, project, as_json)
@@ -277,7 +293,7 @@ def remove_track_cmd(
     store = LocalProjectStore(root)
     media = LocalMediaStore(root)
     try:
-        project = timeline_service.remove_track(store, name, _track_id(store, name, track))
+        project = timeline_service.remove_track(store, name, _track_id(store, name, track), media)
     except _EXPECTED_ERRORS as exc:
         raise _fail(exc)
     _show(media, name, project, as_json)
@@ -295,7 +311,7 @@ def move_track_cmd(
     store = LocalProjectStore(root)
     media = LocalMediaStore(root)
     try:
-        project = timeline_service.move_track(store, name, _track_id(store, name, track), to - 1)
+        project = timeline_service.move_track(store, name, _track_id(store, name, track), to - 1, media)
     except _EXPECTED_ERRORS as exc:
         raise _fail(exc)
     _show(media, name, project, as_json)
@@ -325,6 +341,7 @@ def place_cmd(
             _clip_id(store, name, clip, from_track),
             start=None if start is None else _time(start),
             track_id=None if to_track is None else _track_id(store, name, to_track),
+            media=media,
         )
     except _EXPECTED_ERRORS as exc:
         raise _fail(exc)
@@ -359,7 +376,9 @@ def set_cmd(
     store = LocalProjectStore(root)
     media = LocalMediaStore(root)
     try:
-        project = timeline_service.set_clip_properties(store, name, _clip_id(store, name, clip, track), **changes)
+        project = timeline_service.set_clip_properties(
+            store, name, _clip_id(store, name, clip, track), media=media, **changes
+        )
     except _EXPECTED_ERRORS as exc:
         raise _fail(exc)
     _show(media, name, project, as_json)
@@ -383,7 +402,7 @@ def add_text_cmd(
     store = LocalProjectStore(root)
     media = LocalMediaStore(root)
     try:
-        loaded = timeline_service.load_existing(store, name)
+        loaded = timeline_service.load_existing(store, name, media)
         if track is None:
             chosen = next((t for t in loaded.tracks if t.kind == "video" and not t.magnetic), None)
             if chosen is None:
@@ -392,7 +411,17 @@ def add_text_cmd(
         else:
             track_id = timeline_service.track_at(loaded, track).id
         project = timeline_service.add_text_clip(
-            store, name, track_id, text, duration, start=_time(start), font_size=size, color=color, x=x, y=y
+            store,
+            name,
+            track_id,
+            text,
+            duration,
+            media=media,
+            start=_time(start),
+            font_size=size,
+            color=color,
+            x=x,
+            y=y,
         )
     except _EXPECTED_ERRORS as exc:
         raise _fail(exc)
@@ -417,8 +446,43 @@ def set_text_cmd(
     media = LocalMediaStore(root)
     try:
         project = timeline_service.set_text_properties(
-            store, name, _clip_id(store, name, clip, track), text=text, font_size=size, color=color
+            store, name, _clip_id(store, name, clip, track), media=media, text=text, font_size=size, color=color
         )
+    except _EXPECTED_ERRORS as exc:
+        raise _fail(exc)
+    _show(media, name, project, as_json)
+
+
+def assets_cmd(root: Path = _Root, as_json: bool = _Json) -> None:
+    """List the assets (media files used by clips) with their ids, paths and stream info."""
+    media = LocalMediaStore(root.resolve())
+    with assets.open_book(media) as book:
+        rows = [(a, book.present(a)) for a in book.list()]
+    if as_json:
+        typer.echo(json.dumps({"assets": [a.summary(ok) for a, ok in rows]}, indent=2))
+        return
+    if not rows:
+        console.print("No assets yet. Adding a clip to a project registers its file.")
+        return
+    table = Table(title="Assets")
+    for col in ("Asset", "Path", "Length", "Video", "Audio"):
+        table.add_column(col)
+    for a, ok in rows:
+        video = "-" if a.width is None else f"{a.width}x{a.height}" + (f" @ {a.fps:g}" if a.fps else "")
+        table.add_row(
+            a.id, a.path if ok else f"{a.path} (missing)", format_timestamp(a.duration, a.duration), video,
+            "yes" if a.has_audio else "no",
+        )  # fmt: skip
+    console.print(table)
+
+
+def migrate_cmd(name: str = _Name, root: Path = _Root, as_json: bool = _Json) -> None:
+    """Link a project's clips to assets and rewrite its file in the current format now."""
+    root = root.resolve()
+    store = LocalProjectStore(root)
+    media = LocalMediaStore(root)
+    try:
+        project = timeline_service.migrate_project(store, media, name)
     except _EXPECTED_ERRORS as exc:
         raise _fail(exc)
     _show(media, name, project, as_json)
@@ -463,6 +527,8 @@ def register(app: typer.Typer) -> None:
         ("set", set_cmd),
         ("add-text", add_text_cmd),
         ("set-text", set_text_cmd),
+        ("assets", assets_cmd),
+        ("migrate", migrate_cmd),
         ("render", render_cmd),
     ):
         compose_app.command(command_name)(fn)

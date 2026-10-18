@@ -195,7 +195,9 @@ already saved.
 
 Besides splitting one recording, you can build a video from several files.
 A project is a `<name>.split-video-timeline.json` file in the folder holding
-your videos; clip sources are paths under that folder. In the editor, the
+your videos. Clips refer to their video by a content-derived asset id
+(`a_` plus 16 hex digits, kept in `.split-video-assets.json` in that folder),
+so renaming or moving a video does not break a project. In the editor, the
 **Compose** button opens a multi-track timeline:
 
 - The **main track** keeps its clips back to back: drag to reorder, drag the
@@ -233,7 +235,15 @@ split-video compose show mix
 split-video compose render mix                                     # writes mix-render.mp4
 ```
 
-Other commands: `list`, `trim`, `move` (reorder the main track), `place`
+Clips reference media by asset id, so a renamed or moved file is found again
+(an id comes from hashing the file's size and its first, middle and last MiB).
+`compose assets` lists the ids, and `compose add-clip mix --asset a_0123456789abcdef`
+adds a clip by id instead of by path. Projects made before asset ids existed
+open as they were: their clips are linked automatically, and the first edit
+(or `compose migrate mix`) rewrites the file in the new format. A clip whose
+file is missing stays in the project and is linked once the file is back.
+
+Other commands: `list`, `assets`, `migrate`, `trim`, `move` (reorder the main track), `place`
 (move a clip in time or to another track), `remove`, `remove-track`,
 `move-track`, `set-text`. Text needs a TrueType font: the Docker image has one;
 elsewhere install e.g. `fonts-dejavu-core` or point `SPLIT_VIDEO_FONT` at a
@@ -249,7 +259,8 @@ reads and writes the same project file, so a human can open the result in
 the visual editor afterward. Tools: `list_videos`, `list_segments`,
 `propose_splits`, `add_split`, `move_split`, `remove_split`, `label_segment`,
 `analyze_audio`, `export`. The `compose` commands above have matching tools:
-`list_timelines`, `create_timeline`, `show_timeline`, `add_clip_to_timeline`,
+`list_timelines`, `list_assets`, `create_timeline`, `show_timeline`, `add_clip_to_timeline`
+(a path or an asset id),
 `trim_timeline_clip`, `move_timeline_clip`, `remove_timeline_clip`,
 `set_timeline_transition`, `add_timeline_track`, `remove_timeline_track`,
 `move_timeline_track`, `place_timeline_clip`, `set_timeline_clip`,

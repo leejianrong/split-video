@@ -50,6 +50,7 @@ async def test_exposes_the_documented_tools(root):
         "analyze_audio",
         "export",
         "list_timelines",
+        "list_assets",
         "create_timeline",
         "show_timeline",
         "add_clip_to_timeline",

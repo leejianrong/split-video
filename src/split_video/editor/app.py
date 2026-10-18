@@ -67,7 +67,7 @@ _LEGACY_MEDIA_PATHS = ("/media/source", "/media/file")
 
 def _is_legacy_path(path: str) -> bool:
     """A pre-versioning spelling kept as a deprecated alias for one release."""
-    if path in _LEGACY_MEDIA_PATHS:
+    if path in _LEGACY_MEDIA_PATHS or path.startswith("/media/asset/"):
         return True
     return path.startswith("/api/") and not path.startswith(f"{API_PREFIX}/")
 

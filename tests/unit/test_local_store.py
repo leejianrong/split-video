@@ -191,7 +191,7 @@ def test_hand_written_timeline_without_magnetic_flags_loads_and_round_trips(tmp_
     store.save_timeline("old", loaded)
     resaved = json.loads(path.read_text())
     assert resaved == timeline.to_dict(loaded)
-    assert resaved["version"] == 1 and resaved["tracks"][0]["magnetic"] is True
+    assert resaved["version"] == 2 and resaved["tracks"][0]["magnetic"] is True  # re-saved in the current format
     assert store.load_timeline("old") == loaded
     free = Project(tracks=(Track(id="t", kind="audio", magnetic=False),))
     store.save_timeline("old", free)

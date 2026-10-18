@@ -23,7 +23,13 @@ from typing import Any
 
 from split_video.media_store import MediaOutsideRootError, MediaStore
 
-FORMAT_VERSION = 1
+# Version 2 (asset ids): media clips carry `asset`, the id of an entry in the
+# workspace's asset table (`assets.py`), next to `source`, which is now only a
+# hint of the file's last known root-relative path. Version 1 files (`source`
+# only) still load; their clips come back with an empty `asset` and are linked
+# by `assets.link_project`, which the service layer runs on load and before
+# every edit, so the next save writes version 2.
+FORMAT_VERSION = 2
 
 TRACK_KINDS = ("video", "audio")
 TRANSITIONS = ("cut", "crossfade")
@@ -36,9 +42,15 @@ class TimelineError(ValueError):
 @dataclass(frozen=True)
 class Clip:
     id: str
-    source: str  # media id: the path relative to the project's root directory
+    # Last known location of the file: its media id, the path relative to the
+    # project's root directory. A hint: `asset` is the reference, and the asset
+    # table says where the file is now.
+    source: str
     in_point: float  # seconds into the source where the clip starts
     out_point: float  # seconds into the source where the clip ends
+    # The asset id (`a_` + 16 hex digits, see `assets.py`) of a media clip's
+    # file; "" for text clips and for clips from a version 1 file not yet linked.
+    asset: str = ""
     start: float = 0.0  # where the clip begins on the track, in seconds
     gain: float = 1.0
     muted: bool = False
@@ -139,6 +151,8 @@ def to_dict(project: Project) -> dict[str, Any]:
                 "clips": [
                     {
                         "id": c.id,
+                        # Text clips have no file; an unlinked media clip is one with a source but no asset.
+                        **({"asset": c.asset} if c.asset else {}),
                         "source": c.source,
                         "in": c.in_point,
                         "out": c.out_point,
@@ -176,7 +190,8 @@ def from_dict(data: dict[str, Any]) -> Project:
         clips = tuple(
             Clip(
                 id=str(c["id"]),
-                source=str(c["source"]),
+                asset=str(c.get("asset", "")),
+                source=str(c.get("source", "")),
                 in_point=float(c["in"]),
                 out_point=float(c["out"]),
                 start=float(c.get("start", 0.0)),
@@ -216,6 +231,10 @@ class OutsideRootError(TimelineError):
 
 class SourceNotFoundError(TimelineError):
     """A clip's source file doesn't exist."""
+
+
+class AssetNotFoundError(TimelineError):
+    """No asset with that id is in the workspace's asset table."""
 
 
 class OutputExistsError(TimelineError):

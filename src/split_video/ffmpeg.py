@@ -61,6 +61,7 @@ class MediaInfo:
     width: int | None  # None when the file has no video stream
     height: int | None
     has_audio: bool
+    fps: float | None = None  # the first video stream's average frame rate; None without video or when unknown
 
 
 def probe_media(path: Path) -> MediaInfo:
@@ -72,7 +73,7 @@ def probe_media(path: Path) -> MediaInfo:
             "-v",
             "error",
             "-show_entries",
-            "format=duration:stream=codec_type,width,height",
+            "format=duration:stream=codec_type,width,height,avg_frame_rate",
             "-of",
             "json",
             str(path),
@@ -95,7 +96,18 @@ def probe_media(path: Path) -> MediaInfo:
         width=video["width"] if video else None,
         height=video["height"] if video else None,
         has_audio=any(s.get("codec_type") == "audio" for s in streams),
+        fps=_parse_rate(video.get("avg_frame_rate")) if video else None,
     )
+
+
+def _parse_rate(text: object) -> float | None:
+    """ffprobe's "30000/1001" (or "25") as a float; None for "0/0" and other junk."""
+    try:
+        num, _, den = str(text).partition("/")
+        value = float(num) / float(den or 1)
+    except (ValueError, ZeroDivisionError):
+        return None
+    return round(value, 3) if value > 0 else None
 
 
 def detect_silence(path: Path, threshold: str, min_silence_duration: float) -> list[SilenceInterval]:

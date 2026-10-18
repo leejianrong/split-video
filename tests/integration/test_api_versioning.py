@@ -45,7 +45,7 @@ def test_every_v1_operation_has_a_deprecated_alias(tmp_path):
         else:
             legacy = "/api" + legacy
         legacy = legacy.replace("{job_id}", "x").replace("{name}", "x").replace("{track_id}", "x")
-        legacy = legacy.replace("{clip_id}", "x")
+        legacy = legacy.replace("{clip_id}", "x").replace("{asset_id}", "x")
         response = client.request(method, legacy)
         # A route exists if we get anything but the router's bare 404/405.
         assert response.status_code != 405, (method, legacy)

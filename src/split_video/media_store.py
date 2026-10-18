@@ -14,8 +14,10 @@ run the engine against.
 Media is identified by an opaque `media_id` string. Today that is the path
 relative to the store's root, with POSIX separators; callers must treat it as
 a token (get ids from `resolve`, `list_dir` and `join`, never splice them).
-The ids stay path-shaped for now so project files keep loading; a later card
-replaces them with asset ids without changing this interface.
+Timeline clips do not reference these ids directly: they reference content-
+derived asset ids (`assets.py`), and the per-workspace asset table that maps an
+asset id to its current media id is persisted through `load_asset_table` and
+`save_asset_table` below.
 
 The sibling interface for project files is `store.ProjectStore`.
 """
@@ -167,6 +169,18 @@ class MediaStore(Protocol):
         media's current size and mtime."""
         ...
 
+    # --- the asset table ----------------------------------------------------------
+
+    def load_asset_table(self) -> Any | None:
+        """The JSON payload saved by `save_asset_table`, or None if there is none or it
+        can't be read (a damaged table is rebuilt from the clips' source hints)."""
+        ...
+
+    def save_asset_table(self, payload: Any) -> None:
+        """Replace the workspace's asset table, atomically. It lives with the media
+        (locally a sidecar file in the root), so it survives exactly as long as they do."""
+        ...
+
 
 # --- the in-memory implementation ---------------------------------------------------
 
@@ -190,6 +204,7 @@ class InMemoryMediaStore:
     def __init__(self, *, materialise: bool = False) -> None:
         self._files: dict[str, _Entry] = {}
         self._caches: dict[tuple[str, str], tuple[dict[str, float], Any]] = {}
+        self._asset_table: Any | None = None
         self._materialise = materialise
 
     # --- setup ---------------------------------------------------------------------
@@ -201,6 +216,16 @@ class InMemoryMediaStore:
 
     def read(self, media_id: str) -> bytes:
         return self._entry(media_id).data
+
+    def rename(self, old: str, new: str) -> None:
+        """Move a file to another id, as a person renaming it on disk would."""
+        entry = self._entry(old)
+        del self._files[self.resolve(old)]
+        self._files[self.resolve(new)] = entry
+
+    def remove(self, media_id: str) -> None:
+        self._entry(media_id)
+        del self._files[self.resolve(media_id)]
 
     def ids(self) -> list[str]:
         return sorted(self._files)
@@ -336,3 +361,11 @@ class InMemoryMediaStore:
             self._fingerprint(media_id),
             json.loads(json.dumps(payload)),
         )
+
+    # --- the asset table ----------------------------------------------------------
+
+    def load_asset_table(self) -> Any | None:
+        return None if self._asset_table is None else json.loads(json.dumps(self._asset_table))
+
+    def save_asset_table(self, payload: Any) -> None:
+        self._asset_table = json.loads(json.dumps(payload))  # JSON round trip, as for the caches
