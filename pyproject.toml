@@ -38,3 +38,7 @@ line-length = 120
 # typer's Argument()/Option() calls in parameter defaults are the documented
 # idiom for declaring CLI params, not the mutable-default footgun B008 flags.
 extend-immutable-calls = ["typer.Argument", "typer.Option"]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests unpack helper tuples and ignore the parts a given test doesn't need.
+"tests/**" = ["RUF059"]
