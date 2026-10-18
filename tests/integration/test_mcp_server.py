@@ -58,6 +58,13 @@ async def test_exposes_the_documented_tools(root):
         "remove_timeline_clip",
         "set_timeline_transition",
         "render_timeline",
+        "add_timeline_track",
+        "remove_timeline_track",
+        "move_timeline_track",
+        "place_timeline_clip",
+        "set_timeline_clip",
+        "add_timeline_text",
+        "set_timeline_text",
     }
 
 
@@ -195,3 +202,40 @@ async def test_timeline_tools_reject_bad_input(root):
         assert "outside" in await call_error(client, "add_clip_to_timeline", name="mix", video="../secret.mp4")
         assert "no clip 3" in await call_error(client, "remove_timeline_clip", name="mix", clip=3)
         assert "no project" in await call_error(client, "show_timeline", name="nope")
+
+
+async def test_multi_track_tools_build_an_overlay_project(root):
+    (root / "pip.mp4").write_bytes((root / "gig.mp4").read_bytes())
+    async with Client(create_server(root)) as client:
+        await call(client, "create_timeline", name="mix")
+        await call(client, "add_clip_to_timeline", name="mix", video="gig.mp4", out_point=6)
+        assert "no overlay video track" in await call_error(client, "add_timeline_text", name="mix", text="Hi")
+
+        body = await call(client, "add_timeline_track", name="mix", kind="video")
+        assert [t["index"] for t in body["tracks"]] == [1, 2] and body["tracks"][1]["magnetic"] is False
+        body = await call(client, "add_clip_to_timeline", name="mix", video="pip.mp4", track=2, start=1, out_point=3)
+        clip = body["tracks"][1]["clips"][0]
+        assert (clip["start"], clip["duration"]) == (1, 3)
+
+        body = await call(client, "set_timeline_clip", name="mix", clip=1, track=2, opacity=0.5, scale=0.3, muted=True)
+        got = body["tracks"][1]["clips"][0]
+        assert (got["opacity"], got["scale"], got["muted"]) == (0.5, 0.3, True)
+        assert "at least one" in await call_error(client, "set_timeline_clip", name="mix", clip=1)
+
+        body = await call(client, "place_timeline_clip", name="mix", clip=1, track=2, start=2)
+        assert body["tracks"][1]["clips"][0]["start"] == 2
+        assert "overlap" in await call_error(
+            client, "add_clip_to_timeline", name="mix", video="pip.mp4", track=2, start=3, out_point=2
+        )
+
+        body = await call(client, "add_timeline_text", name="mix", text="Title", start=6, duration=2)
+        assert body["tracks"][1]["clips"][1]["kind"] == "text"
+        body = await call(client, "set_timeline_text", name="mix", clip=2, track=2, text="New", color="#ff0000")
+        assert body["tracks"][1]["clips"][1]["text"] == "New"
+
+        rendered = await call(client, "render_timeline", name="mix")
+        assert (root / rendered["output"]).is_file()
+        body = await call(client, "move_timeline_track", name="mix", track=2, to_position=1)
+        assert body["tracks"][0]["magnetic"] is False
+        body = await call(client, "remove_timeline_track", name="mix", track=1)
+        assert len(body["tracks"]) == 1

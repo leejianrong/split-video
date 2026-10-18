@@ -102,11 +102,21 @@ def video_track(project: Project) -> timeline.Track:
     return track
 
 
-def clip_id_at(project: Project, position: int) -> str:
-    """The id of the clip at 1-based `position` on the video track."""
-    clips = video_track(project).clips
+def track_at(project: Project, position: int | None) -> timeline.Track:
+    """The track at 1-based `position` in the project's track list, or the
+    main video track when `position` is None."""
+    if position is None:
+        return video_track(project)
+    if not 1 <= position <= len(project.tracks):
+        raise TimelineError(f"no track {position}; the project has {len(project.tracks)}")
+    return project.tracks[position - 1]
+
+
+def clip_id_at(project: Project, position: int, track: int | None = None) -> str:
+    """The id of the clip at 1-based `position` on a track (default: the main video track)."""
+    clips = track_at(project, track).clips
     if not 1 <= position <= len(clips):
-        raise TimelineError(f"no clip {position}; the video track has {len(clips)}")
+        raise TimelineError(f"no clip {position}; the track has {len(clips)}")
     return clips[position - 1].id
 
 
@@ -240,8 +250,10 @@ def describe(root: Path, name: str, project: Project) -> dict[str, Any]:
         "duration": project.duration,
         "tracks": [
             {
+                "index": n + 1,
                 "id": t.id,
                 "kind": t.kind,
+                "magnetic": t.magnetic,
                 "clips": [
                     {
                         "index": i + 1,
@@ -257,10 +269,21 @@ def describe(root: Path, name: str, project: Project) -> dict[str, Any]:
                         "muted": c.muted,
                         "transition": c.transition,
                         "transition_duration": c.transition_duration,
+                        "kind": c.kind,
+                        "text": c.text,
+                        "font_size": c.font_size,
+                        "color": c.color,
+                        "x": c.x,
+                        "y": c.y,
+                        "scale": c.scale,
+                        "opacity": c.opacity,
+                        "brightness": c.brightness,
+                        "contrast": c.contrast,
+                        "saturation": c.saturation,
                     }
                     for i, c in enumerate(t.clips)
                 ],
             }
-            for t in project.tracks
+            for n, t in enumerate(project.tracks)
         ],
     }

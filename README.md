@@ -191,28 +191,53 @@ split-video analyze liveshow.mp4                                # YAMNet classif
 `propose` only prints unless you pass `--apply`, which replaces any splits
 already saved.
 
-### Compose: combine several clips (`compose`)
+### Compose: combine clips, overlays, audio and titles (`compose`)
 
-Besides splitting one recording, you can build a video out of clips from
-several files. A project is a `<name>.split-video-timeline.json` file in the
-folder holding your videos, and clip sources are paths under that folder.
-In the editor, the **Compose** button opens the clip track: add clips, drag
-their edges to trim, drag them to reorder, click the join between two clips
-to choose a cut or a crossfade, press play to preview the sequence, and
-**Render** to write an mp4 next to your sources. The same project can be
-built from the command line (every command takes `--json` and `--root DIR`,
-default the current directory; clips are numbered from 1):
+Besides splitting one recording, you can build a video from several files.
+A project is a `<name>.split-video-timeline.json` file in the folder holding
+your videos; clip sources are paths under that folder. In the editor, the
+**Compose** button opens a multi-track timeline:
+
+- The **main track** keeps its clips back to back: drag to reorder, drag the
+  edges to trim, click the join between two clips to choose a cut or a
+  crossfade.
+- **Video tracks** above it hold overlays (picture-in-picture) and text
+  titles; **audio tracks** hold music or voice-over. Clips there sit at any
+  start time, can overlap clips on other tracks but not on their own, and
+  can be dragged in time or to another lane. Later video tracks draw on top.
+- Select a clip to set its volume and mute, position, size and opacity (for
+  overlays), brightness/contrast/saturation, or a title's words, size and
+  colour.
+- Play previews the main track; **Render** writes an mp4 next to your
+  sources with everything mixed in (overlays, titles and all audio).
+
+The same project can be built from the command line. Every command takes
+`--json` and `--root DIR` (default: the current directory); clips are numbered
+from 1 within their track, and tracks from 1 in the order `show` lists them
+(1 is the main track, which is also the default `--track`):
 
 ```bash
 split-video compose new mix
 split-video compose add-clip mix gig.mp4 --in 0:10 --out 1:30
 split-video compose add-clip mix encore.mp4
 split-video compose transition mix 2 --kind crossfade --duration 1.5
-split-video compose trim mix 1 --out 1:00
-split-video compose move mix 2 --to 1
+split-video compose add-track mix --kind video                     # track 2
+split-video compose add-clip mix crowd.mp4 --track 2 --start 0:20 # picture-in-picture
+split-video compose set mix 1 --track 2 --scale 0.3 --x 0.8 --y 0.2 --opacity 0.9
+split-video compose add-text mix "Live at the Hall" --start 2 --duration 4
+split-video compose add-track mix --kind audio                     # track 3
+split-video compose add-clip mix music.mp3 --track 3 --start 0
+split-video compose set mix 1 --track 3 --gain 0.4
+split-video compose set mix 1 --brightness 0.1 --saturation 1.2   # colour, main track
 split-video compose show mix
-split-video compose render mix            # writes mix-render.mp4
+split-video compose render mix                                     # writes mix-render.mp4
 ```
+
+Other commands: `list`, `trim`, `move` (reorder the main track), `place`
+(move a clip in time or to another track), `remove`, `remove-track`,
+`move-track`, `set-text`. Text needs a TrueType font: the Docker image has one;
+elsewhere install e.g. `fonts-dejavu-core` or point `SPLIT_VIDEO_FONT` at a
+`.ttf` file.
 
 ### MCP server (for AI agents)
 
@@ -226,7 +251,9 @@ the visual editor afterward. Tools: `list_videos`, `list_segments`,
 `analyze_audio`, `export`. The `compose` commands above have matching tools:
 `list_timelines`, `create_timeline`, `show_timeline`, `add_clip_to_timeline`,
 `trim_timeline_clip`, `move_timeline_clip`, `remove_timeline_clip`,
-`set_timeline_transition`, `render_timeline`.
+`set_timeline_transition`, `add_timeline_track`, `remove_timeline_track`,
+`move_timeline_track`, `place_timeline_clip`, `set_timeline_clip`,
+`add_timeline_text`, `set_timeline_text`, `render_timeline`.
 
 Tools only touch files under `--root` (default: the current directory):
 

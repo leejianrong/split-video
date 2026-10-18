@@ -64,6 +64,12 @@ list_timelines / create_timeline -> add_clip_to_timeline (video paths as
 for list_videos) -> trim_timeline_clip / move_timeline_clip /
 remove_timeline_clip / set_timeline_transition -> show_timeline to review ->
 render_timeline. Clips are numbered from 1 in track order.
+
+For overlays, titles and audio, add_timeline_track makes extra tracks (numbered as
+in show_timeline; track 1 is the main video track); add_clip_to_timeline with
+track/start places clips on them, place_timeline_clip moves them,
+set_timeline_clip sets volume, position, opacity and colour, and
+add_timeline_text puts titles over the picture. Later video tracks draw on top.
 """
 
 
@@ -289,8 +295,11 @@ def create_server(root: Path) -> MCPServer:
     def timeline_result(name: str, project_: timeline.Project, **extra: Any) -> dict[str, Any]:
         return {**extra, **timeline_service.describe(root, name, project_)}
 
-    def timeline_clip(name: str, clip: int) -> str:
-        return timeline_service.clip_id_at(timeline_service.load_existing(root, name)[1], clip)
+    def timeline_clip(name: str, clip: int, track: int | None = None) -> str:
+        return timeline_service.clip_id_at(timeline_service.load_existing(root, name)[1], clip, track)
+
+    def timeline_track(name: str, track: int | None) -> str:
+        return timeline_service.track_at(timeline_service.load_existing(root, name)[1], track).id
 
     @server.tool(annotations=_READ_ONLY)
     async def list_timelines() -> dict[str, Any]:
@@ -315,31 +324,40 @@ def create_server(root: Path) -> MCPServer:
         position: int | None = None,
         in_point: float = 0.0,
         out_point: float | None = None,
+        track: int | None = None,
+        start: float | None = None,
     ) -> dict[str, Any]:
-        """Add a clip of `video` (path relative to the root) to the timeline's video track, using
-        seconds `in_point`..`out_point` of it (default: all). `position` (from 1) inserts it there;
-        the default is the end."""
+        """Add a clip of `video` (path relative to the root; an audio file for an audio track) to a
+        track, using seconds `in_point`..`out_point` of it (default: all). `track` is a track number
+        from show_timeline (default: the main video track). On the main track `position` (from 1)
+        inserts it there, default the end; on any other track `start` (seconds) places it, default
+        after the last clip."""
         project_ = await run(
-            timeline_service.add_clip,
-            root,
-            name,
-            video,
-            index=None if position is None else position - 1,
-            in_point=in_point,
-            out_point=out_point,
+            lambda: timeline_service.add_clip(
+                root,
+                name,
+                video,
+                track_id=None if track is None else timeline_track(name, track),
+                index=None if position is None else position - 1,
+                start=start,
+                in_point=in_point,
+                out_point=out_point,
+            )
         )
         return timeline_result(name, project_)
 
     @server.tool(annotations=_EDITS_PROJECT)
     async def trim_timeline_clip(
-        name: str, clip: int, in_point: float | None = None, out_point: float | None = None
+        name: str, clip: int, in_point: float | None = None, out_point: float | None = None, track: int | None = None
     ) -> dict[str, Any]:
-        """Change which part of its source video clip number `clip` uses (seconds into the source)."""
+        """Change which part of its source clip number `clip` (on `track`, default the main video
+        track) uses, in seconds into the source. Trimming the left edge of a clip on a free track
+        moves its start so the content stays where it is."""
         if in_point is None and out_point is None:
             raise ToolError("pass in_point and/or out_point")
         project_ = await run(
             lambda: timeline_service.trim_clip(
-                root, name, timeline_clip(name, clip), in_point=in_point, out_point=out_point
+                root, name, timeline_clip(name, clip, track), in_point=in_point, out_point=out_point
             )
         )
         return timeline_result(name, project_)
@@ -351,9 +369,10 @@ def create_server(root: Path) -> MCPServer:
         return timeline_result(name, project_)
 
     @server.tool(annotations=_REPLACES_PROJECT)
-    async def remove_timeline_clip(name: str, clip: int) -> dict[str, Any]:
-        """Remove clip number `clip` from the timeline (the source video is untouched)."""
-        project_ = await run(lambda: timeline_service.remove_clip(root, name, timeline_clip(name, clip)))
+    async def remove_timeline_clip(name: str, clip: int, track: int | None = None) -> dict[str, Any]:
+        """Remove clip number `clip` (on `track`, default the main video track) from the timeline;
+        the source file is untouched."""
+        project_ = await run(lambda: timeline_service.remove_clip(root, name, timeline_clip(name, clip, track)))
         return timeline_result(name, project_)
 
     @server.tool(annotations=_EDITS_PROJECT)
@@ -363,6 +382,126 @@ def create_server(root: Path) -> MCPServer:
         project_ = await run(
             lambda: timeline_service.set_transition(
                 root, name, timeline_clip(name, clip), transition, 0.0 if transition == "cut" else duration
+            )
+        )
+        return timeline_result(name, project_)
+
+    @server.tool(annotations=_EDITS_PROJECT)
+    async def add_timeline_track(name: str, kind: str = "video") -> dict[str, Any]:
+        """Add an empty track ("video" or "audio") on top of the stack. Clips on it are placed by start
+        time and may overlap clips on other tracks; a later video track draws over earlier ones."""
+        return timeline_result(name, await run(timeline_service.add_track, root, name, kind))
+
+    @server.tool(annotations=_REPLACES_PROJECT)
+    async def remove_timeline_track(name: str, track: int) -> dict[str, Any]:
+        """Remove track number `track` (from show_timeline) and its clips. The last video track stays."""
+        project_ = await run(lambda: timeline_service.remove_track(root, name, timeline_track(name, track)))
+        return timeline_result(name, project_)
+
+    @server.tool(annotations=_EDITS_PROJECT)
+    async def move_timeline_track(name: str, track: int, to_position: int) -> dict[str, Any]:
+        """Change track number `track`'s place in the stack to `to_position` (both from 1)."""
+        project_ = await run(
+            lambda: timeline_service.move_track(root, name, timeline_track(name, track), to_position - 1)
+        )
+        return timeline_result(name, project_)
+
+    @server.tool(annotations=_EDITS_PROJECT)
+    async def place_timeline_clip(
+        name: str, clip: int, track: int, start: float | None = None, to_track: int | None = None
+    ) -> dict[str, Any]:
+        """Move clip number `clip` on `track` to `start` seconds and/or onto `to_track` (same kind).
+        Only for tracks that place clips by time, not the main track (use move_timeline_clip)."""
+        if start is None and to_track is None:
+            raise ToolError("pass start and/or to_track")
+        project_ = await run(
+            lambda: timeline_service.place_clip(
+                root,
+                name,
+                timeline_clip(name, clip, track),
+                start=start,
+                track_id=None if to_track is None else timeline_track(name, to_track),
+            )
+        )
+        return timeline_result(name, project_)
+
+    @server.tool(annotations=_EDITS_PROJECT)
+    async def set_timeline_clip(
+        name: str,
+        clip: int,
+        track: int | None = None,
+        gain: float | None = None,
+        muted: bool | None = None,
+        x: float | None = None,
+        y: float | None = None,
+        scale: float | None = None,
+        opacity: float | None = None,
+        brightness: float | None = None,
+        contrast: float | None = None,
+        saturation: float | None = None,
+    ) -> dict[str, Any]:
+        """Set properties of clip number `clip` on `track` (default the main video track): volume
+        `gain` (0..4, 1 = unchanged) and `muted`; for overlay clips `x`/`y` (centre, 0..1 of the frame),
+        `scale` (width as a fraction of the frame, 0.05..4) and `opacity` (0..1); colour `brightness`
+        (-1..1), `contrast` and `saturation` (0..3, 1 = unchanged). Only the values you pass change."""
+        values = {
+            "gain": gain, "muted": muted, "x": x, "y": y, "scale": scale, "opacity": opacity,
+            "brightness": brightness, "contrast": contrast, "saturation": saturation,
+        }  # fmt: skip
+        changes = {k: v for k, v in values.items() if v is not None}
+        if not changes:
+            raise ToolError("pass at least one property to change")
+        project_ = await run(
+            lambda: timeline_service.set_clip_properties(root, name, timeline_clip(name, clip, track), **changes)
+        )
+        return timeline_result(name, project_)
+
+    @server.tool(annotations=_EDITS_PROJECT)
+    async def add_timeline_text(
+        name: str,
+        text: str,
+        track: int | None = None,
+        start: float = 0.0,
+        duration: float = 3.0,
+        size: float = 0.08,
+        color: str = "#ffffff",
+        x: float = 0.5,
+        y: float = 0.85,
+    ) -> dict[str, Any]:
+        """Add a text title for `duration` seconds from `start`, on an overlay video track (`track` number
+        from show_timeline; default the first overlay track, which add_timeline_track creates).
+        `size` is the text height as a fraction of the frame, `color` is #rrggbb, `x`/`y` the centre."""
+
+        def work() -> timeline.Project:
+            _, loaded = timeline_service.load_existing(root, name)
+            if track is None:
+                chosen = next((t for t in loaded.tracks if t.kind == "video" and not t.magnetic), None)
+                if chosen is None:
+                    raise TimelineError("no overlay video track; create one with add_timeline_track first")
+                track_id = chosen.id
+            else:
+                track_id = timeline_service.track_at(loaded, track).id
+            return timeline_service.add_text_clip(
+                root, name, track_id, text, duration, start=start, font_size=size, color=color, x=x, y=y
+            )
+
+        return timeline_result(name, await run(work))
+
+    @server.tool(annotations=_EDITS_PROJECT)
+    async def set_timeline_text(
+        name: str,
+        clip: int,
+        track: int,
+        text: str | None = None,
+        size: float | None = None,
+        color: str | None = None,
+    ) -> dict[str, Any]:
+        """Change the words, `size` or `color` of text clip number `clip` on `track`."""
+        if text is None and size is None and color is None:
+            raise ToolError("pass text, size and/or color")
+        project_ = await run(
+            lambda: timeline_service.set_text_properties(
+                root, name, timeline_clip(name, clip, track), text=text, font_size=size, color=color
             )
         )
         return timeline_result(name, project_)
