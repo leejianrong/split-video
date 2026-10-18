@@ -5,10 +5,11 @@ live, so the web UI, the CLI and the MCP server can't disagree. Every
 function is pure: it takes a `Project` and returns a new one; the caller
 saves it. Bad input raises `TimelineError`.
 
-Phase 2 keeps each video track gap-free: clips sit back to back in list
-order, and a crossfade overlaps a clip with the one before it. All of that
-layout lives in `normalize_track`, which is the single function to change
-when clips become freely placeable.
+A magnetic track (the main video track) stays gap-free: clips sit back to
+back in list order, and a crossfade overlaps a clip with the one before it.
+Any other track places clips at an explicit start time and refuses
+overlaps. All of that layout lives in `normalize_track`. Tracks are stacked
+in list order: a later video track draws over an earlier one.
 """
 
 from __future__ import annotations
@@ -16,6 +17,7 @@ from __future__ import annotations
 from dataclasses import replace
 
 from split_video.timeline import (
+    TRACK_KINDS,
     TRANSITIONS,
     Clip,
     Project,
@@ -55,12 +57,16 @@ def _replace_track(project: Project, track: Track) -> Project:
 
 
 def normalize_track(track: Track) -> Track:
-    """Lay clips out back to back and make their transitions consistent.
+    """Make a track's layout legal. A free track is sorted by start and must
+    not overlap; a magnetic track is laid out as described below.
 
+    Magnetic: lay clips out back to back and make their transitions consistent.
     The first clip is always a cut. A crossfade is clamped so it never
     outlasts either neighbour, counting the fade a clip already spends on its
     other side. A crossfade of zero length becomes a cut.
     """
+    if not track.magnetic:
+        return _normalize_free_track(track)
     clips: list[Clip] = []
     prev: Clip | None = None
     for clip in track.clips:
@@ -75,6 +81,20 @@ def normalize_track(track: Track) -> Track:
         clip = replace(clip, start=start, transition=transition, transition_duration=duration)
         clips.append(clip)
         prev = clip
+    return replace(track, clips=tuple(clips))
+
+
+def _normalize_free_track(track: Track) -> Track:
+    clips = sorted(track.clips, key=lambda c: c.start)
+    prev: Clip | None = None
+    for clip in clips:
+        if clip.start < -1e-9:
+            raise TimelineError("a clip can't start before 0")
+        if prev is not None and clip.start < prev.end - 1e-6:
+            raise TimelineError(f"clip would overlap another clip on the track (until {prev.end:g}s)")
+        prev = clip
+    # Crossfades are a magnetic-track feature; here every clip is a plain cut.
+    clips = [replace(c, transition="cut", transition_duration=0.0) for c in clips]
     return replace(track, clips=tuple(clips))
 
 
@@ -94,19 +114,30 @@ def add_clip(
     in_point: float = 0.0,
     out_point: float | None = None,
     index: int | None = None,
+    start: float | None = None,
 ) -> tuple[Project, Clip]:
-    """Insert a clip of `source` (which is `source_duration` long) at `index`
-    on the track, or at the end. Returns the new project and the new clip."""
+    """Insert a clip of `source` (which is `source_duration` long) on a track.
+
+    On a magnetic track the clip goes at `index` (default: the end); on a free
+    track at `start` seconds (default: after the last clip). Returns the new
+    project and the new clip."""
     track = find_track(project, track_id)
     out = source_duration if out_point is None else out_point
     _check_range(in_point, out, source_duration)
     clip = Clip(id=new_id(), source=source, in_point=in_point, out_point=out)
     clips = list(track.clips)
-    if index is None:
-        index = len(clips)
-    if not 0 <= index <= len(clips):
-        raise TimelineError(f"index {index} out of range (0..{len(clips)})")
-    clips.insert(index, clip)
+    if track.magnetic:
+        if start is not None:
+            raise TimelineError("this track keeps its clips back to back; use index, not start")
+        if index is None:
+            index = len(clips)
+        if not 0 <= index <= len(clips):
+            raise TimelineError(f"index {index} out of range (0..{len(clips)})")
+        clips.insert(index, clip)
+    else:
+        if index is not None:
+            raise TimelineError("this track places clips by start time; use start, not index")
+        clips.append(replace(clip, start=track.end if start is None else start))
     new = _with_clips(project, track, clips)
     return new, find_clip_in(new, clip.id)
 
@@ -130,13 +161,18 @@ def trim_clip(
     new_out = clip.out_point if out_point is None else out_point
     _check_range(new_in, new_out, source_duration)
     clips = list(track.clips)
-    clips[i] = replace(clip, in_point=new_in, out_point=new_out)
+    # On a free track, moving the left edge keeps the content where it is in
+    # time, so the clip's start follows the in point.
+    start = clip.start if track.magnetic else clip.start + (new_in - clip.in_point)
+    clips[i] = replace(clip, in_point=new_in, out_point=new_out, start=start)
     return _with_clips(project, track, clips)
 
 
 def move_clip(project: Project, clip_id: str, to_index: int) -> Project:
     """Move a clip to `to_index` (0-based) among its track's clips."""
     track, i = find_clip(project, clip_id)
+    if not track.magnetic:
+        raise TimelineError("this track places clips by start time; use place_clip")
     clips = list(track.clips)
     if not 0 <= to_index < len(clips):
         raise TimelineError(f"index {to_index} out of range (0..{len(clips) - 1})")
@@ -158,6 +194,8 @@ def set_transition(project: Project, clip_id: str, transition: str, duration: fl
         raise TimelineError(f"unknown transition {transition!r}; choose from {', '.join(TRANSITIONS)}")
     track, i = find_clip(project, clip_id)
     clip = track.clips[i]
+    if not track.magnetic:
+        raise TimelineError("crossfades are only available on the main track")
     if transition == "cut":
         duration = 0.0
     else:
@@ -176,6 +214,51 @@ def set_transition(project: Project, clip_id: str, transition: str, duration: fl
     clips = list(track.clips)
     clips[i] = replace(clip, transition=transition, transition_duration=duration)
     return _with_clips(project, track, clips)
+
+
+def add_track(project: Project, kind: str, *, magnetic: bool = False) -> tuple[Project, Track]:
+    """Append a new empty track on top of the stack. Extra tracks are free
+    (clips placed by start time) unless `magnetic` is asked for."""
+    if kind not in TRACK_KINDS:
+        raise TimelineError(f"unknown track kind {kind!r}; choose from {', '.join(TRACK_KINDS)}")
+    track = Track(id=new_id(), kind=kind, magnetic=magnetic)
+    return replace(project, tracks=(*project.tracks, track)), track
+
+
+def remove_track(project: Project, track_id: str) -> Project:
+    track = find_track(project, track_id)
+    if track.kind == "video" and sum(t.kind == "video" for t in project.tracks) == 1:
+        raise TimelineError("a project needs at least one video track")
+    return replace(project, tracks=tuple(t for t in project.tracks if t.id != track_id))
+
+
+def move_track(project: Project, track_id: str, to_index: int) -> Project:
+    """Reorder tracks; list order is stacking order (later draws on top)."""
+    find_track(project, track_id)
+    tracks = list(project.tracks)
+    if not 0 <= to_index < len(tracks):
+        raise TimelineError(f"index {to_index} out of range (0..{len(tracks) - 1})")
+    tracks.insert(to_index, tracks.pop(next(i for i, t in enumerate(tracks) if t.id == track_id)))
+    return replace(project, tracks=tuple(tracks))
+
+
+def place_clip(project: Project, clip_id: str, *, start: float | None = None, track_id: str | None = None) -> Project:
+    """Put a clip at `start` seconds on a free track, optionally moving it to
+    another free track of the same kind. Refuses overlaps."""
+    src, i = find_clip(project, clip_id)
+    clip = src.clips[i]
+    dest = src if track_id is None else find_track(project, track_id)
+    if dest.kind != src.kind:
+        raise TimelineError(f"can't move a {src.kind} clip onto a {dest.kind} track")
+    if dest.magnetic:
+        raise TimelineError("the main track keeps its clips back to back; use move_clip or add_clip")
+    moved = replace(clip, start=clip.start if start is None else start)
+    if dest.id == src.id:
+        clips = [moved if c.id == clip_id else c for c in src.clips]
+        return _with_clips(project, src, clips)
+    project = _with_clips(project, src, [c for c in src.clips if c.id != clip_id])
+    dest = find_track(project, dest.id)
+    return _with_clips(project, dest, [*dest.clips, moved])
 
 
 def _check_range(in_point: float, out_point: float, source_duration: float) -> None:

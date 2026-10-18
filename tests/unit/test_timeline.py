@@ -66,3 +66,12 @@ def test_list_projects(tmp_path):
     timeline.save(timeline.project_path(tmp_path, "b"), _project())
     timeline.save(timeline.project_path(tmp_path, "a"), _project())
     assert timeline.list_projects(tmp_path) == ["a", "b"]
+
+
+def test_files_without_a_magnetic_flag_load_as_magnetic_and_free_tracks_round_trip(tmp_path):
+    path = tmp_path / "old.split-video-timeline.json"
+    path.write_text('{"version":1,"tracks":[{"id":"t","kind":"video","clips":[]}]}')
+    assert timeline.load(path).tracks[0].magnetic is True
+    free = Project(tracks=(Track(id="t", kind="audio", magnetic=False),))
+    timeline.save(path, free)
+    assert timeline.load(path) == free

@@ -62,6 +62,10 @@ class Track:
     id: str
     kind: str = "video"
     clips: tuple[Clip, ...] = ()
+    # A magnetic track keeps its clips back to back in list order (the main
+    # video track). Other tracks place clips at any start time; clips on one
+    # track may not overlap. Files from before this field load as magnetic.
+    magnetic: bool = True
 
     @property
     def end(self) -> float:
@@ -130,6 +134,7 @@ def to_dict(project: Project) -> dict[str, Any]:
             {
                 "id": t.id,
                 "kind": t.kind,
+                "magnetic": t.magnetic,
                 "clips": [
                     {
                         "id": c.id,
@@ -170,7 +175,7 @@ def from_dict(data: dict[str, Any]) -> Project:
             )
             for c in t.get("clips", [])
         )
-        tracks.append(Track(id=str(t["id"]), kind=kind, clips=clips))
+        tracks.append(Track(id=str(t["id"]), kind=kind, clips=clips, magnetic=bool(t.get("magnetic", True))))
     return Project(tracks=tuple(tracks))
 
 
