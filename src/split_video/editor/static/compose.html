@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>split-video compose</title>
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="compose.css" />
+</head>
+<body>
+  <header class="app-header">
+    <div class="app-header__title">
+      <a href="./" class="btn" title="Back to the split editor">&larr; Split editor</a>
+      <span id="project-name" class="filename">Compose</span>
+      <span id="project-duration" class="segment-count"></span>
+    </div>
+    <div class="app-header__actions">
+      <span id="status" class="save-status"></span>
+      <button id="render-btn" class="btn btn-primary" disabled>Render</button>
+    </div>
+  </header>
+
+  <section id="project-picker" class="compose-panel hidden">
+    <h2>Projects</h2>
+    <ul id="project-list" class="browse-list"></ul>
+    <form id="new-project-form" class="compose-row">
+      <input id="new-project-name" placeholder="New project name" required />
+      <button class="btn" type="submit">Create</button>
+    </form>
+  </section>
+
+  <main id="compose-main" class="compose-main hidden">
+    <div class="player-wrap">
+      <video id="video" controls preload="metadata"></video>
+    </div>
+
+    <div class="compose-toolbar">
+      <button id="add-clip-btn" class="btn">+ Add clip</button>
+      <button id="delete-clip-btn" class="btn btn-danger" disabled>Delete clip</button>
+      <span class="compose-hint">Drag a clip's edges to trim, drag its body to reorder, click the join between clips to set a transition.</span>
+    </div>
+
+    <div id="track" class="compose-track" aria-label="Video track"></div>
+
+    <div id="transition-editor" class="compose-panel compose-row hidden">
+      <span id="transition-label"></span>
+      <select id="transition-kind">
+        <option value="cut">Cut</option>
+        <option value="crossfade">Crossfade</option>
+      </select>
+      <label>Duration (s) <input id="transition-duration" type="number" min="0.1" step="0.1" value="1" /></label>
+      <button id="transition-apply" class="btn">Apply</button>
+    </div>
+
+    <div id="clip-picker" class="compose-panel hidden">
+      <div class="file-picker__toolbar">
+        <button id="picker-up" class="btn" disabled>&uarr; Up</button>
+        <span id="picker-path" class="browse-path">/</span>
+      </div>
+      <ul id="picker-list" class="browse-list"></ul>
+    </div>
+
+    <div id="render-status" class="compose-panel hidden"></div>
+  </main>
+
+  <script type="module" src="compose.js"></script>
+</body>
+</html>

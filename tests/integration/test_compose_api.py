@@ -100,3 +100,8 @@ def test_media_file_is_confined_to_root(client):
     assert client.get("/media/file", params={"path": "a.mp4"}).status_code == 200
     assert client.get("/media/file", params={"path": "../etc/passwd"}).status_code == 400
     assert client.get("/media/file", params={"path": "zzz.mp4"}).status_code == 404
+
+
+def test_compose_page_is_served_and_linked_from_the_split_editor(client):
+    assert 'id="compose-main"' in client.get("/compose.html").text
+    assert "compose.html" in client.get("/").text
