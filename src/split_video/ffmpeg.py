@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
+from dataclasses import dataclass
 from pathlib import Path
 
 from split_video.silence import SilenceInterval, parse_silencedetect_output
@@ -51,6 +53,49 @@ def probe_duration(path: Path) -> float:
     if result.returncode != 0 or not result.stdout.strip():
         raise ProbeError(f"could not read '{path}': {result.stderr.strip()}")
     return float(result.stdout.strip())
+
+
+@dataclass(frozen=True)
+class MediaInfo:
+    duration: float
+    width: int | None  # None when the file has no video stream
+    height: int | None
+    has_audio: bool
+
+
+def probe_media(path: Path) -> MediaInfo:
+    """Duration, video size and whether there's an audio stream, in one ffprobe call."""
+    ffprobe = _require_binary("ffprobe")
+    result = subprocess.run(
+        [
+            ffprobe,
+            "-v",
+            "error",
+            "-show_entries",
+            "format=duration:stream=codec_type,width,height",
+            "-of",
+            "json",
+            str(path),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise ProbeError(f"could not read '{path}': {result.stderr.strip()}")
+    try:
+        data = json.loads(result.stdout)
+        duration = float(data["format"]["duration"])
+    except (json.JSONDecodeError, KeyError, ValueError):
+        raise ProbeError(f"could not read a duration from '{path}'") from None
+    streams = data.get("streams", [])
+    video = next((s for s in streams if s.get("codec_type") == "video" and s.get("width")), None)
+    return MediaInfo(
+        duration=duration,
+        width=video["width"] if video else None,
+        height=video["height"] if video else None,
+        has_audio=any(s.get("codec_type") == "audio" for s in streams),
+    )
 
 
 def detect_silence(path: Path, threshold: str, min_silence_duration: float) -> list[SilenceInterval]:
