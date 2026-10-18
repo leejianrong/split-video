@@ -12,7 +12,7 @@ import uvicorn
 from rich.console import Console
 from rich.table import Table
 
-from split_video import project_cli
+from split_video import compose_cli, project_cli
 from split_video.editor.app import create_app
 from split_video.editor.schemas import StateParams
 from split_video.ffmpeg import (
@@ -239,3 +239,4 @@ def mcp_cmd(
 
 
 project_cli.register(app)
+compose_cli.register(app)

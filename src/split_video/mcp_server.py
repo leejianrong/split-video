@@ -26,13 +26,21 @@ from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp_types import ToolAnnotations
 
-from split_video import project
+from split_video import project, timeline, timeline_service
 from split_video.editor.browse import PathEscapesRootError, list_directory, resolve_within_root
 from split_video.editor.cache import ClassificationCache
 from split_video.editor.classify import ModelNotFoundError
 from split_video.ffmpeg import ExtractError, FfmpegNotFoundError, ProbeError
+from split_video.timeline import TimelineError
 
-_EXPECTED_ERRORS = (project.ProjectError, FfmpegNotFoundError, ProbeError, ExtractError, ModelNotFoundError)
+_EXPECTED_ERRORS = (
+    project.ProjectError,
+    TimelineError,
+    FfmpegNotFoundError,
+    ProbeError,
+    ExtractError,
+    ModelNotFoundError,
+)
 
 _READ_ONLY = ToolAnnotations(read_only_hint=True, destructive_hint=False, idempotent_hint=True, open_world_hint=False)
 _EDITS_PROJECT = ToolAnnotations(read_only_hint=False, destructive_hint=False, open_world_hint=False)
@@ -50,6 +58,12 @@ Videos are paths relative to the server's root directory. Segments and
 splits are numbered from 1; split N is the cut between segments N and N+1.
 Times are seconds. Edits are saved immediately to the video's
 .split-video-project.json file, which the visual editor also reads.
+
+Separately, timeline projects combine clips from several videos into one:
+list_timelines / create_timeline -> add_clip_to_timeline (video paths as
+for list_videos) -> trim_timeline_clip / move_timeline_clip /
+remove_timeline_clip / set_timeline_transition -> show_timeline to review ->
+render_timeline. Clips are numbered from 1 in track order.
 """
 
 
@@ -269,5 +283,100 @@ def create_server(root: Path) -> MCPServer:
             "files": [p.relative_to(root).as_posix() for p in written],
             "manifest": manifest_path.relative_to(root).as_posix() if manifest_path else None,
         }
+
+    # --- timeline (multi-clip) projects ---------------------------------------
+
+    def timeline_result(name: str, project_: timeline.Project, **extra: Any) -> dict[str, Any]:
+        return {**extra, **timeline_service.describe(root, name, project_)}
+
+    def timeline_clip(name: str, clip: int) -> str:
+        return timeline_service.clip_id_at(timeline_service.load_existing(root, name)[1], clip)
+
+    @server.tool(annotations=_READ_ONLY)
+    async def list_timelines() -> dict[str, Any]:
+        """List the timeline projects (multi-clip compositions) in the root."""
+        return {"projects": await run(timeline.list_projects, root)}
+
+    @server.tool(annotations=_EDITS_PROJECT)
+    async def create_timeline(name: str) -> dict[str, Any]:
+        """Create an empty timeline project called `name` (no extension)."""
+        return timeline_result(name, await run(timeline_service.create_project, root, name))
+
+    @server.tool(annotations=_READ_ONLY)
+    async def show_timeline(name: str) -> dict[str, Any]:
+        """The timeline's tracks and clips: sources, in/out points, where each starts, transitions."""
+        project_ = await run(lambda: timeline_service.load_existing(root, name)[1])
+        return timeline_result(name, project_)
+
+    @server.tool(annotations=_EDITS_PROJECT)
+    async def add_clip_to_timeline(
+        name: str,
+        video: str,
+        position: int | None = None,
+        in_point: float = 0.0,
+        out_point: float | None = None,
+    ) -> dict[str, Any]:
+        """Add a clip of `video` (path relative to the root) to the timeline's video track, using
+        seconds `in_point`..`out_point` of it (default: all). `position` (from 1) inserts it there;
+        the default is the end."""
+        project_ = await run(
+            timeline_service.add_clip,
+            root,
+            name,
+            video,
+            index=None if position is None else position - 1,
+            in_point=in_point,
+            out_point=out_point,
+        )
+        return timeline_result(name, project_)
+
+    @server.tool(annotations=_EDITS_PROJECT)
+    async def trim_timeline_clip(
+        name: str, clip: int, in_point: float | None = None, out_point: float | None = None
+    ) -> dict[str, Any]:
+        """Change which part of its source video clip number `clip` uses (seconds into the source)."""
+        if in_point is None and out_point is None:
+            raise ToolError("pass in_point and/or out_point")
+        project_ = await run(
+            lambda: timeline_service.trim_clip(
+                root, name, timeline_clip(name, clip), in_point=in_point, out_point=out_point
+            )
+        )
+        return timeline_result(name, project_)
+
+    @server.tool(annotations=_EDITS_PROJECT)
+    async def move_timeline_clip(name: str, clip: int, to_position: int) -> dict[str, Any]:
+        """Move clip number `clip` to `to_position` (both from 1)."""
+        project_ = await run(lambda: timeline_service.move_clip(root, name, timeline_clip(name, clip), to_position - 1))
+        return timeline_result(name, project_)
+
+    @server.tool(annotations=_REPLACES_PROJECT)
+    async def remove_timeline_clip(name: str, clip: int) -> dict[str, Any]:
+        """Remove clip number `clip` from the timeline (the source video is untouched)."""
+        project_ = await run(lambda: timeline_service.remove_clip(root, name, timeline_clip(name, clip)))
+        return timeline_result(name, project_)
+
+    @server.tool(annotations=_EDITS_PROJECT)
+    async def set_timeline_transition(name: str, clip: int, transition: str, duration: float = 1.0) -> dict[str, Any]:
+        """Set how clip number `clip` joins the clip before it: transition "cut" or "crossfade"
+        (`duration` seconds). The first clip has nothing to fade from."""
+        project_ = await run(
+            lambda: timeline_service.set_transition(
+                root, name, timeline_clip(name, clip), transition, 0.0 if transition == "cut" else duration
+            )
+        )
+        return timeline_result(name, project_)
+
+    @server.tool(annotations=_REPLACES_PROJECT)
+    async def render_timeline(name: str, output: str | None = None, overwrite: bool = False) -> dict[str, Any]:
+        """Render the timeline to an mp4 in the root (default '<name>-render.mp4'). Refuses to replace an
+        existing file unless overwrite=true. Re-encodes, so it can take a while for long clips."""
+
+        def work() -> dict[str, Any]:
+            project_, filename, out_path = timeline_service.plan_render(root, name, output, overwrite)
+            timeline_service.run_render(project_, root, out_path)
+            return {"name": name, "output": filename, "duration": project_.duration}
+
+        return await run(work)
 
     return server

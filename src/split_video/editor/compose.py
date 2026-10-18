@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import threading
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -18,11 +19,19 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from starlette.responses import FileResponse
 
-from split_video import timeline, timeline_ops
+from split_video import timeline, timeline_service
 from split_video.editor.browse import PathEscapesRootError, resolve_within_root
-from split_video.ffmpeg import ExtractError, ProbeError, probe_media
-from split_video.render import render
-from split_video.timeline import Clip, Project, TimelineError
+from split_video.ffmpeg import ExtractError, ProbeError
+from split_video.timeline import (
+    Clip,
+    OutputExistsError,
+    OutsideRootError,
+    Project,
+    ProjectExistsError,
+    ProjectNotFoundError,
+    SourceNotFoundError,
+    TimelineError,
+)
 
 
 class ClipOut(BaseModel):
@@ -106,22 +115,23 @@ class _RenderJob:
     error: str | None = None
 
 
+def _http(exc: TimelineError) -> HTTPException:
+    """The HTTP status that best matches a timeline failure."""
+    if isinstance(exc, ProjectNotFoundError | SourceNotFoundError):
+        status = 404
+    elif isinstance(exc, ProjectExistsError | OutputExistsError):
+        status = 409
+    elif isinstance(exc, OutsideRootError):
+        status = 400
+    else:
+        status = 422
+    return HTTPException(status_code=status, detail=str(exc))
+
+
 def make_router(root: Path) -> APIRouter:
     router = APIRouter()
     root = root.resolve()
-    lock = threading.Lock()
     jobs: dict[str, _RenderJob] = {}
-    media_cache: dict[tuple[str, int], float] = {}
-
-    def source_duration(source: str) -> float | None:
-        try:
-            path = timeline.resolve_source(root, source)
-            key = (str(path), path.stat().st_mtime_ns)
-            if key not in media_cache:
-                media_cache[key] = probe_media(path).duration
-            return media_cache[key]
-        except (TimelineError, OSError, ProbeError):
-            return None
 
     def clip_out(c: Clip) -> ClipOut:
         return ClipOut(
@@ -132,7 +142,7 @@ def make_router(root: Path) -> APIRouter:
             start=c.start,
             end=c.end,
             duration=c.duration,
-            source_duration=source_duration(c.source),
+            source_duration=timeline_service.source_duration(root, c.source),
             gain=c.gain,
             muted=c.muted,
             transition=c.transition,
@@ -146,47 +156,11 @@ def make_router(root: Path) -> APIRouter:
             tracks=[TrackOut(id=t.id, kind=t.kind, clips=[clip_out(c) for c in t.clips]) for t in project.tracks],
         )
 
-    def path_for(name: str) -> Path:
+    def respond(name: str, action: Callable[[], Project]) -> ProjectOut:
         try:
-            return timeline.project_path(root, name)
+            return project_out(name, action())
         except TimelineError as exc:
-            raise HTTPException(status_code=422, detail=str(exc)) from None
-
-    def load_existing(name: str) -> tuple[Path, Project]:
-        path = path_for(name)
-        if not path.exists():
-            raise HTTPException(status_code=404, detail=f"no project named {name!r}")
-        return path, timeline.load(path)
-
-    def source_for(rel: str) -> tuple[str, float]:
-        """A root-relative source string and its probed duration, or 4xx."""
-        try:
-            resolved = resolve_within_root(root, rel)
-        except PathEscapesRootError:
-            raise HTTPException(status_code=400, detail="path escapes the browse root") from None
-        if not resolved.is_file():
-            raise HTTPException(status_code=404, detail="file not found")
-        try:
-            return timeline.relative_source(root, resolved), probe_media(resolved).duration
-        except ProbeError as exc:
-            raise HTTPException(status_code=422, detail=str(exc)) from None
-
-    def default_track(project: Project) -> str:
-        track = next((t for t in project.tracks if t.kind == "video"), None)
-        if track is None:
-            raise HTTPException(status_code=422, detail="the project has no video track")
-        return track.id
-
-    def edit(name: str, change):
-        """Load `name`, apply `change(project) -> project`, save, return it."""
-        with lock:
-            path, project = load_existing(name)
-            try:
-                project = change(project)
-            except TimelineError as exc:
-                raise HTTPException(status_code=422, detail=str(exc)) from None
-            timeline.save(path, project)
-        return project_out(name, project)
+            raise _http(exc) from None
 
     @router.get("/api/compose/projects", response_model=ProjectListOut)
     def list_projects() -> ProjectListOut:
@@ -194,79 +168,57 @@ def make_router(root: Path) -> APIRouter:
 
     @router.post("/api/compose/projects", response_model=ProjectOut)
     def create_project(request: CreateProjectRequest) -> ProjectOut:
-        path = path_for(request.name)
-        with lock:
-            if path.exists():
-                raise HTTPException(status_code=409, detail=f"project {request.name!r} already exists")
-            project = timeline.empty_project()
-            timeline.save(path, project)
-        return project_out(request.name, project)
+        return respond(request.name, lambda: timeline_service.create_project(root, request.name))
 
     @router.get("/api/compose/projects/{name}", response_model=ProjectOut)
     def get_project(name: str) -> ProjectOut:
-        _, project = load_existing(name)
-        return project_out(name, project)
+        return respond(name, lambda: timeline_service.load_existing(root, name)[1])
 
     @router.post("/api/compose/projects/{name}/clips", response_model=ProjectOut)
     def add_clip(name: str, request: AddClipRequest) -> ProjectOut:
-        source, duration = source_for(request.path)
-
-        def change(project: Project) -> Project:
-            track_id = request.track_id or default_track(project)
-            new, _ = timeline_ops.add_clip(
-                project,
-                track_id,
-                source,
-                duration,
+        return respond(
+            name,
+            lambda: timeline_service.add_clip(
+                root,
+                name,
+                request.path,
+                track_id=request.track_id,
+                index=request.index,
                 in_point=request.in_point,
                 out_point=request.out_point,
-                index=request.index,
-            )
-            return new
-
-        return edit(name, change)
-
-    def duration_of_clip(project: Project, clip_id: str) -> float:
-        track, i = timeline_ops.find_clip(project, clip_id)
-        duration = source_duration(track.clips[i].source)
-        if duration is None:
-            raise TimelineError("the clip's source file is missing or unreadable")
-        return duration
+            ),
+        )
 
     @router.patch("/api/compose/projects/{name}/clips/{clip_id}", response_model=ProjectOut)
     def trim_clip(name: str, clip_id: str, request: TrimRequest) -> ProjectOut:
-        return edit(
+        return respond(
             name,
-            lambda p: timeline_ops.trim_clip(
-                p, clip_id, duration_of_clip(p, clip_id), in_point=request.in_point, out_point=request.out_point
+            lambda: timeline_service.trim_clip(
+                root, name, clip_id, in_point=request.in_point, out_point=request.out_point
             ),
         )
 
     @router.post("/api/compose/projects/{name}/clips/{clip_id}/move", response_model=ProjectOut)
     def move_clip(name: str, clip_id: str, request: MoveRequest) -> ProjectOut:
-        return edit(name, lambda p: timeline_ops.move_clip(p, clip_id, request.to_index))
+        return respond(name, lambda: timeline_service.move_clip(root, name, clip_id, request.to_index))
 
     @router.delete("/api/compose/projects/{name}/clips/{clip_id}", response_model=ProjectOut)
     def remove_clip(name: str, clip_id: str) -> ProjectOut:
-        return edit(name, lambda p: timeline_ops.remove_clip(p, clip_id))
+        return respond(name, lambda: timeline_service.remove_clip(root, name, clip_id))
 
     @router.put("/api/compose/projects/{name}/clips/{clip_id}/transition", response_model=ProjectOut)
     def set_transition(name: str, clip_id: str, request: TransitionRequest) -> ProjectOut:
-        return edit(name, lambda p: timeline_ops.set_transition(p, clip_id, request.transition, request.duration))
+        return respond(
+            name,
+            lambda: timeline_service.set_transition(root, name, clip_id, request.transition, request.duration),
+        )
 
     @router.post("/api/compose/projects/{name}/render", response_model=RenderStartOut)
     def start_render(name: str, request: RenderRequest) -> RenderStartOut:
-        _, project = load_existing(name)
-        filename = request.output or f"{name}-render.mp4"
-        if "/" in filename or "\\" in filename or filename.startswith("."):
-            raise HTTPException(status_code=422, detail="output must be a plain filename")
-        if not filename.lower().endswith(".mp4"):
-            raise HTTPException(status_code=422, detail="output must end in .mp4")
-        out_path = root / filename
-        if out_path.exists() and not request.overwrite:
-            raise HTTPException(status_code=409, detail=f"{filename} already exists")
-        if not any(t.clips for t in project.tracks):
-            raise HTTPException(status_code=422, detail="the timeline has no clips to render")
+        try:
+            project, filename, out_path = timeline_service.plan_render(root, name, request.output, request.overwrite)
+        except TimelineError as exc:
+            raise _http(exc) from None
 
         job = _RenderJob()
         job_id = uuid.uuid4().hex
@@ -277,7 +229,7 @@ def make_router(root: Path) -> APIRouter:
                 job.progress = fraction
 
             try:
-                render(project, root, out_path, on_progress)
+                timeline_service.run_render(project, root, out_path, on_progress)
                 job.output = filename
                 job.status = "done"
             except (TimelineError, ExtractError, ProbeError, OSError) as exc:

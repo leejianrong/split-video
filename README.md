@@ -191,6 +191,29 @@ split-video analyze liveshow.mp4                                # YAMNet classif
 `propose` only prints unless you pass `--apply`, which replaces any splits
 already saved.
 
+### Compose: combine several clips (`compose`)
+
+Besides splitting one recording, you can build a video out of clips from
+several files. A project is a `<name>.split-video-timeline.json` file in the
+folder holding your videos, and clip sources are paths under that folder.
+In the editor, the **Compose** button opens the clip track: add clips, drag
+their edges to trim, drag them to reorder, click the join between two clips
+to choose a cut or a crossfade, press play to preview the sequence, and
+**Render** to write an mp4 next to your sources. The same project can be
+built from the command line (every command takes `--json` and `--root DIR`,
+default the current directory; clips are numbered from 1):
+
+```bash
+split-video compose new mix
+split-video compose add-clip mix gig.mp4 --in 0:10 --out 1:30
+split-video compose add-clip mix encore.mp4
+split-video compose transition mix 2 --kind crossfade --duration 1.5
+split-video compose trim mix 1 --out 1:00
+split-video compose move mix 2 --to 1
+split-video compose show mix
+split-video compose render mix            # writes mix-render.mp4
+```
+
 ### MCP server (for AI agents)
 
 `split-video mcp` runs a [Model Context Protocol](https://modelcontextprotocol.io)
@@ -200,7 +223,10 @@ classify the audio, and export — without a browser or a running editor. It
 reads and writes the same project file, so a human can open the result in
 the visual editor afterward. Tools: `list_videos`, `list_segments`,
 `propose_splits`, `add_split`, `move_split`, `remove_split`, `label_segment`,
-`analyze_audio`, `export`.
+`analyze_audio`, `export`. The `compose` commands above have matching tools:
+`list_timelines`, `create_timeline`, `show_timeline`, `add_clip_to_timeline`,
+`trim_timeline_clip`, `move_timeline_clip`, `remove_timeline_clip`,
+`set_timeline_transition`, `render_timeline`.
 
 Tools only touch files under `--root` (default: the current directory):
 

@@ -24,14 +24,14 @@ def root(tmp_path, three_songs_clip):
     return shows
 
 
-async def call(client, name, **arguments):
-    result = await client.call_tool(name, arguments)
+async def call(client, tool, /, **arguments):
+    result = await client.call_tool(tool, arguments)
     assert not result.is_error, result.content
     return result.structured_content
 
 
-async def call_error(client, name, **arguments):
-    result = await client.call_tool(name, arguments)
+async def call_error(client, tool, /, **arguments):
+    result = await client.call_tool(tool, arguments)
     assert result.is_error
     return result.content[0].text
 
@@ -49,6 +49,15 @@ async def test_exposes_the_documented_tools(root):
         "label_segment",
         "analyze_audio",
         "export",
+        "list_timelines",
+        "create_timeline",
+        "show_timeline",
+        "add_clip_to_timeline",
+        "trim_timeline_clip",
+        "move_timeline_clip",
+        "remove_timeline_clip",
+        "set_timeline_transition",
+        "render_timeline",
     }
 
 
@@ -153,3 +162,36 @@ async def test_analyze_audio_returns_a_summary(root):
     async with Client(create_server(root)) as client:
         summary = await call(client, "analyze_audio", video="gig.mp4")
     assert summary["analyzed"] is True
+
+
+async def test_timeline_tools_build_and_render_a_two_clip_project(root):
+    (root / "second.mp4").write_bytes((root / "gig.mp4").read_bytes())
+    async with Client(create_server(root)) as client:
+        await call(client, "create_timeline", name="mix")
+        await call(client, "add_clip_to_timeline", name="mix", video="gig.mp4", out_point=6)
+        body = await call(client, "add_clip_to_timeline", name="mix", video="second.mp4", out_point=4)
+        clips = body["tracks"][0]["clips"]
+        assert [c["index"] for c in clips] == [1, 2] and clips[1]["start"] == 6
+
+        body = await call(client, "set_timeline_transition", name="mix", clip=2, transition="crossfade", duration=1)
+        assert body["duration"] == 9
+        body = await call(client, "trim_timeline_clip", name="mix", clip=1, in_point=1)
+        assert body["duration"] == 8
+        body = await call(client, "move_timeline_clip", name="mix", clip=2, to_position=1)
+        assert body["tracks"][0]["clips"][0]["source"] == "second.mp4"
+
+        assert (await call(client, "list_timelines"))["projects"] == ["mix"]
+        rendered = await call(client, "render_timeline", name="mix")
+        assert (root / rendered["output"]).is_file()
+        assert "already exists" in await call_error(client, "render_timeline", name="mix")
+
+        body = await call(client, "remove_timeline_clip", name="mix", clip=1)
+        assert len(body["tracks"][0]["clips"]) == 1
+
+
+async def test_timeline_tools_reject_bad_input(root):
+    async with Client(create_server(root)) as client:
+        await call(client, "create_timeline", name="mix")
+        assert "outside" in await call_error(client, "add_clip_to_timeline", name="mix", video="../secret.mp4")
+        assert "no clip 3" in await call_error(client, "remove_timeline_clip", name="mix", clip=3)
+        assert "no project" in await call_error(client, "show_timeline", name="nope")
