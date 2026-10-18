@@ -7,7 +7,9 @@ The picture is built bottom-up on a black canvas as long as the project:
    with `concat` for cuts or `xfade`/`acrossfade` for crossfades.
 2. Every clip on any other video track is overlaid at its own start time with
    its own position, size and opacity, in track order (later tracks on top).
-3. Audio: each clip's sound (the main track's already joined) gets its gain
+3. Clips with a colour adjustment get ffmpeg's `eq` filter (brightness,
+   contrast, saturation), before padding or overlaying.
+4. Audio: each clip's sound (the main track's already joined) gets its gain
    (muted clips contribute silence), is delayed to its start time, and all of
    it is summed with `amix` at unchanged levels.
 
@@ -68,6 +70,14 @@ def _fmt_audio() -> str:
     return f"aresample={AUDIO_RATE},aformat=sample_fmts=fltp:channel_layouts=stereo"
 
 
+def _eq(clip: Clip) -> str:
+    """The colour-adjustment filter for a clip, with its leading comma, or
+    nothing when every value is at its neutral setting."""
+    if (clip.brightness, clip.contrast, clip.saturation) == (0.0, 1.0, 1.0):
+        return ""
+    return f",eq=brightness={clip.brightness:g}:contrast={clip.contrast:g}:saturation={clip.saturation:g}"
+
+
 def _gain(clip: Clip) -> str:
     return "0" if clip.muted else f"{clip.gain:g}"
 
@@ -79,7 +89,7 @@ def _main_chain(clips: list[Clip], first_input: int, infos: dict[str, MediaInfo]
         i = first_input + n
         parts.append(
             f"[{i}:v]setpts=PTS-STARTPTS,fps={FPS},"
-            f"scale={width}:{height}:force_original_aspect_ratio=decrease,"
+            f"scale={width}:{height}:force_original_aspect_ratio=decrease{_eq(clip)},"
             f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,setsar=1,format=yuv420p[v{n}]"
         )
         if infos[clip.source].has_audio:
@@ -133,7 +143,7 @@ def build_plan(project: Project, infos: dict[str, MediaInfo], width: int, height
         i = len(main_clips) + n
         w = max(2, int(width * clip.scale) // 2 * 2)
         parts.append(
-            f"[{i}:v]setpts=PTS-STARTPTS+{clip.start:.3f}/TB,fps={FPS},scale={w}:-2,"
+            f"[{i}:v]setpts=PTS-STARTPTS+{clip.start:.3f}/TB,fps={FPS},scale={w}:-2{_eq(clip)},"
             f"format=yuva420p,colorchannelmixer=aa={clip.opacity:g}[ov{n}]"
         )
         nxt = f"vo{n}"
