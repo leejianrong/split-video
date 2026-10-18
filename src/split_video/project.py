@@ -34,6 +34,7 @@ from split_video.editor import classify
 from split_video.editor.cache import ClassificationCache, SilenceCache
 from split_video.errors import ProjectError, RevisionConflictError  # noqa: F401  (re-exported)
 from split_video.ffmpeg import extract_pcm_audio, extract_segment
+from split_video.jobs import CancelToken, JobCancelledError
 from split_video.media_store import MediaStore
 from split_video.naming import build_manifest, manifest_text, resolve_export_filename
 from split_video.segments import Segment, compute_segments
@@ -333,18 +334,29 @@ def run_export(
     parameters: dict[str, Any] | None = None,
     on_file_start: Callable[[str], None] | None = None,
     on_file_done: Callable[[str], None] | None = None,
+    cancel: CancelToken | None = None,
 ) -> tuple[list[str], str | None]:
     """Write the planned files (and `manifest.json`). Blocking; the editor
-    calls this on a worker thread, the CLI and MCP server call it inline.
-    Returns the written media ids and the manifest's, if one was written."""
+    runs it as a job, the CLI and MCP server call it inline.
+    Returns the written media ids and the manifest's, if one was written.
+
+    With a `cancel` token (a job's `JobContext`), cancelling stops before the next file or
+    terminates the ffmpeg extracting the current one (its partial file is deleted) and raises
+    `JobCancelledError`. Files already finished stay, and no manifest is written."""
     objs = [Segment(index=i + 1, start=a, end=b) for i, (a, b) in enumerate(plan.segments)]
     written: list[str] = []
     for seg, filename in zip(objs, plan.filenames):
         out_id = media.join(plan.output_dir, filename)
+        if cancel is not None:
+            cancel.raise_if_cancelled()
         if on_file_start:
             on_file_start(filename)
-        with media.local_path(plan.source) as source, media.write_local(out_id) as out_path:
-            extract_segment(source, seg.start, seg.end, out_path, precise, output_format)
+        try:
+            with media.local_path(plan.source) as source, media.write_local(out_id) as out_path:
+                extract_segment(source, seg.start, seg.end, out_path, precise, output_format, cancel=cancel)
+        except JobCancelledError:
+            media.delete(out_id)
+            raise
         written.append(out_id)
         if on_file_done:
             on_file_done(out_id)
@@ -372,13 +384,26 @@ def run_analysis(
     cache: ClassificationCache,
     thresholds: dict[str, float],
     on_progress: Callable[[int, int], None] | None = None,
+    cancel: CancelToken | None = None,
 ) -> None:
     """Run YAMNet over `source` and store the result in `cache` (which writes
-    the sidecar cache file). Blocking and potentially slow on a long recording."""
+    the sidecar cache file). Blocking and potentially slow on a long recording.
+
+    With a `cancel` token (a job's `JobContext`) it stops, raising `JobCancelledError` and
+    storing nothing, while decoding the audio (ffmpeg is terminated) or between inference frames."""
+    if cancel is not None:
+        cancel.raise_if_cancelled()
     model, labels = classify.get_model_and_labels()
     with media.local_path(source) as path:
-        pcm = extract_pcm_audio(path, sample_rate=classify.SAMPLE_RATE)
-    regions, frame_bucket_scores, total_duration = classify.classify_audio(pcm, model, labels, thresholds, on_progress)
+        pcm = extract_pcm_audio(path, sample_rate=classify.SAMPLE_RATE, cancel=cancel)
+
+    def frame_done(completed: int, total: int) -> None:
+        if cancel is not None:
+            cancel.raise_if_cancelled()
+        if on_progress:
+            on_progress(completed, total)
+
+    regions, frame_bucket_scores, total_duration = classify.classify_audio(pcm, model, labels, thresholds, frame_done)
     cache.store_result(frame_bucket_scores, total_duration, regions)
 
 

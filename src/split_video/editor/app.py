@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import threading
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import quote
@@ -15,12 +17,8 @@ from split_video.editor.cache import ClassificationCache, SilenceCache, Waveform
 from split_video.editor.classify import ClassificationRegion
 from split_video.editor.compose import make_media_router as make_compose_media_router
 from split_video.editor.compose import make_router as make_compose_router
-from split_video.editor.jobs import (
-    AnalysisJobStore,
-    JobStore,
-    start_audio_analysis,
-    start_export,
-)
+from split_video.editor.job_routes import cancel_job, job_of_kind
+from split_video.editor.job_routes import make_router as make_jobs_router
 from split_video.editor.media_response import media_response
 from split_video.editor.revisions import WRITE_RESPONSES, base_revision, conflict_response
 from split_video.editor.schemas import (
@@ -49,6 +47,8 @@ from split_video.editor.schemas import (
     WaveformResponse,
 )
 from split_video.errors import RevisionConflictError
+from split_video.job_work import analysis_work, export_work
+from split_video.jobs import ANALYSIS, EXPORT, InProcessJobQueue, JobInfo, JobQueue
 from split_video.local_media_store import LocalMediaStore
 from split_video.local_store import LocalProjectStore
 from split_video.media_store import MediaNotFoundError, MediaOutsideRootError, MediaStore
@@ -105,17 +105,41 @@ def _build_project_state(source: str, project_id: str, media: MediaStore) -> _Pr
     )
 
 
+def _legacy_status(info: JobInfo) -> str:
+    """The `status` the per-kind polling endpoints have always reported: `queued` reads as `running`
+    (the job has been accepted and is not finished); `cancelled` is the one new value."""
+    return "running" if info.state == "queued" else info.state
+
+
+def _legacy_error(info: JobInfo) -> str | None:
+    return "cancelled" if info.state == "cancelled" else info.error
+
+
 def create_app(
-    root: Path, defaults: StateParams, store: ProjectStore | None = None, media: MediaStore | None = None
+    root: Path,
+    defaults: StateParams,
+    store: ProjectStore | None = None,
+    media: MediaStore | None = None,
+    jobs: JobQueue | None = None,
 ) -> FastAPI:
     """`root` is either a video file to open immediately (the historical
     `split-video edit <file>` behavior, unchanged) or a directory to pick a
     video from via the in-browser file picker. Projects are read and written
     through `store` and media (sources, outputs, caches) through `media`; by default
-    both are local-disk stores rooted at the browse root."""
+    both are local-disk stores rooted at the browse root. Export, analysis and render run as jobs on
+    `jobs`, by default an in-process thread-pool queue owned (and shut down) by the app."""
     # `version` is the API version, not the package version, so the committed
     # openapi.json only changes when the API does.
-    app = FastAPI(title="split-video editor", version="1")
+    own_jobs = jobs is None
+    jobs = InProcessJobQueue() if jobs is None else jobs
+
+    @asynccontextmanager
+    async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+        yield
+        if own_jobs and isinstance(jobs, InProcessJobQueue):
+            jobs.shutdown()  # stop running ffmpeg processes with the server
+
+    app = FastAPI(title="split-video editor", version="1", lifespan=lifespan)
 
     @app.exception_handler(RevisionConflictError)
     async def revision_conflict(request: Request, exc: RevisionConflictError) -> Response:
@@ -154,8 +178,6 @@ def create_app(
         store = LocalProjectStore(browse_root.resolve())
     if media is None:
         media = LocalMediaStore(browse_root.resolve())
-    job_store = JobStore()
-    analysis_job_store = AnalysisJobStore()
     # Registry of per-project state, keyed by canonical source media id and built
     # lazily on first use. The project id a client sends is the video's path
     # relative to the browse root; there is no "currently open" file.
@@ -321,19 +343,24 @@ def create_app(
             # Already have a result — this session, or loaded from a
             # sidecar cache on disk. Report a job that's already "done"
             # instead of re-decoding audio and rerunning inference.
-            job_id, _ = analysis_job_store.create_done(total=0)
-            return AnalyzeStartResponse(job_id=job_id)
-        thresholds = cache.get_thresholds()
-        job_id = start_audio_analysis(analysis_job_store, media, project.source, cache, thresholds)
-        return AnalyzeStartResponse(job_id=job_id)
+            return AnalyzeStartResponse(job_id=jobs.record_done(ANALYSIS, label=media.name(project.source)))
+        work = analysis_work(media, project.source, cache, cache.get_thresholds())
+        return AnalyzeStartResponse(job_id=jobs.submit(ANALYSIS, work, label=media.name(project.source)))
 
     @api.get("/analyze/{job_id}", response_model=AnalyzeStatusResponse)
     def analyze_status(job_id: str) -> AnalyzeStatusResponse:
-        job = analysis_job_store.get(job_id)
-        if job is None:
-            raise HTTPException(status_code=404, detail="unknown job id")
-        with job.lock:
-            return AnalyzeStatusResponse(status=job.status, completed=job.completed, total=job.total, error=job.error)
+        job = job_of_kind(jobs, job_id, ANALYSIS)
+        return AnalyzeStatusResponse(
+            status=_legacy_status(job), completed=int(job.completed), total=int(job.total), error=_legacy_error(job)
+        )
+
+    @api.post("/analyze/{job_id}/cancel", response_model=AnalyzeStatusResponse)
+    def analyze_cancel(job_id: str) -> AnalyzeStatusResponse:
+        """Stop an analysis job (the same as `POST /jobs/{job_id}/cancel`, answering in the polling shape)."""
+        job = cancel_job(jobs, job_id, ANALYSIS)
+        return AnalyzeStatusResponse(
+            status=_legacy_status(job), completed=int(job.completed), total=int(job.total), error=_legacy_error(job)
+        )
 
     @api.get("/classification", response_model=ClassificationResponse)
     def classification(project: _ProjectState = project_dependency) -> ClassificationResponse:
@@ -378,13 +405,12 @@ def create_app(
         except ProjectError as exc:
             raise HTTPException(status_code=422, detail=str(exc))
 
-        job_id = start_export(
-            job_store,
+        work = export_work(
             media,
             plan,
-            request.precise,
-            request.output_format,
-            request.manifest,
+            precise=request.precise,
+            output_format=request.output_format,
+            write_manifest_file=request.manifest,
             parameters={
                 "min_silence_duration": defaults.min_silence_duration,
                 "min_song_length": defaults.min_song_length,
@@ -392,26 +418,33 @@ def create_app(
                 "precise": request.precise,
             },
         )
+        job_id = jobs.submit(EXPORT, work, label=media.name(project.source), total=len(plan.segments))
         return ExportStartResponse(job_id=job_id)
+
+    def _export_status(job: JobInfo) -> ExportStatusResponse:
+        summary = job.result or {}
+        return ExportStatusResponse(
+            status=_legacy_status(job),
+            completed=int(job.completed),
+            total=int(job.total),
+            current_file=job.message,
+            output_dir=summary.get("output_dir"),
+            manifest_path=summary.get("manifest_path"),
+            files=list(summary.get("files", [])),
+            error=_legacy_error(job),
+        )
 
     @api.get("/export/{job_id}", response_model=ExportStatusResponse)
     def export_status(job_id: str) -> ExportStatusResponse:
-        job = job_store.get(job_id)
-        if job is None:
-            raise HTTPException(status_code=404, detail="unknown job id")
-        with job.lock:
-            return ExportStatusResponse(
-                status=job.status,
-                completed=job.completed,
-                total=job.total,
-                current_file=job.current_file,
-                output_dir=job.output_dir,
-                manifest_path=job.manifest_path,
-                files=list(job.files),
-                error=job.error,
-            )
+        return _export_status(job_of_kind(jobs, job_id, EXPORT))
 
-    api.include_router(make_compose_router(media, store))
+    @api.post("/export/{job_id}/cancel", response_model=ExportStatusResponse)
+    def export_cancel(job_id: str) -> ExportStatusResponse:
+        """Stop an export (the same as `POST /jobs/{job_id}/cancel`): files already written stay, the one in progress is removed."""
+        return _export_status(cancel_job(jobs, job_id, EXPORT))
+
+    api.include_router(make_jobs_router(jobs))
+    api.include_router(make_compose_router(media, store, jobs))
     media_routes.include_router(make_compose_media_router(media))
 
     app.include_router(api, prefix=API_PREFIX)

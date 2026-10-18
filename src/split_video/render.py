@@ -28,7 +28,8 @@ from contextlib import ExitStack
 from dataclasses import dataclass
 
 from split_video import assets
-from split_video.ffmpeg import ExtractError, MediaInfo, _require_binary
+from split_video.ffmpeg import ExtractError, MediaInfo, _require_binary, stop_on_cancel
+from split_video.jobs import CancelToken, JobCancelledError
 from split_video.media_store import MediaStore
 from split_video.timeline import Clip, Project, TimelineError, Track
 
@@ -232,8 +233,12 @@ def render(
     media: MediaStore,
     out_id: str,
     progress: Callable[[float], None] | None = None,
+    cancel: CancelToken | None = None,
 ) -> None:
     """Write the project to `out_id` (an mp4 in `media`). `progress` gets 0.0..1.0.
+
+    With a `cancel` token (a job's `JobContext`), cancelling terminates ffmpeg at once, deletes
+    the partial output and raises `JobCancelledError`.
 
     Clips are found by asset id (relinked if their file moved); a clip that can't be found
     is a `SourceNotFoundError` naming the asset and its last known path."""
@@ -264,15 +269,24 @@ def render(
     plan = build_plan(project, infos, width, height, font)
     total = project.duration
 
-    with ExitStack() as stack:
-        # Every input, and the output, as real paths for ffmpeg for the whole run.
-        inputs = [str(stack.enter_context(media.local_path(c.source))) for c in plan.clips]
-        out_path = stack.enter_context(media.write_local(out_id))
-        _run_ffmpeg(plan, inputs, str(out_path), total, progress)
+    try:
+        with ExitStack() as stack:
+            # Every input, and the output, as real paths for ffmpeg for the whole run.
+            inputs = [str(stack.enter_context(media.local_path(c.source))) for c in plan.clips]
+            out_path = stack.enter_context(media.write_local(out_id))
+            _run_ffmpeg(plan, inputs, str(out_path), total, progress, cancel)
+    except JobCancelledError:
+        media.delete(out_id)  # never leave a half-written file behind
+        raise
 
 
 def _run_ffmpeg(
-    plan: Plan, inputs: list[str], out_path: str, total: float, progress: Callable[[float], None] | None
+    plan: Plan,
+    inputs: list[str],
+    out_path: str,
+    total: float,
+    progress: Callable[[float], None] | None,
+    cancel: CancelToken | None = None,
 ) -> None:
     cmd = [
         _require_binary("ffmpeg"),
@@ -301,14 +315,24 @@ def _run_ffmpeg(
     ]
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     assert proc.stdout is not None and proc.stderr is not None
-    for line in proc.stdout:
-        if progress and line.startswith("out_time_us="):
-            try:
-                progress(min(1.0, max(0.0, int(line.split("=")[1]) / 1_000_000 / total)))
-            except ValueError:
-                pass  # ffmpeg prints out_time_us=N/A before the first frame
-    stderr = proc.stderr.read()
-    if proc.wait() != 0:
+    detach = stop_on_cancel(proc, cancel)  # cancelling terminates ffmpeg, which ends the loop below
+    try:
+        for line in proc.stdout:
+            if progress and line.startswith("out_time_us="):
+                try:
+                    progress(min(1.0, max(0.0, int(line.split("=")[1]) / 1_000_000 / total)))
+                except ValueError:
+                    pass  # ffmpeg prints out_time_us=N/A before the first frame
+        stderr = proc.stderr.read()
+        returncode = proc.wait()
+    finally:
+        detach()
+        if proc.poll() is None:  # leaving early (an exception in `progress`): don't leak the process
+            proc.kill()
+            proc.wait()
+    if cancel is not None:
+        cancel.raise_if_cancelled()
+    if returncode != 0:
         raise ExtractError(f"ffmpeg failed rendering '{os.path.basename(out_path)}': {stderr.strip()[-2000:]}")
     if progress:
         progress(1.0)

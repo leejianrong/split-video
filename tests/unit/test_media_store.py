@@ -126,6 +126,14 @@ def test_write_bytes_and_open_read_round_trip(store):
         store.open_read("out/missing")
 
 
+def test_delete_removes_the_media_and_ignores_a_missing_one(store):
+    store.write_bytes("sub/gone.mp4", b"x")
+    store.delete("sub/gone.mp4")
+    assert not store.exists("sub/gone.mp4")
+    store.delete("sub/gone.mp4")  # already gone: not an error
+    store.delete("never-existed.mp4")
+
+
 def test_write_local_commits_what_ffmpeg_wrote(tmp_path):
     for store in (LocalMediaStore(tmp_path / "disk"), InMemoryMediaStore(materialise=True)):
         with store.write_local("renders/out.mp4") as path:

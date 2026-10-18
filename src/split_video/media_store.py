@@ -151,6 +151,10 @@ class MediaStore(Protocol):
         """Store `data` at `media_id`, creating parent directories (manifests)."""
         ...
 
+    def delete(self, media_id: str) -> None:
+        """Remove the media if it exists (a cancelled job's partial output). Never raises for a missing one."""
+        ...
+
     def open_read(self, media_id: str) -> BinaryIO:
         """A seekable binary stream of the media, for the editor to serve with
         HTTP range support. `MediaNotFoundError` if it isn't there."""
@@ -336,6 +340,9 @@ class InMemoryMediaStore:
 
     def write_bytes(self, media_id: str, data: bytes) -> None:
         self._files[self.resolve(media_id)] = _Entry(data, None, 1.0)
+
+    def delete(self, media_id: str) -> None:
+        self._files.pop(self.resolve(media_id), None)
 
     def open_read(self, media_id: str) -> BinaryIO:
         return io.BytesIO(self._entry(media_id).data)

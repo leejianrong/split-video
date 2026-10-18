@@ -39,7 +39,8 @@ ENGINE = [
     "assets.py",
     "render.py",
     "editor/cache.py",
-    "editor/jobs.py",
+    "jobs.py",
+    "job_work.py",
     "editor/compose.py",
 ]
 # Adapters may take a `Path` root at their entry point (and app.py serves its static dir) but

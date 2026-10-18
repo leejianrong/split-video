@@ -544,6 +544,9 @@ els.render.addEventListener("click", async () => {
       } else if (s.status === "done") {
         els.renderStatus.textContent = `Done: ${s.output} (next to your source videos)`;
         break;
+      } else if (s.status === "cancelled") {
+        els.renderStatus.textContent = "Render cancelled.";
+        break;
       } else {
         throw new Error(s.error || "render failed");
       }

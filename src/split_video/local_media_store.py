@@ -177,6 +177,9 @@ class LocalMediaStore:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(data)
 
+    def delete(self, media_id: str) -> None:
+        self._path(media_id).unlink(missing_ok=True)
+
     def open_read(self, media_id: str) -> BinaryIO:
         try:
             return self._path(media_id).open("rb")
