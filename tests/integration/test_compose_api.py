@@ -160,3 +160,29 @@ def test_audio_track_rejects_files_without_audio_and_video_track_rejects_audio_o
     assert client.post(f"{_base()}/clips", json={"path": "tone.wav", "track_id": audio, "start": 0}).status_code == 200
     assert client.post(f"{_base()}/clips", json={"path": "silent.mp4", "track_id": audio}).status_code == 422
     assert client.post(f"{_base()}/clips", json={"path": "tone.wav"}).status_code == 422  # audio-only onto video
+
+
+def test_clip_properties_and_text_clips(client):
+    _new(client)
+    body = client.post(f"{_base()}/clips", json={"path": "a.mp4"}).json()
+    clip = body["tracks"][0]["clips"][0]["id"]
+    body = client.patch(
+        f"{_base()}/clips/{clip}/properties", json={"gain": 1.5, "muted": True, "saturation": 0.4}
+    ).json()
+    got = body["tracks"][0]["clips"][0]
+    assert (got["gain"], got["muted"], got["saturation"]) == (1.5, True, 0.4)
+    assert client.patch(f"{_base()}/clips/{clip}/properties", json={"opacity": 3}).status_code == 422
+    assert client.patch(f"{_base()}/clips/{clip}/properties", json={}).status_code == 422
+    assert client.patch(f"{_base()}/clips/zzz/properties", json={"gain": 1}).status_code == 422
+
+    overlay = client.post(f"{_base()}/tracks", json={"kind": "video"}).json()["tracks"][1]["id"]
+    body = client.post(f"{_base()}/tracks/{overlay}/text", json={"text": "Hello", "start": 1, "duration": 2}).json()
+    text = body["tracks"][1]["clips"][0]
+    assert (text["kind"], text["text"], text["start"], text["duration"]) == ("text", "Hello", 1, 2)
+    body = client.patch(f"{_base()}/clips/{text['id']}/text", json={"text": "Bye", "color": "#ff0000"}).json()
+    assert (body["tracks"][1]["clips"][0]["text"], body["tracks"][1]["clips"][0]["color"]) == ("Bye", "#ff0000")
+    assert client.patch(f"{_base()}/clips/{clip}/text", json={"text": "x"}).status_code == 422  # not a text clip
+    assert client.post(f"{_base()}/tracks/{overlay}/text", json={"text": " "}).status_code == 422
+    # trimming a text clip stretches it (no source to run out of)
+    body = client.patch(f"{_base()}/clips/{text['id']}", json={"out_point": 6}).json()
+    assert body["tracks"][1]["clips"][0]["duration"] == 6

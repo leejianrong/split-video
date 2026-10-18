@@ -44,6 +44,7 @@
       <button id="add-clip-btn" class="btn" title="Add a video or audio file to the selected track">+ Add clip</button>
       <button id="add-video-track-btn" class="btn">+ Video track</button>
       <button id="add-audio-track-btn" class="btn">+ Audio track</button>
+      <button id="add-text-btn" class="btn" title="Add a text title on the selected overlay track, at the playhead">+ Text</button>
       <button id="delete-clip-btn" class="btn btn-danger" disabled>Delete clip</button>
       <span class="compose-toolbar__spacer"></span>
       <button id="zoom-out-btn" class="btn btn-icon" title="Zoom out" aria-label="Zoom out">&minus;</button>
@@ -53,6 +54,8 @@
     <p class="compose-hint compose-hint--row">Click a lane name to pick where “Add clip” goes. Drag a clip's edges to trim; drag the main track's clips to reorder; drag other clips to move them in time or to another lane. The preview plays the main track; render to hear and see everything.</p>
 
     <div id="timeline" class="tl" aria-label="Timeline"></div>
+
+    <div id="inspector" class="compose-panel hidden" aria-label="Clip properties"></div>
 
     <div id="transition-editor" class="compose-panel compose-row hidden">
       <span id="transition-label"></span>

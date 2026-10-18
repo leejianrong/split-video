@@ -23,6 +23,8 @@ const els = {
   addClip: $("add-clip-btn"),
   addVideoTrack: $("add-video-track-btn"),
   addAudioTrack: $("add-audio-track-btn"),
+  addText: $("add-text-btn"),
+  inspector: $("inspector"),
   deleteClip: $("delete-clip-btn"),
   zoomIn: $("zoom-in-btn"),
   zoomOut: $("zoom-out-btn"),
@@ -152,6 +154,7 @@ function draw() {
     heads.appendChild(headEl(track));
     canvas.appendChild(laneEl(track));
   }
+  renderInspector();
   const playheadEl = Object.assign(document.createElement("div"), { className: "tl__playhead", id: "playhead-line" });
   canvas.appendChild(playheadEl);
   positionPlayhead();
@@ -283,6 +286,7 @@ function onPointerDown(ev, el, track, clip, index) {
   for (const other of els.timeline.querySelectorAll(".clip")) other.classList.toggle("selected", other === el);
   els.deleteClip.disabled = false;
   activeTrackId = track.id;
+  renderInspector();
 
   const edge = ev.target.classList.contains("clip__edge--l") ? "l" : ev.target.classList.contains("clip__edge--r") ? "r" : null;
   const startX = ev.clientX;
@@ -343,6 +347,89 @@ function onPointerDown(ev, el, track, clip, index) {
   el.addEventListener("pointerup", onUp);
   el.addEventListener("pointercancel", onUp);
 }
+
+// --- inspector: properties of the selected clip -----------------------------------------------
+
+// Slider settings per property: [label, min, max, step].
+const SLIDERS = {
+  gain: ["Volume", 0, 2, 0.05],
+  x: ["Position X", 0, 1, 0.01],
+  y: ["Position Y", 0, 1, 0.01],
+  scale: ["Size", 0.05, 2, 0.01],
+  opacity: ["Opacity", 0, 1, 0.01],
+  brightness: ["Brightness", -1, 1, 0.01],
+  contrast: ["Contrast", 0, 3, 0.05],
+  saturation: ["Saturation", 0, 3, 0.05],
+};
+
+function controlsFor(track, clip) {
+  if (clip.kind === "text") return { text: true, sliders: ["x", "y", "opacity"] };
+  if (track.kind === "audio") return { sliders: ["gain"], mute: true };
+  if (track.magnetic) return { sliders: ["gain", "brightness", "contrast", "saturation"], mute: true };
+  return { sliders: ["gain", "x", "y", "scale", "opacity", "brightness", "contrast", "saturation"], mute: true };
+}
+
+function renderInspector() {
+  const found = project.tracks.map((t) => [t, t.clips.find((c) => c.id === selectedClipId)]).find(([, c]) => c);
+  els.inspector.classList.toggle("hidden", !found);
+  if (!found) return;
+  const [track, clip] = found;
+  const controls = controlsFor(track, clip);
+  els.inspector.innerHTML = '<div class="inspector__title"></div><div class="inspector__grid"></div>';
+  els.inspector.querySelector(".inspector__title").textContent = clipLabel(clip);
+  const grid = els.inspector.querySelector(".inspector__grid");
+  const patch = (properties) => call(`${base()}/clips/${clip.id}/properties`, json("PATCH", properties));
+  const field = (label) => {
+    const wrap = Object.assign(document.createElement("label"), { className: "inspector__field" });
+    wrap.appendChild(Object.assign(document.createElement("span"), { textContent: label }));
+    grid.appendChild(wrap);
+    return wrap;
+  };
+
+  if (controls.text) {
+    const textField = field("Text");
+    const input = Object.assign(document.createElement("input"), { type: "text", value: clip.text });
+    input.addEventListener("change", () => input.value.trim() && call(`${base()}/clips/${clip.id}/text`, json("PATCH", { text: input.value })));
+    textField.appendChild(input);
+
+    const sizeField = field("Size");
+    const size = Object.assign(document.createElement("input"), { type: "range", min: 0.02, max: 0.3, step: 0.005, value: clip.font_size });
+    const sizeOut = Object.assign(document.createElement("output"), { textContent: clip.font_size.toFixed(3) });
+    size.addEventListener("input", () => (sizeOut.textContent = Number(size.value).toFixed(3)));
+    size.addEventListener("change", () => call(`${base()}/clips/${clip.id}/text`, json("PATCH", { font_size: Number(size.value) })));
+    sizeField.append(size, sizeOut);
+
+    const colorField = field("Color");
+    const color = Object.assign(document.createElement("input"), { type: "color", value: clip.color });
+    color.addEventListener("change", () => call(`${base()}/clips/${clip.id}/text`, json("PATCH", { color: color.value })));
+    colorField.appendChild(color);
+  }
+
+  for (const name of controls.sliders) {
+    const [label, min, max, step] = SLIDERS[name];
+    const row = field(label);
+    const input = Object.assign(document.createElement("input"), { type: "range", min, max, step, value: clip[name] });
+    const out = Object.assign(document.createElement("output"), { textContent: Number(clip[name]).toFixed(2) });
+    input.addEventListener("input", () => (out.textContent = Number(input.value).toFixed(2)));
+    input.addEventListener("change", () => patch({ [name]: Number(input.value) }));
+    row.append(input, out);
+  }
+
+  if (controls.mute) {
+    const row = field("Mute");
+    const box = Object.assign(document.createElement("input"), { type: "checkbox", checked: clip.muted });
+    box.addEventListener("change", () => patch({ muted: box.checked }));
+    row.appendChild(box);
+  }
+}
+
+els.addText.addEventListener("click", async () => {
+  const active = project.tracks.find((t) => t.id === activeTrackId);
+  const track = active && active.kind === "video" && !active.magnetic ? active : project.tracks.find((t) => t.kind === "video" && !t.magnetic);
+  if (!track) return setStatus("Add a video track first: text goes on an overlay track.", true);
+  activeTrackId = track.id;
+  await call(`${base()}/tracks/${track.id}/text`, json("POST", { text: "Your text", start: Math.round(playhead * 100) / 100, duration: 3 }));
+});
 
 // --- zoom -------------------------------------------------------------------------------
 

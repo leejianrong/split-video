@@ -148,3 +148,11 @@
 .clip__edge { position: absolute; top: 0; bottom: 0; width: 7px; background: rgba(255, 255, 255, 0.25); cursor: ew-resize; }
 .clip__edge--l { left: 0; }
 .clip__edge--r { right: 0; }
+
+.inspector__title { font-weight: 600; margin-bottom: 8px; }
+.inspector__grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 8px 18px; }
+.inspector__field { display: flex; align-items: center; gap: 8px; }
+.inspector__field > span:first-child { width: 84px; color: var(--text-dim); }
+.inspector__field input[type="range"] { flex: 1; min-width: 0; }
+.inspector__field output { width: 42px; text-align: right; font-variant-numeric: tabular-nums; }
+.inspector__field input[type="text"] { flex: 1; min-width: 0; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 4px 8px; }
