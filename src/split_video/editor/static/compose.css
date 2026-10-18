@@ -127,3 +127,21 @@
 .join.selected {
   border-color: var(--accent);
 }
+
+.compose-transport {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px 0;
+}
+
+.compose-transport input[type="range"] {
+  flex: 1;
+}
+
+.compose-time {
+  min-width: 120px;
+  text-align: right;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}

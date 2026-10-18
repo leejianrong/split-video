@@ -31,7 +31,13 @@
 
   <main id="compose-main" class="compose-main hidden">
     <div class="player-wrap">
-      <video id="video" controls preload="metadata"></video>
+      <video id="video" preload="auto"></video>
+    </div>
+
+    <div class="compose-transport">
+      <button id="play-btn" class="btn" title="Play the sequence (Space)">Play</button>
+      <input id="scrub" type="range" min="0" max="0" step="0.01" value="0" aria-label="Playhead" />
+      <span id="time-label" class="compose-time">0:00.0 / 0:00.0</span>
     </div>
 
     <div class="compose-toolbar">
