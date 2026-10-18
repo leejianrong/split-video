@@ -105,3 +105,58 @@ def test_media_file_is_confined_to_root(client):
 def test_compose_page_is_served_and_linked_from_the_split_editor(client):
     assert 'id="compose-main"' in client.get("/compose.html").text
     assert "compose.html" in client.get("/").text
+
+
+def test_tracks_free_placement_and_stacking(client):
+    _new(client)
+    client.post(f"{_base()}/clips", json={"path": "a.mp4"})
+    body = client.post(f"{_base()}/tracks", json={"kind": "video"}).json()
+    main, overlay = body["tracks"]
+    assert (main["magnetic"], overlay["magnetic"]) == (True, False)
+    assert client.post(f"{_base()}/tracks", json={"kind": "text"}).status_code == 422
+
+    body = client.post(f"{_base()}/clips", json={"path": "b.mp4", "track_id": overlay["id"], "start": 1.5}).json()
+    clip = body["tracks"][1]["clips"][0]
+    assert clip["start"] == 1.5 and clip["kind"] == "media" and clip["opacity"] == 1.0
+    # index on a free track / start on the main track are mistakes
+    assert (
+        client.post(f"{_base()}/clips", json={"path": "b.mp4", "track_id": overlay["id"], "index": 0}).status_code
+        == 422
+    )
+    assert client.post(f"{_base()}/clips", json={"path": "b.mp4", "start": 3}).status_code == 422
+    # overlap is refused, moving in time and to another track works
+    assert (
+        client.post(f"{_base()}/clips", json={"path": "b.mp4", "track_id": overlay["id"], "start": 2}).status_code
+        == 422
+    )
+    body = client.post(f"{_base()}/clips/{clip['id']}/place", json={"start": 0.5}).json()
+    assert body["tracks"][1]["clips"][0]["start"] == 0.5
+    body = client.post(f"{_base()}/tracks", json={"kind": "video"}).json()
+    third = body["tracks"][2]["id"]
+    body = client.post(f"{_base()}/clips/{clip['id']}/place", json={"track_id": third}).json()
+    assert body["tracks"][2]["clips"][0]["id"] == clip["id"]
+
+    body = client.post(f"{_base()}/tracks/{third}/move", json={"to_index": 1}).json()
+    assert body["tracks"][1]["id"] == third
+    body = client.delete(f"{_base()}/tracks/{third}").json()
+    assert len(body["tracks"]) == 2
+    assert client.delete(f"{_base()}/tracks/{main['id']}").status_code == 200  # the overlay is still a video track
+    assert client.delete(f"{_base()}/tracks/{overlay['id']}").status_code == 422  # last video track
+
+
+def test_audio_track_rejects_files_without_audio_and_video_track_rejects_audio_only(client, tmp_path):
+    _new(client)
+    body = client.post(f"{_base()}/tracks", json={"kind": "audio"}).json()
+    audio = body["tracks"][1]["id"]
+    subprocess.run(
+        ["ffmpeg", "-y", "-f", "lavfi", "-i", "sine=duration=2", str(tmp_path / "tone.wav")],
+        capture_output=True, check=True,
+    )  # fmt: skip
+    subprocess.run(
+        ["ffmpeg", "-y", "-f", "lavfi", "-i", "color=c=red:size=64x64:rate=25:duration=2", "-pix_fmt", "yuv420p",
+         str(tmp_path / "silent.mp4")],
+        capture_output=True, check=True,
+    )  # fmt: skip
+    assert client.post(f"{_base()}/clips", json={"path": "tone.wav", "track_id": audio, "start": 0}).status_code == 200
+    assert client.post(f"{_base()}/clips", json={"path": "silent.mp4", "track_id": audio}).status_code == 422
+    assert client.post(f"{_base()}/clips", json={"path": "tone.wav"}).status_code == 422  # audio-only onto video
