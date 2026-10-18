@@ -60,14 +60,31 @@ function setStatus(text, isError = false) {
   els.status.classList.toggle("error", isError);
 }
 
-async function call(path, options) {
+// Every write carries the revision of the project as this page last drew it (`If-Match`). If the
+// project changed elsewhere (the CLI, an agent, another tab) the server refuses the write with a 409
+// `revision_conflict`; the page then reloads the latest version and says so, instead of overwriting.
+// Writes run one at a time so each uses the revision the previous one returned.
+let writeChain = Promise.resolve();
+
+function call(path, options) {
+  const run = writeChain.then(() => doCall(path, options));
+  writeChain = run.catch(() => {});
+  return run;
+}
+
+async function doCall(path, options) {
   try {
-    project = await api.requestJSON(path, options);
+    const headers = { ...api.ifMatch(project && project.revision), ...((options && options.headers) || {}) };
+    project = await api.requestJSON(path, { ...options, headers });
     setStatus("");
     draw();
   } catch (err) {
-    setStatus(err.message, true);
-    await reload();
+    const conflict = !!err.isRevisionConflict;
+    try {
+      await reload();
+    } finally {
+      setStatus(conflict ? api.CONFLICT_MESSAGE : err.message, true);
+    }
   }
 }
 

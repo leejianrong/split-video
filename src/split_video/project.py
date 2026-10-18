@@ -32,11 +32,12 @@ from typing import Any
 
 from split_video.editor import classify
 from split_video.editor.cache import ClassificationCache, SilenceCache
+from split_video.errors import ProjectError, RevisionConflictError  # noqa: F401  (re-exported)
 from split_video.ffmpeg import extract_pcm_audio, extract_segment
 from split_video.media_store import MediaStore
 from split_video.naming import build_manifest, manifest_text, resolve_export_filename
 from split_video.segments import Segment, compute_segments
-from split_video.store import ProjectStore, SavedSegment
+from split_video.store import ProjectStore, SavedSegment, Versioned
 
 # Minimum gap kept between any two boundaries, so an add/move can never
 # produce a zero- or negative-length segment. Matches `MIN_GAP` in state.js.
@@ -46,10 +47,6 @@ _COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 
 # Sentinel so `update_segment` can tell "leave unchanged" apart from "clear".
 UNSET: Any = object()
-
-
-class ProjectError(ValueError):
-    """The request can't be applied (bad index, overlapping segments, ...)."""
 
 
 class ExportConflictError(ProjectError):
@@ -73,8 +70,44 @@ def has_project(store: ProjectStore, project_id: str) -> bool:
     return bool(store.load_split(project_id))
 
 
-def save_segments(store: ProjectStore, project_id: str, segments: list[SavedSegment]) -> None:
-    store.save_split(project_id, segments)
+def current_revision(store: ProjectStore, project_id: str) -> int:
+    """The project's stored revision: 0 if nothing was ever saved."""
+    return store.load_split_versioned(project_id).revision
+
+
+def load_versioned(store: ProjectStore, media: MediaStore, project_id: str) -> Versioned[list[SavedSegment]]:
+    """`current_segments` together with the revision they were read at."""
+    stored = store.load_split_versioned(project_id)
+    if stored.value:
+        return Versioned(stored.value, stored.revision)
+    return Versioned([SavedSegment(start=0.0, end=media.probe(project_id).duration)], stored.revision)
+
+
+def save_segments(
+    store: ProjectStore, project_id: str, segments: list[SavedSegment], base_revision: int | None = None
+) -> int:
+    """Replace the project's segments and return the new revision. With `base_revision`, fails
+    with `RevisionConflictError` if the project has moved on since that revision."""
+    return store.save_split(project_id, segments, base_revision)
+
+
+def edit_segments(
+    store: ProjectStore,
+    media: MediaStore,
+    project_id: str,
+    change: Callable[[list[SavedSegment]], list[SavedSegment]],
+    base_revision: int | None = None,
+) -> Versioned[list[SavedSegment]]:
+    """Load the project's segments (the whole recording as one if nothing is saved), apply `change`
+    and save the result, all atomically under the store's write lock, so concurrent edits never
+    lose each other even without a `base_revision`. With one, the edit only applies if the project
+    is still at that revision. Returns the saved segments and the new revision."""
+
+    def apply(saved: list[SavedSegment] | None) -> list[SavedSegment]:
+        current = saved or [SavedSegment(start=0.0, end=media.probe(project_id).duration)]
+        return change(current)
+
+    return store.update_split(project_id, apply, base_revision)
 
 
 # --- describing -------------------------------------------------------------

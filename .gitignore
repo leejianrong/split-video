@@ -30,3 +30,7 @@ wheels/
 # Saved split points, written as a sidecar next to whatever video was
 # opened for editing — see editor/project_store.py
 *.split-video-project.json
+
+# Lock files that sit next to the project files while they are written
+*.split-video-project.json.lock
+*.split-video-timeline.json.lock

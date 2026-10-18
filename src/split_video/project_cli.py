@@ -10,6 +10,7 @@ Segment and split numbers are 1-based, as in the editor's segment table.
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from contextlib import nullcontext
 from pathlib import Path
 from typing import Any
@@ -21,6 +22,7 @@ from rich.table import Table
 from split_video import project
 from split_video.editor.cache import ClassificationCache
 from split_video.editor.classify import ModelNotFoundError
+from split_video.errors import RevisionConflictError
 from split_video.ffmpeg import ExtractError, FfmpegNotFoundError, ProbeError
 from split_video.local_media_store import LocalMediaStore
 from split_video.local_store import LocalProjectStore
@@ -34,10 +36,39 @@ error_console = Console(stderr=True)
 _Source = typer.Argument(..., exists=True, dir_okay=False, readable=True, help="The video/audio file.")
 _Json = typer.Option(False, "--json", help="Print machine-readable JSON instead of a table.")
 
+_BaseRevision = typer.Option(
+    None,
+    "--base-revision",
+    min=0,
+    help="The project revision (shown by `segments`) this change is based on. If the project has changed "
+    "since, nothing is written and the command exits with code 3. Omit to edit the latest version.",
+)
+
 _EXPECTED_ERRORS = (project.ProjectError, FfmpegNotFoundError, ProbeError, ExtractError, ModelNotFoundError)
 
+CONFLICT_EXIT_CODE = 3
 
-def _fail(exc: Exception) -> typer.Exit:
+
+def _fail(exc: Exception, as_json: bool = False, source: Path | None = None) -> typer.Exit:
+    """Report `exc` and return the exit to raise. A revision conflict exits with code 3 and says how
+    to retry; with `--json` it is also printed to stdout as `{"error": "revision_conflict", ...}`."""
+    if isinstance(exc, RevisionConflictError):
+        video = f" {source}" if source is not None else " VIDEO"
+        error_console.print(
+            f"[red]Error:[/red] revision conflict: the project is at revision {exc.current}, but this change was "
+            f"based on revision {exc.base}, so nothing was written. Run `split-video segments{video}` to see the "
+            f"latest, re-apply your change, and retry with --base-revision {exc.current}."
+        )
+        if as_json:
+            _emit_json(
+                {
+                    "error": "revision_conflict",
+                    "current_revision": exc.current,
+                    "base_revision": exc.base,
+                    "message": str(exc),
+                }
+            )
+        return typer.Exit(code=CONFLICT_EXIT_CODE)
     error_console.print(f"[red]Error:[/red] {exc}")
     return typer.Exit(code=1)
 
@@ -58,9 +89,23 @@ def _current(source: Path) -> list[SavedSegment]:
     return project.current_segments(store, media, source_id)
 
 
-def _save(source: Path, segments: list[SavedSegment]) -> None:
+def _revision(source: Path) -> int:
     store, _, source_id = _stores(source)
-    project.save_segments(store, source_id, segments)
+    return project.current_revision(store, source_id)
+
+
+def _save(source: Path, segments: list[SavedSegment], base_revision: int | None = None) -> int:
+    store, _, source_id = _stores(source)
+    return project.save_segments(store, source_id, segments, base_revision)
+
+
+def _edit(
+    source: Path, change: Callable[[list[SavedSegment]], list[SavedSegment]], base_revision: int | None
+) -> tuple[list[SavedSegment], int]:
+    """Apply `change` to the saved segments and save, atomically; returns them and the new revision."""
+    store, media, source_id = _stores(source)
+    saved = project.edit_segments(store, media, source_id, change, base_revision)
+    return saved.value, saved.revision
 
 
 def _time(text: str) -> float:
@@ -92,11 +137,13 @@ def _print_table(segments: list[SavedSegment], total: float, title: str) -> None
     console.print(table)
 
 
-def _report(source: Path, segments: list[SavedSegment], as_json: bool, title: str, **extra: Any) -> None:
+def _report(source: Path, segments: list[SavedSegment], as_json: bool, title: str, revision: int, **extra: Any) -> None:
     if as_json:
-        _emit_json({"source": str(source), **extra, "segments": project.describe_segments(segments)})
+        _emit_json(
+            {"source": str(source), "revision": revision, **extra, "segments": project.describe_segments(segments)}
+        )
     else:
-        _print_table(segments, segments[-1].end, title)
+        _print_table(segments, segments[-1].end, f"{title} — revision {revision}")
 
 
 def segments_cmd(source: Path = _Source, as_json: bool = _Json) -> None:
@@ -104,10 +151,16 @@ def segments_cmd(source: Path = _Source, as_json: bool = _Json) -> None:
     try:
         saved = _has_project(source)
         segments = _current(source)
+        revision = _revision(source)
     except _EXPECTED_ERRORS as exc:
-        raise _fail(exc)
+        raise _fail(exc, as_json, source)
     _report(
-        source, segments, as_json, f"Segments ({len(segments)})" + ("" if saved else " — not saved yet"), saved=saved
+        source,
+        segments,
+        as_json,
+        f"Segments ({len(segments)})" + ("" if saved else " — not saved yet"),
+        revision,
+        saved=saved,
     )
 
 
@@ -118,6 +171,7 @@ def propose_cmd(
     min_song_length: float = typer.Option(30.0, "--min-song-length", help="Shortest song kept on its own (s)."),
     silence_padding: float = typer.Option(0.15, "--silence-padding", help="Silence kept on each side of a cut (s)."),
     apply: bool = typer.Option(False, "--apply", help="Save the proposal as the project, replacing any saved splits."),
+    base_revision: int | None = _BaseRevision,
     as_json: bool = _Json,
 ) -> None:
     """Propose splits by silence detection. Shows them; saves only with --apply."""
@@ -131,11 +185,10 @@ def propose_cmd(
             min_song_length=min_song_length,
             padding=silence_padding,
         )
-        if apply:
-            _save(source, segments)
+        revision = _save(source, segments, base_revision) if apply else _revision(source)
     except _EXPECTED_ERRORS as exc:
-        raise _fail(exc)
-    _report(source, segments, as_json, f"Proposed segments ({len(segments)})", applied=apply)
+        raise _fail(exc, as_json, source)
+    _report(source, segments, as_json, f"Proposed segments ({len(segments)})", revision, applied=apply)
     if apply and not as_json:
         console.print("[green]Saved[/green] — replaced the project's splits (labels and exclusions reset).")
 
@@ -143,46 +196,62 @@ def propose_cmd(
 def add_split_cmd(
     source: Path = _Source,
     at: str = typer.Option(..., "--at", help="Where to cut: seconds (83.5) or a clock time (1:23.5)."),
+    base_revision: int | None = _BaseRevision,
     as_json: bool = _Json,
 ) -> None:
     """Add a split at a time, cutting the segment that contains it in two."""
     position = _time(at)
+    result: dict[str, int] = {}
+
+    def change(segments: list[SavedSegment]) -> list[SavedSegment]:
+        new, result["split"] = project.add_split(segments, position)
+        return new
+
     try:
-        segments, split = project.add_split(_current(source), position)
-        _save(source, segments)
+        segments, revision = _edit(source, change, base_revision)
     except _EXPECTED_ERRORS as exc:
-        raise _fail(exc)
-    _report(source, segments, as_json, f"Added split {split} at {position:g}s", split=split)
+        raise _fail(exc, as_json, source)
+    split = result["split"]
+    _report(source, segments, as_json, f"Added split {split} at {position:g}s", revision, split=split)
 
 
 def move_split_cmd(
     source: Path = _Source,
     split: int = typer.Argument(..., min=1, help="Which split (1 = the boundary between segments 1 and 2)."),
     to: str = typer.Option(..., "--to", help="New position: seconds or a clock time."),
+    base_revision: int | None = _BaseRevision,
     as_json: bool = _Json,
 ) -> None:
     """Move an existing split. It stops short of its neighbors rather than crossing them."""
     target = _time(to)
+    result: dict[str, float] = {}
+
+    def change(segments: list[SavedSegment]) -> list[SavedSegment]:
+        new, result["applied"] = project.move_split(segments, split, target)
+        return new
+
     try:
-        segments, applied = project.move_split(_current(source), split, target)
-        _save(source, segments)
+        segments, revision = _edit(source, change, base_revision)
     except _EXPECTED_ERRORS as exc:
-        raise _fail(exc)
-    _report(source, segments, as_json, f"Moved split {split} to {applied:g}s", split=split, applied_to=applied)
+        raise _fail(exc, as_json, source)
+    applied = result["applied"]
+    _report(
+        source, segments, as_json, f"Moved split {split} to {applied:g}s", revision, split=split, applied_to=applied
+    )
 
 
 def remove_split_cmd(
     source: Path = _Source,
     split: int = typer.Argument(..., min=1, help="Which split to remove (merges the two segments around it)."),
+    base_revision: int | None = _BaseRevision,
     as_json: bool = _Json,
 ) -> None:
     """Remove a split, merging the two segments either side of it."""
     try:
-        segments = project.remove_split(_current(source), split)
-        _save(source, segments)
+        segments, revision = _edit(source, lambda current: project.remove_split(current, split), base_revision)
     except _EXPECTED_ERRORS as exc:
-        raise _fail(exc)
-    _report(source, segments, as_json, f"Removed split {split}", split=split)
+        raise _fail(exc, as_json, source)
+    _report(source, segments, as_json, f"Removed split {split}", revision, split=split)
 
 
 def label_cmd(
@@ -194,24 +263,28 @@ def label_cmd(
     export_name: str | None = typer.Option(
         None, "--export-name", help="Output filename (no extension); pass '' for the default numbered name."
     ),
+    base_revision: int | None = _BaseRevision,
     as_json: bool = _Json,
 ) -> None:
     """Set a segment's label, color, include/exclude flag or export name. Omitted fields are unchanged."""
     if label is None and color is None and include is None and export_name is None:
         raise typer.BadParameter("give at least one of --label, --color, --include/--exclude, --export-name")
     try:
-        segments = project.update_segment(
-            _current(source),
-            segment,
-            label=label,
-            color=project.UNSET if color is None else color,
-            included=include,
-            export_name=project.UNSET if export_name is None else export_name,
+        segments, revision = _edit(
+            source,
+            lambda current: project.update_segment(
+                current,
+                segment,
+                label=label,
+                color=project.UNSET if color is None else color,
+                included=include,
+                export_name=project.UNSET if export_name is None else export_name,
+            ),
+            base_revision,
         )
-        _save(source, segments)
     except _EXPECTED_ERRORS as exc:
-        raise _fail(exc)
-    _report(source, segments, as_json, f"Updated segment {segment}", segment=segment)
+        raise _fail(exc, as_json, source)
+    _report(source, segments, as_json, f"Updated segment {segment}", revision, segment=segment)
 
 
 def export_cmd(
@@ -249,7 +322,7 @@ def export_cmd(
             on_file_start=None if as_json else lambda name: console.print(f"[dim]writing {name}[/dim]"),
         )
     except _EXPECTED_ERRORS as exc:
-        raise _fail(exc)
+        raise _fail(exc, as_json, source)
     if as_json:
         _emit_json(
             {
@@ -280,7 +353,7 @@ def analyze_cmd(
                 project.run_analysis(media, source_id, cache, cache.get_thresholds())
         summary = project.summarize_classification(cache)
     except _EXPECTED_ERRORS as exc:
-        raise _fail(exc)
+        raise _fail(exc, as_json, source)
     if as_json:
         _emit_json({"source": str(source), **summary})
         return
