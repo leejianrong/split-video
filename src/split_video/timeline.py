@@ -1,9 +1,9 @@
 """The multi-clip timeline project model and its file format.
 
-Separate from `project.py`/`project_store.py`, which model one video cut
+Separate from `project.py`/`store.py`, which model one video cut
 into segments: a timeline project arranges clips from several source videos
-on tracks and lives in its own `<name>.split-video-timeline.json` file in
-the directory being edited. Sources are stored as paths relative to that
+on tracks and is saved under its own name by a `ProjectStore` (locally a
+`<name>.split-video-timeline.json` file in the directory being edited). Sources are stored as paths relative to that
 directory (the editor's browse root), so the file stays valid when the
 folder is moved or mounted at a different path, e.g. into Docker.
 
@@ -11,21 +11,18 @@ The model already has tracks, each holding clips placed at an explicit
 `start`, even though the first phase only edits one gap-free video track:
 that way later phases (overlays, audio tracks) don't need a new file format.
 
-Nothing here touches ffmpeg or the disk beyond `load`/`save`; editing rules
+Nothing here touches ffmpeg or the disk (see `store.py` for persistence); editing rules
 live in `timeline_ops.py` and rendering in `render.py`.
 """
 
 from __future__ import annotations
 
-import json
-import os
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 FORMAT_VERSION = 1
-FILE_SUFFIX = ".split-video-timeline.json"
 
 TRACK_KINDS = ("video", "audio")
 TRANSITIONS = ("cut", "crossfade")
@@ -133,14 +130,10 @@ def relative_source(root: Path, path: Path) -> str:
         raise OutsideRootError(f"{str(path)!r} is outside the project directory") from None
 
 
-def project_path(root: Path, name: str) -> Path:
+def validate_name(name: str) -> None:
+    """Raise `TimelineError` unless `name` is usable as a timeline project name."""
     if not name or "/" in name or "\\" in name or name.startswith("."):
         raise TimelineError(f"invalid project name {name!r}")
-    return root / f"{name}{FILE_SUFFIX}"
-
-
-def list_projects(root: Path) -> list[str]:
-    return sorted(p.name.removesuffix(FILE_SUFFIX) for p in root.glob(f"*{FILE_SUFFIX}"))
 
 
 # --- serialisation ----------------------------------------------------------
@@ -218,26 +211,6 @@ def from_dict(data: dict[str, Any]) -> Project:
         )
         tracks.append(Track(id=str(t["id"]), kind=kind, clips=clips, magnetic=bool(t.get("magnetic", True))))
     return Project(tracks=tuple(tracks))
-
-
-def load(path: Path) -> Project:
-    """The project at `path`, or an empty one if the file is missing or
-    unreadable — a damaged file should open as a blank project, not crash."""
-    try:
-        with path.open() as f:
-            return from_dict(json.load(f))
-    except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError):
-        return empty_project()
-
-
-def save(path: Path, project: Project) -> None:
-    """Write atomically (temp file then rename) so a concurrent `load` never
-    sees a half-written project."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.parent / f"{path.name}.tmp"
-    with tmp.open("w") as f:
-        json.dump(to_dict(project), f, separators=(",", ":"))
-    os.replace(tmp, path)
 
 
 class ProjectNotFoundError(TimelineError):

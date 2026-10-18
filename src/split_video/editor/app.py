@@ -26,9 +26,6 @@ from split_video.editor.jobs import (
     start_audio_analysis,
     start_export,
 )
-from split_video.editor.project_store import SavedSegment
-from split_video.editor.project_store import load as load_project
-from split_video.editor.project_store import save as save_project
 from split_video.editor.schemas import (
     PROJECT_PATH_DESCRIPTION,
     AnalyzeStartResponse,
@@ -55,9 +52,11 @@ from split_video.editor.schemas import (
     WaveformResponse,
 )
 from split_video.ffmpeg import probe_duration
+from split_video.local_store import LocalProjectStore
 from split_video.project import ExportConflictError, ProjectError, plan_export
 from split_video.segments import Segment, compute_segments
 from split_video.silence import SilenceInterval
+from split_video.store import ProjectStore, SavedSegment
 
 STATIC_DIR = Path(__file__).parent / "static"
 
@@ -85,13 +84,15 @@ class _ProjectState:
     """
 
     source: Path
+    # The project's id in the `ProjectStore`: the video's path relative to the browse root.
+    project_id: str
     total_duration: float
     cache: SilenceCache
     waveform_cache: WaveformCache
     classification_cache: ClassificationCache
     # SavedSegment (not the plain core `Segment`) since these carry the
     # editor-only label/color/included/export_name metadata alongside
-    # start/end — see project_store.py. A never-saved file starts empty; the
+    # start/end — see store.py. A never-saved file starts empty; the
     # frontend's onboarding step is what proposes splits (see #16).
     initial_segments: list[SavedSegment]
     # Whether `initial_segments` came from a saved project file (see #14).
@@ -99,10 +100,11 @@ class _ProjectState:
     lock: threading.Lock = field(default_factory=threading.Lock)
 
 
-def _build_project_state(source: Path) -> _ProjectState:
-    saved = load_project(source)
+def _build_project_state(source: Path, project_id: str, store: ProjectStore) -> _ProjectState:
+    saved = store.load_split(project_id)
     return _ProjectState(
         source=source,
+        project_id=project_id,
         total_duration=probe_duration(source),
         cache=SilenceCache(source),
         waveform_cache=WaveformCache(source),
@@ -112,10 +114,11 @@ def _build_project_state(source: Path) -> _ProjectState:
     )
 
 
-def create_app(root: Path, defaults: StateParams) -> FastAPI:
+def create_app(root: Path, defaults: StateParams, store: ProjectStore | None = None) -> FastAPI:
     """`root` is either a video file to open immediately (the historical
     `split-video edit <file>` behavior, unchanged) or a directory to pick a
-    video from via the in-browser file picker."""
+    video from via the in-browser file picker. Projects are read and written
+    through `store`, by default sidecar files in the browse root."""
     # `version` is the API version, not the package version, so the committed
     # openapi.json only changes when the API does.
     app = FastAPI(title="split-video editor", version="1")
@@ -148,6 +151,8 @@ def create_app(root: Path, defaults: StateParams) -> FastAPI:
         return response
 
     browse_root = root.parent if root.is_file() else root
+    if store is None:
+        store = LocalProjectStore(browse_root.resolve())
     job_store = JobStore()
     analysis_job_store = AnalysisJobStore()
     # Registry of per-project state, keyed by resolved source path and built
@@ -155,7 +160,7 @@ def create_app(root: Path, defaults: StateParams) -> FastAPI:
     # relative to the browse root; there is no "currently open" file.
     projects: dict[Path, _ProjectState] = {}
     projects_lock = threading.Lock()
-    default_project_path = root.name if root.is_file() else None
+    default_project_id = root.name if root.is_file() else None
 
     def _segments_out(segments: list[SavedSegment]) -> list[SegmentOut]:
         return [
@@ -197,11 +202,14 @@ def create_app(root: Path, defaults: StateParams) -> FastAPI:
         with projects_lock:
             project = projects.get(source)
         if project is None:
-            built = _build_project_state(source)  # outside the lock: probes with ffmpeg
+            # The id is the resolved source relative to the (resolved) root,
+            # so a symlinked video keeps its project beside the real file.
+            project_id = source.relative_to(browse_root.resolve()).as_posix()
+            built = _build_project_state(source, project_id, store)  # outside the lock: probes with ffmpeg
             with projects_lock:
                 project = projects.setdefault(source, built)
         if refresh:
-            saved = load_project(source)
+            saved = store.load_split(project.project_id)
             with project.lock:
                 project.initial_segments = saved if saved is not None else []
                 project.resumed = saved is not None
@@ -229,9 +237,9 @@ def create_app(root: Path, defaults: StateParams) -> FastAPI:
         # No per-server "open file": this only tells the frontend which file
         # (if any) the server was started on, so it can open it directly.
         return SessionResponse(
-            file_open=default_project_path is not None,
-            filename=default_project_path,
-            path=default_project_path,
+            file_open=default_project_id is not None,
+            filename=default_project_id,
+            path=default_project_id,
         )
 
     @api.get("/browse", response_model=BrowseResponse)
@@ -272,7 +280,7 @@ def create_app(root: Path, defaults: StateParams) -> FastAPI:
             )
             for s in request.segments
         ]
-        save_project(project.source, segments)
+        store.save_split(project.project_id, segments)
         with project.lock:
             project.initial_segments = segments
             project.resumed = True
@@ -405,7 +413,7 @@ def create_app(root: Path, defaults: StateParams) -> FastAPI:
                 error=job.error,
             )
 
-    api.include_router(make_compose_router(browse_root))
+    api.include_router(make_compose_router(browse_root, store))
     media.include_router(make_compose_media_router(browse_root))
 
     app.include_router(api, prefix=API_PREFIX)

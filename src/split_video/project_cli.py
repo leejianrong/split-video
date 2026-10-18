@@ -21,8 +21,9 @@ from rich.table import Table
 from split_video import project
 from split_video.editor.cache import ClassificationCache
 from split_video.editor.classify import ModelNotFoundError
-from split_video.editor.project_store import SavedSegment
 from split_video.ffmpeg import ExtractError, FfmpegNotFoundError, ProbeError
+from split_video.local_store import LocalProjectStore
+from split_video.store import ProjectStore, SavedSegment
 from split_video.timefmt import format_timestamp, parse_time
 
 console = Console()
@@ -37,6 +38,24 @@ _EXPECTED_ERRORS = (project.ProjectError, FfmpegNotFoundError, ProbeError, Extra
 def _fail(exc: Exception) -> typer.Exit:
     error_console.print(f"[red]Error:[/red] {exc}")
     return typer.Exit(code=1)
+
+
+def _store(source: Path) -> tuple[ProjectStore, str]:
+    """The store holding `source`'s project, and the project's id in it: the
+    sidecar sits next to the video, so the video's directory is the root."""
+    return LocalProjectStore(source.parent), source.name
+
+
+def _has_project(source: Path) -> bool:
+    return project.has_project(*_store(source))
+
+
+def _current(source: Path) -> list[SavedSegment]:
+    return project.current_segments(*_store(source), source)
+
+
+def _save(source: Path, segments: list[SavedSegment]) -> None:
+    project.save_segments(*_store(source), segments)
 
 
 def _time(text: str) -> float:
@@ -78,8 +97,8 @@ def _report(source: Path, segments: list[SavedSegment], as_json: bool, title: st
 def segments_cmd(source: Path = _Source, as_json: bool = _Json) -> None:
     """Show the saved split points (or the whole recording as one segment if none are saved)."""
     try:
-        saved = project.has_project(source)
-        segments = project.current_segments(source)
+        saved = _has_project(source)
+        segments = _current(source)
     except _EXPECTED_ERRORS as exc:
         raise _fail(exc)
     _report(
@@ -106,7 +125,7 @@ def propose_cmd(
             padding=silence_padding,
         )
         if apply:
-            project.save_segments(source, segments)
+            _save(source, segments)
     except _EXPECTED_ERRORS as exc:
         raise _fail(exc)
     _report(source, segments, as_json, f"Proposed segments ({len(segments)})", applied=apply)
@@ -122,8 +141,8 @@ def add_split_cmd(
     """Add a split at a time, cutting the segment that contains it in two."""
     position = _time(at)
     try:
-        segments, split = project.add_split(project.current_segments(source), position)
-        project.save_segments(source, segments)
+        segments, split = project.add_split(_current(source), position)
+        _save(source, segments)
     except _EXPECTED_ERRORS as exc:
         raise _fail(exc)
     _report(source, segments, as_json, f"Added split {split} at {position:g}s", split=split)
@@ -138,8 +157,8 @@ def move_split_cmd(
     """Move an existing split. It stops short of its neighbors rather than crossing them."""
     target = _time(to)
     try:
-        segments, applied = project.move_split(project.current_segments(source), split, target)
-        project.save_segments(source, segments)
+        segments, applied = project.move_split(_current(source), split, target)
+        _save(source, segments)
     except _EXPECTED_ERRORS as exc:
         raise _fail(exc)
     _report(source, segments, as_json, f"Moved split {split} to {applied:g}s", split=split, applied_to=applied)
@@ -152,8 +171,8 @@ def remove_split_cmd(
 ) -> None:
     """Remove a split, merging the two segments either side of it."""
     try:
-        segments = project.remove_split(project.current_segments(source), split)
-        project.save_segments(source, segments)
+        segments = project.remove_split(_current(source), split)
+        _save(source, segments)
     except _EXPECTED_ERRORS as exc:
         raise _fail(exc)
     _report(source, segments, as_json, f"Removed split {split}", split=split)
@@ -175,14 +194,14 @@ def label_cmd(
         raise typer.BadParameter("give at least one of --label, --color, --include/--exclude, --export-name")
     try:
         segments = project.update_segment(
-            project.current_segments(source),
+            _current(source),
             segment,
             label=label,
             color=project.UNSET if color is None else color,
             included=include,
             export_name=project.UNSET if export_name is None else export_name,
         )
-        project.save_segments(source, segments)
+        _save(source, segments)
     except _EXPECTED_ERRORS as exc:
         raise _fail(exc)
     _report(source, segments, as_json, f"Updated segment {segment}", segment=segment)
@@ -205,7 +224,7 @@ def export_cmd(
     except ValueError:
         raise typer.BadParameter("--only takes comma-separated segment numbers, e.g. 1,3") from None
     try:
-        chosen = project.select_for_export(project.current_segments(source), only_numbers)
+        chosen = project.select_for_export(_current(source), only_numbers)
         plan = project.plan_export(
             source,
             [(s.start, s.end, s.export_name) for s in chosen],

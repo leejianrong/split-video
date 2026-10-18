@@ -3,8 +3,8 @@ import itertools
 import pytest
 
 from split_video import project
-from split_video.editor.project_store import SavedSegment
 from split_video.segments import Segment
+from split_video.store import SavedSegment
 from split_video.timefmt import parse_time
 
 

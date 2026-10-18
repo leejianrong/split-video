@@ -19,9 +19,10 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from starlette.responses import FileResponse
 
-from split_video import timeline, timeline_service
+from split_video import timeline_service
 from split_video.editor.browse import PathEscapesRootError, resolve_within_root
 from split_video.ffmpeg import ExtractError, ProbeError
+from split_video.store import ProjectStore
 from split_video.timeline import (
     Clip,
     OutputExistsError,
@@ -184,7 +185,7 @@ def _http(exc: TimelineError) -> HTTPException:
     return HTTPException(status_code=status, detail=str(exc))
 
 
-def make_router(root: Path) -> APIRouter:
+def make_router(root: Path, store: ProjectStore) -> APIRouter:
     router = APIRouter()
     root = root.resolve()
     jobs: dict[str, _RenderJob] = {}
@@ -234,21 +235,22 @@ def make_router(root: Path) -> APIRouter:
 
     @router.get("/compose/projects", response_model=ProjectListOut)
     def list_projects() -> ProjectListOut:
-        return ProjectListOut(projects=timeline.list_projects(root))
+        return ProjectListOut(projects=store.list_timelines())
 
     @router.post("/compose/projects", response_model=ProjectOut)
     def create_project(request: CreateProjectRequest) -> ProjectOut:
-        return respond(request.name, lambda: timeline_service.create_project(root, request.name))
+        return respond(request.name, lambda: timeline_service.create_project(store, request.name))
 
     @router.get("/compose/projects/{name}", response_model=ProjectOut)
     def get_project(name: str) -> ProjectOut:
-        return respond(name, lambda: timeline_service.load_existing(root, name)[1])
+        return respond(name, lambda: timeline_service.load_existing(store, name))
 
     @router.post("/compose/projects/{name}/clips", response_model=ProjectOut)
     def add_clip(name: str, request: AddClipRequest) -> ProjectOut:
         return respond(
             name,
             lambda: timeline_service.add_clip(
+                store,
                 root,
                 name,
                 request.path,
@@ -265,66 +267,68 @@ def make_router(root: Path) -> APIRouter:
         return respond(
             name,
             lambda: timeline_service.trim_clip(
-                root, name, clip_id, in_point=request.in_point, out_point=request.out_point
+                store, root, name, clip_id, in_point=request.in_point, out_point=request.out_point
             ),
         )
 
     @router.post("/compose/projects/{name}/tracks", response_model=ProjectOut)
     def add_track(name: str, request: AddTrackRequest) -> ProjectOut:
-        return respond(name, lambda: timeline_service.add_track(root, name, request.kind))
+        return respond(name, lambda: timeline_service.add_track(store, name, request.kind))
 
     @router.delete("/compose/projects/{name}/tracks/{track_id}", response_model=ProjectOut)
     def remove_track(name: str, track_id: str) -> ProjectOut:
-        return respond(name, lambda: timeline_service.remove_track(root, name, track_id))
+        return respond(name, lambda: timeline_service.remove_track(store, name, track_id))
 
     @router.post("/compose/projects/{name}/tracks/{track_id}/move", response_model=ProjectOut)
     def move_track(name: str, track_id: str, request: MoveTrackRequest) -> ProjectOut:
-        return respond(name, lambda: timeline_service.move_track(root, name, track_id, request.to_index))
+        return respond(name, lambda: timeline_service.move_track(store, name, track_id, request.to_index))
 
     @router.patch("/compose/projects/{name}/clips/{clip_id}/properties", response_model=ProjectOut)
     def set_properties(name: str, clip_id: str, request: PropertiesRequest) -> ProjectOut:
         changes = request.model_dump(exclude_none=True)
-        return respond(name, lambda: timeline_service.set_clip_properties(root, name, clip_id, **changes))
+        return respond(name, lambda: timeline_service.set_clip_properties(store, name, clip_id, **changes))
 
     @router.post("/compose/projects/{name}/tracks/{track_id}/text", response_model=ProjectOut)
     def add_text(name: str, track_id: str, request: AddTextRequest) -> ProjectOut:
         options = request.model_dump(exclude={"text", "duration"})
         return respond(
             name,
-            lambda: timeline_service.add_text_clip(root, name, track_id, request.text, request.duration, **options),
+            lambda: timeline_service.add_text_clip(store, name, track_id, request.text, request.duration, **options),
         )
 
     @router.patch("/compose/projects/{name}/clips/{clip_id}/text", response_model=ProjectOut)
     def set_text(name: str, clip_id: str, request: TextRequest) -> ProjectOut:
         changes = request.model_dump(exclude_none=True)
-        return respond(name, lambda: timeline_service.set_text_properties(root, name, clip_id, **changes))
+        return respond(name, lambda: timeline_service.set_text_properties(store, name, clip_id, **changes))
 
     @router.post("/compose/projects/{name}/clips/{clip_id}/place", response_model=ProjectOut)
     def place_clip(name: str, clip_id: str, request: PlaceRequest) -> ProjectOut:
         return respond(
             name,
-            lambda: timeline_service.place_clip(root, name, clip_id, start=request.start, track_id=request.track_id),
+            lambda: timeline_service.place_clip(store, name, clip_id, start=request.start, track_id=request.track_id),
         )
 
     @router.post("/compose/projects/{name}/clips/{clip_id}/move", response_model=ProjectOut)
     def move_clip(name: str, clip_id: str, request: MoveRequest) -> ProjectOut:
-        return respond(name, lambda: timeline_service.move_clip(root, name, clip_id, request.to_index))
+        return respond(name, lambda: timeline_service.move_clip(store, name, clip_id, request.to_index))
 
     @router.delete("/compose/projects/{name}/clips/{clip_id}", response_model=ProjectOut)
     def remove_clip(name: str, clip_id: str) -> ProjectOut:
-        return respond(name, lambda: timeline_service.remove_clip(root, name, clip_id))
+        return respond(name, lambda: timeline_service.remove_clip(store, name, clip_id))
 
     @router.put("/compose/projects/{name}/clips/{clip_id}/transition", response_model=ProjectOut)
     def set_transition(name: str, clip_id: str, request: TransitionRequest) -> ProjectOut:
         return respond(
             name,
-            lambda: timeline_service.set_transition(root, name, clip_id, request.transition, request.duration),
+            lambda: timeline_service.set_transition(store, name, clip_id, request.transition, request.duration),
         )
 
     @router.post("/compose/projects/{name}/render", response_model=RenderStartOut)
     def start_render(name: str, request: RenderRequest) -> RenderStartOut:
         try:
-            project, filename, out_path = timeline_service.plan_render(root, name, request.output, request.overwrite)
+            project, filename, out_path = timeline_service.plan_render(
+                store, root, name, request.output, request.overwrite
+            )
         except TimelineError as exc:
             raise _http(exc) from None
 

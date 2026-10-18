@@ -1,7 +1,7 @@
-"""Headless operations on named timeline projects in a directory.
+"""Headless operations on named timeline projects.
 
-The glue between `timeline_ops` (pure editing rules) and the disk: it loads
-a project file, applies one change, saves it, and probes sources where the
+The glue between `timeline_ops` (pure editing rules) and a `ProjectStore`: it
+loads a project, applies one change, saves it, and probes sources where the
 rules need their duration. The editor's `/api/compose/*` endpoints, the
 `compose` CLI subcommands and the MCP tools all call these functions, so the
 three front doors can't drift apart. Failures are `TimelineError` subclasses
@@ -21,12 +21,11 @@ from typing import Any
 from split_video import timeline, timeline_ops
 from split_video.ffmpeg import MediaInfo, ProbeError, probe_media
 from split_video.render import render
+from split_video.store import ProjectStore
 from split_video.timeline import (
     OutputExistsError,
     OutsideRootError,
     Project,
-    ProjectExistsError,
-    ProjectNotFoundError,
     SourceNotFoundError,
     TimelineError,
 )
@@ -66,29 +65,21 @@ def _probe_new_source(root: Path, rel: str) -> tuple[str, MediaInfo]:
 # --- loading / saving -------------------------------------------------------
 
 
-def load_existing(root: Path, name: str) -> tuple[Path, Project]:
-    path = timeline.project_path(root, name)
-    if not path.exists():
-        raise ProjectNotFoundError(f"no project named {name!r}")
-    return path, timeline.load(path)
+def load_existing(store: ProjectStore, name: str) -> Project:
+    """The project `name`; `ProjectNotFoundError` if it doesn't exist."""
+    return store.load_existing_timeline(name)
 
 
-def create_project(root: Path, name: str) -> Project:
-    path = timeline.project_path(root, name)
+def create_project(store: ProjectStore, name: str) -> Project:
     with _lock:
-        if path.exists():
-            raise ProjectExistsError(f"project {name!r} already exists")
-        project = timeline.empty_project()
-        timeline.save(path, project)
-    return project
+        return store.create_timeline(name)
 
 
-def edit(root: Path, name: str, change: Callable[[Project], Project]) -> Project:
+def edit(store: ProjectStore, name: str, change: Callable[[Project], Project]) -> Project:
     """Load `name`, apply `change`, save and return the result."""
     with _lock:
-        path, project = load_existing(root, name)
-        project = change(project)
-        timeline.save(path, project)
+        project = change(load_existing(store, name))
+        store.save_timeline(name, project)
     return project
 
 
@@ -121,6 +112,7 @@ def clip_id_at(project: Project, position: int, track: int | None = None) -> str
 
 
 def add_clip(
+    store: ProjectStore,
     root: Path,
     name: str,
     path: str,
@@ -151,11 +143,17 @@ def add_clip(
         )
         return new
 
-    return edit(root, name, change)
+    return edit(store, name, change)
 
 
 def trim_clip(
-    root: Path, name: str, clip_id: str, *, in_point: float | None = None, out_point: float | None = None
+    store: ProjectStore,
+    root: Path,
+    name: str,
+    clip_id: str,
+    *,
+    in_point: float | None = None,
+    out_point: float | None = None,
 ) -> Project:
     def change(project: Project) -> Project:
         track, i = timeline_ops.find_clip(project, clip_id)
@@ -164,65 +162,67 @@ def trim_clip(
             raise TimelineError("the clip's source file is missing or unreadable")
         return timeline_ops.trim_clip(project, clip_id, duration, in_point=in_point, out_point=out_point)
 
-    return edit(root, name, change)
+    return edit(store, name, change)
 
 
-def add_text_clip(root: Path, name: str, track_id: str, text: str, duration: float, **options: Any) -> Project:
+def add_text_clip(store: ProjectStore, name: str, track_id: str, text: str, duration: float, **options: Any) -> Project:
     def change(project: Project) -> Project:
         new, _ = timeline_ops.add_text_clip(project, track_id, text, duration, **options)
         return new
 
-    return edit(root, name, change)
+    return edit(store, name, change)
 
 
-def set_clip_properties(root: Path, name: str, clip_id: str, **properties: float | bool) -> Project:
-    return edit(root, name, lambda p: timeline_ops.set_clip_properties(p, clip_id, **properties))
+def set_clip_properties(store: ProjectStore, name: str, clip_id: str, **properties: float | bool) -> Project:
+    return edit(store, name, lambda p: timeline_ops.set_clip_properties(p, clip_id, **properties))
 
 
-def set_text_properties(root: Path, name: str, clip_id: str, **properties: str | float | None) -> Project:
-    return edit(root, name, lambda p: timeline_ops.set_text_properties(p, clip_id, **properties))
+def set_text_properties(store: ProjectStore, name: str, clip_id: str, **properties: str | float | None) -> Project:
+    return edit(store, name, lambda p: timeline_ops.set_text_properties(p, clip_id, **properties))
 
 
-def add_track(root: Path, name: str, kind: str) -> Project:
+def add_track(store: ProjectStore, name: str, kind: str) -> Project:
     def change(project: Project) -> Project:
         new, _ = timeline_ops.add_track(project, kind)
         return new
 
-    return edit(root, name, change)
+    return edit(store, name, change)
 
 
-def move_track(root: Path, name: str, track_id: str, to_index: int) -> Project:
-    return edit(root, name, lambda p: timeline_ops.move_track(p, track_id, to_index))
+def move_track(store: ProjectStore, name: str, track_id: str, to_index: int) -> Project:
+    return edit(store, name, lambda p: timeline_ops.move_track(p, track_id, to_index))
 
 
-def remove_track(root: Path, name: str, track_id: str) -> Project:
-    return edit(root, name, lambda p: timeline_ops.remove_track(p, track_id))
+def remove_track(store: ProjectStore, name: str, track_id: str) -> Project:
+    return edit(store, name, lambda p: timeline_ops.remove_track(p, track_id))
 
 
 def place_clip(
-    root: Path, name: str, clip_id: str, *, start: float | None = None, track_id: str | None = None
+    store: ProjectStore, name: str, clip_id: str, *, start: float | None = None, track_id: str | None = None
 ) -> Project:
-    return edit(root, name, lambda p: timeline_ops.place_clip(p, clip_id, start=start, track_id=track_id))
+    return edit(store, name, lambda p: timeline_ops.place_clip(p, clip_id, start=start, track_id=track_id))
 
 
-def move_clip(root: Path, name: str, clip_id: str, to_index: int) -> Project:
-    return edit(root, name, lambda p: timeline_ops.move_clip(p, clip_id, to_index))
+def move_clip(store: ProjectStore, name: str, clip_id: str, to_index: int) -> Project:
+    return edit(store, name, lambda p: timeline_ops.move_clip(p, clip_id, to_index))
 
 
-def remove_clip(root: Path, name: str, clip_id: str) -> Project:
-    return edit(root, name, lambda p: timeline_ops.remove_clip(p, clip_id))
+def remove_clip(store: ProjectStore, name: str, clip_id: str) -> Project:
+    return edit(store, name, lambda p: timeline_ops.remove_clip(p, clip_id))
 
 
-def set_transition(root: Path, name: str, clip_id: str, transition: str, duration: float = 0.0) -> Project:
-    return edit(root, name, lambda p: timeline_ops.set_transition(p, clip_id, transition, duration))
+def set_transition(store: ProjectStore, name: str, clip_id: str, transition: str, duration: float = 0.0) -> Project:
+    return edit(store, name, lambda p: timeline_ops.set_transition(p, clip_id, transition, duration))
 
 
 # --- rendering ---------------------------------------------------------------
 
 
-def plan_render(root: Path, name: str, output: str | None, overwrite: bool) -> tuple[Project, str, Path]:
+def plan_render(
+    store: ProjectStore, root: Path, name: str, output: str | None, overwrite: bool
+) -> tuple[Project, str, Path]:
     """Check a render request and return the project, output filename and path."""
-    _, project = load_existing(root, name)
+    project = load_existing(store, name)
     filename = output or f"{name}-render.mp4"
     if "/" in filename or "\\" in filename or filename.startswith("."):
         raise TimelineError("output must be a plain filename")
