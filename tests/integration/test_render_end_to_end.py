@@ -189,3 +189,40 @@ def test_brightness_and_saturation_change_the_picture(two_sources):
 
     red = _frame_rgb(render_clip("red.mp4", saturation=0.0), 1.0, 160, 120)
     assert max(red) - min(red) < 25  # no longer red
+
+
+def _text_project(text, font_size=0.2, color="#ffffff"):
+    p = empty_project()
+    p, _ = ops.add_clip(p, p.tracks[0].id, "red.mp4", 4.0)
+    p, overlay = ops.add_track(p, "video")
+    p, _ = ops.add_text_clip(p, overlay.id, text, 2.0, start=1.0, font_size=font_size, color=color, y=0.5)
+    return p
+
+
+def test_text_overlay_draws_in_its_window_only(two_sources):
+    out = two_sources / "out.mp4"
+    render(_text_project("MMMM", color="#00ff00"), two_sources, out)
+
+    # A strip across the middle of the frame: the glyphs are green somewhere inside the window only.
+    def has_green(t):
+        return any(
+            _frame_rgb(out, t, x, 120)[1] > 150 and _frame_rgb(out, t, x, 120)[0] < 100 for x in range(80, 240, 4)
+        )
+
+    assert has_green(2.0)
+    assert not has_green(0.3) and not has_green(3.6)
+
+
+def test_text_with_quotes_colons_and_percent_renders(two_sources):
+    out = two_sources / "out.mp4"
+    render(_text_project("It's 5:30 - 100% \\ done"), two_sources, out)
+    assert probe_duration(out) == pytest.approx(4.0, abs=0.3)
+
+
+def test_missing_font_is_a_clear_error(two_sources, monkeypatch):
+    import split_video.render as render_module
+
+    monkeypatch.setattr(render_module, "_FONT_CANDIDATES", ())
+    monkeypatch.delenv("SPLIT_VIDEO_FONT", raising=False)
+    with pytest.raises(TimelineError, match="no font found"):
+        render(_text_project("hi"), two_sources, two_sources / "out.mp4")

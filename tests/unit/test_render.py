@@ -133,3 +133,26 @@ def test_colour_adjustment_applies_to_overlay_clips_too():
         "scale=320:-2,eq=brightness=0:contrast=1:saturation=0,format=yuva420p"
         in build_plan(p, _infos(p), 320, 240).graph
     )
+
+
+def test_text_clip_becomes_a_drawtext_without_consuming_an_input():
+    p, _ = _main([10])
+    p, overlay = ops.add_track(p, "video")
+    p, pip = ops.add_clip(p, overlay.id, "pip.mp4", 2.0, start=0.0)
+    p, text = ops.add_text_clip(p, overlay.id, "It's 5:30 100%", 2.0, start=3.0, color="#ff0000")
+    plan = build_plan(p, _infos(p), 320, 240, font="/f/font.ttf")
+    assert "drawtext=fontfile='/f/font.ttf':expansion=none:text='It'\\''s 5:30 100%'" in plan.graph
+    assert "fontcolor=#ff0000@1" in plan.graph and "enable='between(t,3.000,5.000)'" in plan.graph
+    assert [c.source for c in plan.clips] == ["0.mp4", "pip.mp4"]  # text has no input
+
+
+def test_text_clip_needs_a_font():
+    import pytest
+
+    from split_video.timeline import TimelineError
+
+    p, _ = _main([10])
+    p, overlay = ops.add_track(p, "video")
+    p, _ = ops.add_text_clip(p, overlay.id, "x", 1.0)
+    with pytest.raises(TimelineError, match="font"):
+        build_plan(p, _infos(p), 320, 240)

@@ -60,6 +60,12 @@ class Clip:
     brightness: float = 0.0
     contrast: float = 1.0
     saturation: float = 1.0
+    # A text clip ("text" kind) has no source file: it draws `text` for its
+    # duration, `font_size` as a fraction of the frame height, in `color`.
+    kind: str = "media"
+    text: str = ""
+    font_size: float = 0.08
+    color: str = "#ffffff"
 
     @property
     def duration(self) -> float:
@@ -166,6 +172,10 @@ def to_dict(project: Project) -> dict[str, Any]:
                         "brightness": c.brightness,
                         "contrast": c.contrast,
                         "saturation": c.saturation,
+                        "kind": c.kind,
+                        "text": c.text,
+                        "font_size": c.font_size,
+                        "color": c.color,
                     }
                     for c in t.clips
                 ],
@@ -199,6 +209,10 @@ def from_dict(data: dict[str, Any]) -> Project:
                 brightness=float(c.get("brightness", 0.0)),
                 contrast=float(c.get("contrast", 1.0)),
                 saturation=float(c.get("saturation", 1.0)),
+                kind=str(c.get("kind", "media")),
+                text=str(c.get("text", "")),
+                font_size=float(c.get("font_size", 0.08)),
+                color=str(c.get("color", "#ffffff")),
             )
             for c in t.get("clips", [])
         )

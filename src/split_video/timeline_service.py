@@ -37,6 +37,8 @@ _duration_cache: dict[tuple[str, int], float] = {}
 
 def source_duration(root: Path, source: str) -> float | None:
     """Duration of a clip's source file, or None if it's missing or unreadable."""
+    if not source:  # text clips have no source
+        return None
     try:
         path = timeline.resolve_source(root, source)
         key = (str(path), path.stat().st_mtime_ns)
@@ -147,12 +149,46 @@ def trim_clip(
 ) -> Project:
     def change(project: Project) -> Project:
         track, i = timeline_ops.find_clip(project, clip_id)
-        duration = source_duration(root, track.clips[i].source)
+        duration = float("inf") if track.clips[i].kind == "text" else source_duration(root, track.clips[i].source)
         if duration is None:
             raise TimelineError("the clip's source file is missing or unreadable")
         return timeline_ops.trim_clip(project, clip_id, duration, in_point=in_point, out_point=out_point)
 
     return edit(root, name, change)
+
+
+def add_text_clip(root: Path, name: str, track_id: str, text: str, duration: float, **options: Any) -> Project:
+    def change(project: Project) -> Project:
+        new, _ = timeline_ops.add_text_clip(project, track_id, text, duration, **options)
+        return new
+
+    return edit(root, name, change)
+
+
+def set_clip_properties(root: Path, name: str, clip_id: str, **properties: float | bool) -> Project:
+    return edit(root, name, lambda p: timeline_ops.set_clip_properties(p, clip_id, **properties))
+
+
+def set_text_properties(root: Path, name: str, clip_id: str, **properties: str | float | None) -> Project:
+    return edit(root, name, lambda p: timeline_ops.set_text_properties(p, clip_id, **properties))
+
+
+def add_track(root: Path, name: str, kind: str) -> Project:
+    def change(project: Project) -> Project:
+        new, _ = timeline_ops.add_track(project, kind)
+        return new
+
+    return edit(root, name, change)
+
+
+def remove_track(root: Path, name: str, track_id: str) -> Project:
+    return edit(root, name, lambda p: timeline_ops.remove_track(p, track_id))
+
+
+def place_clip(
+    root: Path, name: str, clip_id: str, *, start: float | None = None, track_id: str | None = None
+) -> Project:
+    return edit(root, name, lambda p: timeline_ops.place_clip(p, clip_id, start=start, track_id=track_id))
 
 
 def move_clip(root: Path, name: str, clip_id: str, to_index: int) -> Project:

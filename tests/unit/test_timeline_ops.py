@@ -261,3 +261,41 @@ def test_set_clip_properties_updates_and_validates():
             ops.set_clip_properties(p, a, **bad)
     with pytest.raises(TimelineError):
         ops.set_clip_properties(p, "zzz", gain=1.0)
+
+
+# --- text clips -----------------------------------------------------------------
+
+
+def test_add_text_clip_lands_on_an_overlay_track_only():
+    p, main, overlay, audio = _with_overlay()
+    p, clip = ops.add_text_clip(p, overlay, "Hello", 3.0, start=2.0, color="#ff0000", font_size=0.1)
+    assert (clip.kind, clip.text, clip.start, clip.end, clip.color) == ("text", "Hello", 2.0, 5.0, "#ff0000")
+    assert clip.source == ""
+    for track in (main, audio):
+        with pytest.raises(TimelineError):
+            ops.add_text_clip(p, track, "x", 1.0)
+
+
+def test_text_clips_obey_overlap_rules_and_validation():
+    p, main, overlay, audio = _with_overlay()
+    p, _ = ops.add_text_clip(p, overlay, "A", 3.0, start=0.0)
+    with pytest.raises(TimelineError, match="overlap"):
+        ops.add_text_clip(p, overlay, "B", 3.0, start=2.0)
+    for bad in ({"text": "  "}, {"color": "red"}, {"font_size": 0.9}):
+        with pytest.raises(TimelineError):
+            ops.add_text_clip(p, overlay, **{"text": "ok", **bad}, duration=1.0, start=10.0)
+    with pytest.raises(TimelineError):
+        ops.add_text_clip(p, overlay, "ok", 0.01, start=10.0)
+
+
+def test_set_text_properties_only_for_text_clips():
+    p, main, overlay, audio = _with_overlay()
+    p, clip = ops.add_text_clip(p, overlay, "Hi", 2.0)
+    p = ops.set_text_properties(p, clip.id, text="Bye", color="#00ff00")
+    updated = ops.find_clip_in(p, clip.id)
+    assert (updated.text, updated.color) == ("Bye", "#00ff00")
+    media = ops.find_track(p, main).clips[0].id
+    with pytest.raises(TimelineError):
+        ops.set_text_properties(p, media, text="x")
+    with pytest.raises(TimelineError):
+        ops.set_text_properties(p, clip.id)

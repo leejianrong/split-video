@@ -21,6 +21,7 @@ progress.
 
 from __future__ import annotations
 
+import os
 import subprocess
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -31,13 +32,41 @@ from split_video.timeline import Clip, Project, TimelineError, Track, resolve_so
 
 FPS = 30
 AUDIO_RATE = 48000
+DEFAULT_SIZE = (1280, 720)  # canvas when the project has no video file to take a size from
+
+_FONT_CANDIDATES = (
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    "/usr/share/fonts/dejavu/DejaVuSans.ttf",
+    "/usr/share/fonts/TTF/DejaVuSans.ttf",
+    "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+    "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
+    "/Library/Fonts/Arial.ttf",
+    "/System/Library/Fonts/Supplemental/Arial.ttf",
+)
+
+
+def find_font() -> str:
+    """A TrueType font file for text clips: `$SPLIT_VIDEO_FONT` if set, else the first common one."""
+    candidates = [os.environ["SPLIT_VIDEO_FONT"]] if os.environ.get("SPLIT_VIDEO_FONT") else []
+    for path in [*candidates, *_FONT_CANDIDATES]:
+        if Path(path).is_file():
+            return path
+    raise TimelineError(
+        "no font found for text clips; install a TrueType font (e.g. fonts-dejavu-core) "
+        "or point SPLIT_VIDEO_FONT at one"
+    )
+
+
+def _quote(text: str) -> str:
+    """`text` as one single-quoted ffmpeg filter option value."""
+    return "'" + text.replace("'", "'\\''") + "'"
 
 
 @dataclass(frozen=True)
 class Plan:
     """The ffmpeg inputs and filter graph for a project."""
 
-    clips: list[Clip]  # one per `-i`, in input order
+    clips: list[Clip]  # media clips, one per `-i`, in input order
     graph: str
     video_label: str
     audio_label: str
@@ -117,10 +146,11 @@ def _main_chain(clips: list[Clip], first_input: int, infos: dict[str, MediaInfo]
     return parts, vlabel, alabel
 
 
-def build_plan(project: Project, infos: dict[str, MediaInfo], width: int, height: int) -> Plan:
+def build_plan(project: Project, infos: dict[str, MediaInfo], width: int, height: int, font: str | None = None) -> Plan:
     main = _main_track(project)
     main_clips = list(main.clips) if main else []
-    overlays = _overlay_clips(project, main)
+    layers = _overlay_clips(project, main)  # picture clips and text, in stacking order
+    overlays = [c for c in layers if c.kind == "media"]  # the ones that need an ffmpeg input
     audio_clips = _audio_clips(project)
     total = project.duration
     ordered = [*main_clips, *overlays, *audio_clips]
@@ -139,8 +169,22 @@ def build_plan(project: Project, infos: dict[str, MediaInfo], width: int, height
         parts.append(f"[canvas][{vmain}]overlay=0:0:eof_action=pass[vbase]")
         vlabel = "vbase"
 
-    for n, clip in enumerate(overlays):
-        i = len(main_clips) + n
+    media_seen = 0
+    for n, clip in enumerate(layers):
+        if clip.kind == "text":
+            if font is None:
+                raise TimelineError("text clips need a font; none was given")
+            nxt = f"vo{n}"
+            parts.append(
+                f"[{vlabel}]drawtext=fontfile={_quote(font)}:expansion=none:text={_quote(clip.text)}:"
+                f"fontsize={max(8, round(height * clip.font_size))}:fontcolor={clip.color}@{clip.opacity:g}:"
+                f"x={width * clip.x:g}-text_w/2:y={height * clip.y:g}-text_h/2:"
+                f"enable='between(t,{clip.start:.3f},{clip.end:.3f})'[{nxt}]"
+            )
+            vlabel = nxt
+            continue
+        i = len(main_clips) + media_seen
+        media_seen += 1
         w = max(2, int(width * clip.scale) // 2 * 2)
         parts.append(
             f"[{i}:v]setpts=PTS-STARTPTS+{clip.start:.3f}/TB,fps={FPS},scale={w}:-2{_eq(clip)},"
@@ -201,6 +245,8 @@ def render(
     infos: dict[str, MediaInfo] = {}
     for track in project.tracks:
         for clip in track.clips:
+            if clip.kind == "text":
+                continue
             if clip.source not in infos:
                 source = resolve_source(root, clip.source)
                 if not source.is_file():
@@ -212,9 +258,13 @@ def render(
                 raise TimelineError(f"{clip.source} has no audio stream")
 
     main = _main_track(project)
-    first = main.clips[0] if main else video_clips[0]
-    width, height = infos[first.source].width // 2 * 2, infos[first.source].height // 2 * 2
-    plan = build_plan(project, infos, width, height)
+    first = main.clips[0] if main else next((c for c in video_clips if c.kind == "media"), None)
+    if first is None:
+        width, height = DEFAULT_SIZE
+    else:
+        width, height = infos[first.source].width // 2 * 2, infos[first.source].height // 2 * 2
+    font = find_font() if any(c.kind == "text" for c in video_clips) else None
+    plan = build_plan(project, infos, width, height, font)
     total = project.duration
 
     cmd = [
