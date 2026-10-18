@@ -27,21 +27,21 @@ def client(tmp_path):
 
 
 def _base(name="show"):
-    return f"/api/compose/projects/{name}"
+    return f"/api/v1/compose/projects/{name}"
 
 
 def _new(client, name="show"):
-    assert client.post("/api/compose/projects", json={"name": name}).status_code == 200
+    assert client.post("/api/v1/compose/projects", json={"name": name}).status_code == 200
 
 
 def test_create_list_get_and_duplicate(client):
     _new(client)
-    assert client.post("/api/compose/projects", json={"name": "show"}).status_code == 409
-    assert client.get("/api/compose/projects").json() == {"projects": ["show"]}
+    assert client.post("/api/v1/compose/projects", json={"name": "show"}).status_code == 409
+    assert client.get("/api/v1/compose/projects").json() == {"projects": ["show"]}
     body = client.get(_base()).json()
     assert body["duration"] == 0 and body["tracks"][0]["kind"] == "video"
     assert client.get(_base("nope")).status_code == 404
-    assert client.post("/api/compose/projects", json={"name": "../x"}).status_code == 422
+    assert client.post("/api/v1/compose/projects", json={"name": "../x"}).status_code == 422
 
 
 def test_add_trim_move_transition_remove(client):
@@ -84,7 +84,7 @@ def test_render_job_reports_progress_and_finishes(client, tmp_path):
     client.post(f"{_base()}/clips", json={"path": "b.mp4"})
     job = client.post(f"{_base()}/render", json={}).json()["job_id"]
     for _ in range(100):
-        status = client.get(f"/api/compose/render/{job}").json()
+        status = client.get(f"/api/v1/compose/render/{job}").json()
         if status["status"] != "running":
             break
         time.sleep(0.2)
@@ -93,13 +93,13 @@ def test_render_job_reports_progress_and_finishes(client, tmp_path):
     assert client.post(f"{_base()}/render", json={}).status_code == 409
     assert client.post(f"{_base()}/render", json={"overwrite": True}).status_code == 200
     assert client.post(f"{_base()}/render", json={"output": "../x.mp4"}).status_code == 422
-    assert client.get("/api/compose/render/nope").status_code == 404
+    assert client.get("/api/v1/compose/render/nope").status_code == 404
 
 
 def test_media_file_is_confined_to_root(client):
-    assert client.get("/media/file", params={"path": "a.mp4"}).status_code == 200
-    assert client.get("/media/file", params={"path": "../etc/passwd"}).status_code == 400
-    assert client.get("/media/file", params={"path": "zzz.mp4"}).status_code == 404
+    assert client.get("/api/v1/media/file", params={"path": "a.mp4"}).status_code == 200
+    assert client.get("/api/v1/media/file", params={"path": "../etc/passwd"}).status_code == 400
+    assert client.get("/api/v1/media/file", params={"path": "zzz.mp4"}).status_code == 404
 
 
 def test_compose_page_is_served_and_linked_from_the_split_editor(client):

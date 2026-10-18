@@ -2,7 +2,7 @@ IMAGE := split-video
 PORT  ?= 8765
 DIR   ?= $(PWD)
 
-.PHONY: help build dev test fetch-model
+.PHONY: help build dev test fetch-model openapi
 
 .DEFAULT_GOAL := help
 
@@ -26,3 +26,6 @@ dev: build ## Build and run the visual editor in Docker (override with DIR=./vid
 
 test: ## Run the test suite locally via uv
 	uv run pytest
+
+openapi: ## Regenerate openapi.json (the committed /api/v1 schema)
+	uv run python scripts/export_openapi.py

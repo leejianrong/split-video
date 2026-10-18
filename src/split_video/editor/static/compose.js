@@ -52,7 +52,7 @@ let transitionClipId = null;
 let activeTrackId = null; // where "Add clip" puts things
 let zoom = 1; // multiplier on the fit-to-width scale
 
-const base = () => `api/compose/projects/${encodeURIComponent(projectName)}`;
+const base = () => `api/v1/compose/projects/${encodeURIComponent(projectName)}`;
 const json = (method, body) => ({ method, body: body === undefined ? undefined : JSON.stringify(body) });
 
 function setStatus(text, isError = false) {
@@ -520,7 +520,7 @@ els.render.addEventListener("click", async () => {
       started = await api.requestJSON(`${base()}/render`, json("POST", { overwrite: true }));
     }
     for (;;) {
-      const s = await api.requestJSON(`api/compose/render/${started.job_id}`);
+      const s = await api.requestJSON(`api/v1/compose/render/${started.job_id}`);
       if (s.status === "running") {
         els.renderStatus.textContent = `Rendering… ${Math.round(s.progress * 100)}%`;
         await new Promise((r) => setTimeout(r, 500));
@@ -598,7 +598,7 @@ function seekTo(t, { thenPlay = false } = {}) {
     ready();
   } else {
     loadedClipId = clip.id;
-    const url = `media/file?path=${encodeURIComponent(clip.source)}`;
+    const url = `api/v1/media/file?path=${encodeURIComponent(clip.source)}`;
     els.video.addEventListener("loadedmetadata", ready, { once: true });
     els.video.src = url;
   }
@@ -668,7 +668,7 @@ document.addEventListener("keydown", (ev) => {
 // --- boot --------------------------------------------------------------------------
 
 async function showPicker() {
-  const { projects } = await api.requestJSON("api/compose/projects");
+  const { projects } = await api.requestJSON("api/v1/compose/projects");
   els.picker.classList.remove("hidden");
   els.main.classList.add("hidden");
   els.list.innerHTML = "";
@@ -685,7 +685,7 @@ async function showPicker() {
 els.newForm.addEventListener("submit", async (ev) => {
   ev.preventDefault();
   try {
-    const created = await api.requestJSON("api/compose/projects", json("POST", { name: els.newName.value.trim() }));
+    const created = await api.requestJSON("api/v1/compose/projects", json("POST", { name: els.newName.value.trim() }));
     location.search = `?project=${encodeURIComponent(created.name)}`;
   } catch (err) {
     setStatus(err.message, true);
