@@ -16,6 +16,7 @@ from split_video.editor.browse import (
 )
 from split_video.editor.cache import ClassificationCache, SilenceCache, WaveformCache
 from split_video.editor.classify import ClassificationRegion
+from split_video.editor.compose import make_router as make_compose_router
 from split_video.editor.jobs import (
     AnalysisJobStore,
     JobStore,
@@ -361,6 +362,8 @@ def create_app(root: Path, defaults: StateParams) -> FastAPI:
                 files=list(job.files),
                 error=job.error,
             )
+
+    app.include_router(make_compose_router(browse_root))
 
     # Mounted last: Starlette matches routes in registration order, and this
     # catch-all static mount must not shadow the /api/* and /media/* routes.
