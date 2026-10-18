@@ -8,12 +8,16 @@ from fastapi.testclient import TestClient
 
 from split_video.editor import classify as classify_module
 from split_video.editor.app import create_app
-from split_video.editor.project_store import _project_path as sidecar_path
 from split_video.editor.schemas import StateParams
+from split_video.local_store import LocalProjectStore
 
 DEFAULTS = StateParams(silence_threshold=-35.0, min_silence_duration=2.0, min_song_length=2.0, padding=0.15)
 
 BUCKETS = ("music", "singing", "speech", "applause_crowd", "laughter", "silence_other")
+
+
+def sidecar_path(video: Path) -> Path:
+    return LocalProjectStore(video.parent).split_sidecar_path(video.name)
 
 
 def _spans(segments):

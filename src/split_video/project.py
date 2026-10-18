@@ -10,8 +10,9 @@ The model mirrors the frontend's (see `editor/static/state.js`): a project is
 a contiguous list of segments from the first to the last song, so "split N"
 is just the shared boundary between segment N and N+1. Segment and split
 numbers are 1-based, matching the editor's segment table. Nothing here
-persists anything except through `project_store`, whose sidecar file next to
-the video is the one source of truth — there is no running server to talk to.
+persists anything except through a `ProjectStore` (locally, the sidecar file
+next to the video is the one source of truth — there is no running server to
+talk to). A project is addressed by its id in the store, not by a file path.
 
 Every function that edits a project is pure over a segment list and returns a
 new one; `save_segments` is what writes it. Bad input raises `ProjectError`
@@ -31,12 +32,10 @@ from typing import Any
 
 from split_video.editor import classify
 from split_video.editor.cache import ClassificationCache, SilenceCache
-from split_video.editor.project_store import SavedSegment
-from split_video.editor.project_store import load as load_project
-from split_video.editor.project_store import save as save_project
 from split_video.ffmpeg import extract_pcm_audio, extract_segment, probe_duration
 from split_video.naming import build_manifest, resolve_export_filename, write_manifest
 from split_video.segments import Segment, compute_segments
+from split_video.store import ProjectStore, SavedSegment
 
 # Minimum gap kept between any two boundaries, so an add/move can never
 # produce a zero- or negative-length segment. Matches `MIN_GAP` in state.js.
@@ -59,21 +58,22 @@ class ExportConflictError(ProjectError):
 # --- loading / saving -------------------------------------------------------
 
 
-def current_segments(source: Path) -> list[SavedSegment]:
-    """The saved segments for `source`, or one segment covering the whole
-    recording if nothing has been saved yet (the editor's skip-setup state)."""
-    saved = load_project(source)
+def current_segments(store: ProjectStore, project_id: str, source: Path) -> list[SavedSegment]:
+    """The saved segments for project `project_id`, or one segment covering
+    the whole recording `source` if nothing has been saved yet (the editor's
+    skip-setup state)."""
+    saved = store.load_split(project_id)
     if saved:
         return saved
     return [SavedSegment(start=0.0, end=probe_duration(source))]
 
 
-def has_project(source: Path) -> bool:
-    return bool(load_project(source))
+def has_project(store: ProjectStore, project_id: str) -> bool:
+    return bool(store.load_split(project_id))
 
 
-def save_segments(source: Path, segments: list[SavedSegment]) -> None:
-    save_project(source, segments)
+def save_segments(store: ProjectStore, project_id: str, segments: list[SavedSegment]) -> None:
+    store.save_split(project_id, segments)
 
 
 # --- describing -------------------------------------------------------------

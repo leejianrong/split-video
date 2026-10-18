@@ -31,6 +31,8 @@ from split_video.editor.browse import PathEscapesRootError, list_directory, reso
 from split_video.editor.cache import ClassificationCache
 from split_video.editor.classify import ModelNotFoundError
 from split_video.ffmpeg import ExtractError, FfmpegNotFoundError, ProbeError
+from split_video.local_store import LocalProjectStore
+from split_video.store import ProjectStore
 from split_video.timeline import TimelineError
 
 _EXPECTED_ERRORS = (
@@ -73,8 +75,10 @@ add_timeline_text puts titles over the picture. Later video tracks draw on top.
 """
 
 
-def create_server(root: Path) -> MCPServer:
+def create_server(root: Path, store: ProjectStore | None = None) -> MCPServer:
+    """`store` defaults to sidecar files under `root`; tests pass an in-memory one."""
     root = root.resolve()
+    store = store if store is not None else LocalProjectStore(root)
     server = MCPServer("split-video", instructions=INSTRUCTIONS)
 
     def resolve(video: str) -> Path:
@@ -91,6 +95,16 @@ def create_server(root: Path) -> MCPServer:
         if not path.is_file():
             raise ToolError(f"video not found: {video}")
         return path
+
+    def project_id(source: Path) -> str:
+        """A resolved video's id in the store: its path relative to the root."""
+        return source.relative_to(root).as_posix()
+
+    def current_segments(source: Path) -> list:
+        return project.current_segments(store, project_id(source), source)
+
+    def save_segments(source: Path, segments: list) -> None:
+        project.save_segments(store, project_id(source), segments)
 
     async def run(fn, *args, **kwargs):
         """Run blocking work (ffmpeg, YAMNet) off the event loop, turning the
@@ -123,7 +137,7 @@ def create_server(root: Path) -> MCPServer:
                 {
                     "path": e.path,
                     "type": "directory" if e.is_dir else "video",
-                    **({} if e.is_dir else {"has_project": project.has_project(root / e.path)}),
+                    **({} if e.is_dir else {"has_project": project.has_project(store, e.path)}),
                 }
                 for e in listing.entries
             ],
@@ -134,8 +148,8 @@ def create_server(root: Path) -> MCPServer:
         """Show a video's saved segments (start/end/label/color/included/export_name), or the whole
         recording as one segment with saved=false if nothing has been saved yet."""
         source = resolve(video)
-        saved = project.has_project(source)
-        segments = await run(project.current_segments, source)
+        saved = project.has_project(store, project_id(source))
+        segments = await run(current_segments, source)
         return result(source, segments, saved=saved)
 
     @server.tool(annotations=_REPLACES_PROJECT)
@@ -161,7 +175,7 @@ def create_server(root: Path) -> MCPServer:
             padding=padding,
         )
         if apply:
-            await run(project.save_segments, source, segments)
+            await run(save_segments, source, segments)
         return result(source, segments, applied=apply)
 
     @server.tool(annotations=_EDITS_PROJECT)
@@ -171,8 +185,8 @@ def create_server(root: Path) -> MCPServer:
         source = resolve(video)
 
         def work() -> tuple[list, int]:
-            segments, split = project.add_split(project.current_segments(source), at)
-            project.save_segments(source, segments)
+            segments, split = project.add_split(current_segments(source), at)
+            save_segments(source, segments)
             return segments, split
 
         segments, split = await run(work)
@@ -185,8 +199,8 @@ def create_server(root: Path) -> MCPServer:
         source = resolve(video)
 
         def work() -> tuple[list, float]:
-            segments, applied = project.move_split(project.current_segments(source), split, to)
-            project.save_segments(source, segments)
+            segments, applied = project.move_split(current_segments(source), split, to)
+            save_segments(source, segments)
             return segments, applied
 
         segments, applied = await run(work)
@@ -199,8 +213,8 @@ def create_server(root: Path) -> MCPServer:
         source = resolve(video)
 
         def work() -> list:
-            segments = project.remove_split(project.current_segments(source), split)
-            project.save_segments(source, segments)
+            segments = project.remove_split(current_segments(source), split)
+            save_segments(source, segments)
             return segments
 
         segments = await run(work)
@@ -224,14 +238,14 @@ def create_server(root: Path) -> MCPServer:
 
         def work() -> list:
             segments = project.update_segment(
-                project.current_segments(source),
+                current_segments(source),
                 segment,
                 label=label,
                 color=project.UNSET if color is None else color,
                 included=included,
                 export_name=project.UNSET if export_name is None else export_name,
             )
-            project.save_segments(source, segments)
+            save_segments(source, segments)
             return segments
 
         segments = await run(work)
@@ -270,7 +284,7 @@ def create_server(root: Path) -> MCPServer:
         source = resolve(video)
 
         def work() -> tuple[project.ExportPlan, list[Path], Path | None]:
-            chosen = project.select_for_export(project.current_segments(source), only)
+            chosen = project.select_for_export(current_segments(source), only)
             plan = project.plan_export(
                 source,
                 [(s.start, s.end, s.export_name) for s in chosen],
@@ -296,25 +310,25 @@ def create_server(root: Path) -> MCPServer:
         return {**extra, **timeline_service.describe(root, name, project_)}
 
     def timeline_clip(name: str, clip: int, track: int | None = None) -> str:
-        return timeline_service.clip_id_at(timeline_service.load_existing(root, name)[1], clip, track)
+        return timeline_service.clip_id_at(timeline_service.load_existing(store, name), clip, track)
 
     def timeline_track(name: str, track: int | None) -> str:
-        return timeline_service.track_at(timeline_service.load_existing(root, name)[1], track).id
+        return timeline_service.track_at(timeline_service.load_existing(store, name), track).id
 
     @server.tool(annotations=_READ_ONLY)
     async def list_timelines() -> dict[str, Any]:
         """List the timeline projects (multi-clip compositions) in the root."""
-        return {"projects": await run(timeline.list_projects, root)}
+        return {"projects": await run(store.list_timelines)}
 
     @server.tool(annotations=_EDITS_PROJECT)
     async def create_timeline(name: str) -> dict[str, Any]:
         """Create an empty timeline project called `name` (no extension)."""
-        return timeline_result(name, await run(timeline_service.create_project, root, name))
+        return timeline_result(name, await run(timeline_service.create_project, store, name))
 
     @server.tool(annotations=_READ_ONLY)
     async def show_timeline(name: str) -> dict[str, Any]:
         """The timeline's tracks and clips: sources, in/out points, where each starts, transitions."""
-        project_ = await run(lambda: timeline_service.load_existing(root, name)[1])
+        project_ = await run(lambda: timeline_service.load_existing(store, name))
         return timeline_result(name, project_)
 
     @server.tool(annotations=_EDITS_PROJECT)
@@ -334,6 +348,7 @@ def create_server(root: Path) -> MCPServer:
         after the last clip."""
         project_ = await run(
             lambda: timeline_service.add_clip(
+                store,
                 root,
                 name,
                 video,
@@ -357,7 +372,7 @@ def create_server(root: Path) -> MCPServer:
             raise ToolError("pass in_point and/or out_point")
         project_ = await run(
             lambda: timeline_service.trim_clip(
-                root, name, timeline_clip(name, clip, track), in_point=in_point, out_point=out_point
+                store, root, name, timeline_clip(name, clip, track), in_point=in_point, out_point=out_point
             )
         )
         return timeline_result(name, project_)
@@ -365,14 +380,16 @@ def create_server(root: Path) -> MCPServer:
     @server.tool(annotations=_EDITS_PROJECT)
     async def move_timeline_clip(name: str, clip: int, to_position: int) -> dict[str, Any]:
         """Move clip number `clip` to `to_position` (both from 1)."""
-        project_ = await run(lambda: timeline_service.move_clip(root, name, timeline_clip(name, clip), to_position - 1))
+        project_ = await run(
+            lambda: timeline_service.move_clip(store, name, timeline_clip(name, clip), to_position - 1)
+        )
         return timeline_result(name, project_)
 
     @server.tool(annotations=_REPLACES_PROJECT)
     async def remove_timeline_clip(name: str, clip: int, track: int | None = None) -> dict[str, Any]:
         """Remove clip number `clip` (on `track`, default the main video track) from the timeline;
         the source file is untouched."""
-        project_ = await run(lambda: timeline_service.remove_clip(root, name, timeline_clip(name, clip, track)))
+        project_ = await run(lambda: timeline_service.remove_clip(store, name, timeline_clip(name, clip, track)))
         return timeline_result(name, project_)
 
     @server.tool(annotations=_EDITS_PROJECT)
@@ -381,7 +398,7 @@ def create_server(root: Path) -> MCPServer:
         (`duration` seconds). The first clip has nothing to fade from."""
         project_ = await run(
             lambda: timeline_service.set_transition(
-                root, name, timeline_clip(name, clip), transition, 0.0 if transition == "cut" else duration
+                store, name, timeline_clip(name, clip), transition, 0.0 if transition == "cut" else duration
             )
         )
         return timeline_result(name, project_)
@@ -390,19 +407,19 @@ def create_server(root: Path) -> MCPServer:
     async def add_timeline_track(name: str, kind: str = "video") -> dict[str, Any]:
         """Add an empty track ("video" or "audio") on top of the stack. Clips on it are placed by start
         time and may overlap clips on other tracks; a later video track draws over earlier ones."""
-        return timeline_result(name, await run(timeline_service.add_track, root, name, kind))
+        return timeline_result(name, await run(timeline_service.add_track, store, name, kind))
 
     @server.tool(annotations=_REPLACES_PROJECT)
     async def remove_timeline_track(name: str, track: int) -> dict[str, Any]:
         """Remove track number `track` (from show_timeline) and its clips. The last video track stays."""
-        project_ = await run(lambda: timeline_service.remove_track(root, name, timeline_track(name, track)))
+        project_ = await run(lambda: timeline_service.remove_track(store, name, timeline_track(name, track)))
         return timeline_result(name, project_)
 
     @server.tool(annotations=_EDITS_PROJECT)
     async def move_timeline_track(name: str, track: int, to_position: int) -> dict[str, Any]:
         """Change track number `track`'s place in the stack to `to_position` (both from 1)."""
         project_ = await run(
-            lambda: timeline_service.move_track(root, name, timeline_track(name, track), to_position - 1)
+            lambda: timeline_service.move_track(store, name, timeline_track(name, track), to_position - 1)
         )
         return timeline_result(name, project_)
 
@@ -416,7 +433,7 @@ def create_server(root: Path) -> MCPServer:
             raise ToolError("pass start and/or to_track")
         project_ = await run(
             lambda: timeline_service.place_clip(
-                root,
+                store,
                 name,
                 timeline_clip(name, clip, track),
                 start=start,
@@ -452,7 +469,7 @@ def create_server(root: Path) -> MCPServer:
         if not changes:
             raise ToolError("pass at least one property to change")
         project_ = await run(
-            lambda: timeline_service.set_clip_properties(root, name, timeline_clip(name, clip, track), **changes)
+            lambda: timeline_service.set_clip_properties(store, name, timeline_clip(name, clip, track), **changes)
         )
         return timeline_result(name, project_)
 
@@ -473,7 +490,7 @@ def create_server(root: Path) -> MCPServer:
         `size` is the text height as a fraction of the frame, `color` is #rrggbb, `x`/`y` the centre."""
 
         def work() -> timeline.Project:
-            _, loaded = timeline_service.load_existing(root, name)
+            loaded = timeline_service.load_existing(store, name)
             if track is None:
                 chosen = next((t for t in loaded.tracks if t.kind == "video" and not t.magnetic), None)
                 if chosen is None:
@@ -482,7 +499,7 @@ def create_server(root: Path) -> MCPServer:
             else:
                 track_id = timeline_service.track_at(loaded, track).id
             return timeline_service.add_text_clip(
-                root, name, track_id, text, duration, start=start, font_size=size, color=color, x=x, y=y
+                store, name, track_id, text, duration, start=start, font_size=size, color=color, x=x, y=y
             )
 
         return timeline_result(name, await run(work))
@@ -501,7 +518,7 @@ def create_server(root: Path) -> MCPServer:
             raise ToolError("pass text, size and/or color")
         project_ = await run(
             lambda: timeline_service.set_text_properties(
-                root, name, timeline_clip(name, clip, track), text=text, font_size=size, color=color
+                store, name, timeline_clip(name, clip, track), text=text, font_size=size, color=color
             )
         )
         return timeline_result(name, project_)
@@ -512,7 +529,7 @@ def create_server(root: Path) -> MCPServer:
         existing file unless overwrite=true. Re-encodes, so it can take a while for long clips."""
 
         def work() -> dict[str, Any]:
-            project_, filename, out_path = timeline_service.plan_render(root, name, output, overwrite)
+            project_, filename, out_path = timeline_service.plan_render(store, root, name, output, overwrite)
             timeline_service.run_render(project_, root, out_path)
             return {"name": name, "output": filename, "duration": project_.duration}
 

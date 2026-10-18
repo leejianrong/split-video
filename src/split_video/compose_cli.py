@@ -18,8 +18,10 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from split_video import timeline, timeline_service
+from split_video import timeline_service
 from split_video.ffmpeg import ExtractError, FfmpegNotFoundError, ProbeError
+from split_video.local_store import LocalProjectStore
+from split_video.store import ProjectStore
 from split_video.timefmt import format_timestamp, parse_time
 from split_video.timeline import Project, TimelineError
 
@@ -84,17 +86,17 @@ def _show(root: Path, name: str, project: Project, as_json: bool, **extra: Any) 
     console.print(table)
 
 
-def _clip_id(root: Path, name: str, clip: int, track: int | None = None) -> str:
-    return timeline_service.clip_id_at(timeline_service.load_existing(root, name)[1], clip, track)
+def _clip_id(store: ProjectStore, name: str, clip: int, track: int | None = None) -> str:
+    return timeline_service.clip_id_at(timeline_service.load_existing(store, name), clip, track)
 
 
-def _track_id(root: Path, name: str, track: int | None) -> str:
-    return timeline_service.track_at(timeline_service.load_existing(root, name)[1], track).id
+def _track_id(store: ProjectStore, name: str, track: int | None) -> str:
+    return timeline_service.track_at(timeline_service.load_existing(store, name), track).id
 
 
 def list_cmd(root: Path = _Root, as_json: bool = _Json) -> None:
     """List the timeline projects in the root."""
-    names = timeline.list_projects(root.resolve())
+    names = LocalProjectStore(root.resolve()).list_timelines()
     if as_json:
         typer.echo(json.dumps({"projects": names}, indent=2))
     else:
@@ -104,8 +106,9 @@ def list_cmd(root: Path = _Root, as_json: bool = _Json) -> None:
 def new_cmd(name: str = _Name, root: Path = _Root, as_json: bool = _Json) -> None:
     """Create an empty project."""
     root = root.resolve()
+    store = LocalProjectStore(root)
     try:
-        project = timeline_service.create_project(root, name)
+        project = timeline_service.create_project(store, name)
     except _EXPECTED_ERRORS as exc:
         raise _fail(exc)
     _show(root, name, project, as_json)
@@ -114,8 +117,9 @@ def new_cmd(name: str = _Name, root: Path = _Root, as_json: bool = _Json) -> Non
 def show_cmd(name: str = _Name, root: Path = _Root, as_json: bool = _Json) -> None:
     """Show a project's clips."""
     root = root.resolve()
+    store = LocalProjectStore(root)
     try:
-        _, project = timeline_service.load_existing(root, name)
+        project = timeline_service.load_existing(store, name)
     except _EXPECTED_ERRORS as exc:
         raise _fail(exc)
     _show(root, name, project, as_json)
@@ -138,12 +142,14 @@ def add_clip_cmd(
 ) -> None:
     """Add a clip of a video to the video track."""
     root = root.resolve()
+    store = LocalProjectStore(root)
     try:
         project = timeline_service.add_clip(
+            store,
             root,
             name,
             video,
-            track_id=None if track is None else _track_id(root, name, track),
+            track_id=None if track is None else _track_id(store, name, track),
             index=None if at is None else at - 1,
             start=None if start is None else _time(start),
             in_point=0.0 if in_point is None else _time(in_point),
@@ -167,11 +173,13 @@ def trim_cmd(
     if in_point is None and out_point is None:
         raise typer.BadParameter("pass --in and/or --out")
     root = root.resolve()
+    store = LocalProjectStore(root)
     try:
         project = timeline_service.trim_clip(
+            store,
             root,
             name,
-            _clip_id(root, name, clip, track),
+            _clip_id(store, name, clip, track),
             in_point=None if in_point is None else _time(in_point),
             out_point=None if out_point is None else _time(out_point),
         )
@@ -190,8 +198,9 @@ def move_cmd(
 ) -> None:
     """Move a clip to another position."""
     root = root.resolve()
+    store = LocalProjectStore(root)
     try:
-        project = timeline_service.move_clip(root, name, _clip_id(root, name, clip, track), to - 1)
+        project = timeline_service.move_clip(store, name, _clip_id(store, name, clip, track), to - 1)
     except _EXPECTED_ERRORS as exc:
         raise _fail(exc)
     _show(root, name, project, as_json)
@@ -202,8 +211,9 @@ def remove_cmd(
 ) -> None:
     """Remove a clip."""
     root = root.resolve()
+    store = LocalProjectStore(root)
     try:
-        project = timeline_service.remove_clip(root, name, _clip_id(root, name, clip, track))
+        project = timeline_service.remove_clip(store, name, _clip_id(store, name, clip, track))
     except _EXPECTED_ERRORS as exc:
         raise _fail(exc)
     _show(root, name, project, as_json)
@@ -220,9 +230,10 @@ def transition_cmd(
 ) -> None:
     """Set how a clip joins the one before it."""
     root = root.resolve()
+    store = LocalProjectStore(root)
     try:
         project = timeline_service.set_transition(
-            root, name, _clip_id(root, name, clip, track), kind, 0.0 if kind == "cut" else duration
+            store, name, _clip_id(store, name, clip, track), kind, 0.0 if kind == "cut" else duration
         )
     except _EXPECTED_ERRORS as exc:
         raise _fail(exc)
@@ -237,8 +248,9 @@ def add_track_cmd(
 ) -> None:
     """Add an empty track on top of the stack (clips on it are placed by start time)."""
     root = root.resolve()
+    store = LocalProjectStore(root)
     try:
-        project = timeline_service.add_track(root, name, kind)
+        project = timeline_service.add_track(store, name, kind)
     except _EXPECTED_ERRORS as exc:
         raise _fail(exc)
     _show(root, name, project, as_json)
@@ -252,8 +264,9 @@ def remove_track_cmd(
 ) -> None:
     """Remove a track and its clips (the last video track can't be removed)."""
     root = root.resolve()
+    store = LocalProjectStore(root)
     try:
-        project = timeline_service.remove_track(root, name, _track_id(root, name, track))
+        project = timeline_service.remove_track(store, name, _track_id(store, name, track))
     except _EXPECTED_ERRORS as exc:
         raise _fail(exc)
     _show(root, name, project, as_json)
@@ -268,8 +281,9 @@ def move_track_cmd(
 ) -> None:
     """Change a track's place in the stack."""
     root = root.resolve()
+    store = LocalProjectStore(root)
     try:
-        project = timeline_service.move_track(root, name, _track_id(root, name, track), to - 1)
+        project = timeline_service.move_track(store, name, _track_id(store, name, track), to - 1)
     except _EXPECTED_ERRORS as exc:
         raise _fail(exc)
     _show(root, name, project, as_json)
@@ -290,13 +304,14 @@ def place_cmd(
     if start is None and to_track is None:
         raise typer.BadParameter("pass --start and/or --to-track")
     root = root.resolve()
+    store = LocalProjectStore(root)
     try:
         project = timeline_service.place_clip(
-            root,
+            store,
             name,
-            _clip_id(root, name, clip, from_track),
+            _clip_id(store, name, clip, from_track),
             start=None if start is None else _time(start),
-            track_id=None if to_track is None else _track_id(root, name, to_track),
+            track_id=None if to_track is None else _track_id(store, name, to_track),
         )
     except _EXPECTED_ERRORS as exc:
         raise _fail(exc)
@@ -328,8 +343,9 @@ def set_cmd(
     if not changes:
         raise typer.BadParameter("pass at least one property, e.g. --gain or --opacity")
     root = root.resolve()
+    store = LocalProjectStore(root)
     try:
-        project = timeline_service.set_clip_properties(root, name, _clip_id(root, name, clip, track), **changes)
+        project = timeline_service.set_clip_properties(store, name, _clip_id(store, name, clip, track), **changes)
     except _EXPECTED_ERRORS as exc:
         raise _fail(exc)
     _show(root, name, project, as_json)
@@ -350,8 +366,9 @@ def add_text_cmd(
 ) -> None:
     """Add a text title on an overlay video track."""
     root = root.resolve()
+    store = LocalProjectStore(root)
     try:
-        _, loaded = timeline_service.load_existing(root, name)
+        loaded = timeline_service.load_existing(store, name)
         if track is None:
             chosen = next((t for t in loaded.tracks if t.kind == "video" and not t.magnetic), None)
             if chosen is None:
@@ -360,7 +377,7 @@ def add_text_cmd(
         else:
             track_id = timeline_service.track_at(loaded, track).id
         project = timeline_service.add_text_clip(
-            root, name, track_id, text, duration, start=_time(start), font_size=size, color=color, x=x, y=y
+            store, name, track_id, text, duration, start=_time(start), font_size=size, color=color, x=x, y=y
         )
     except _EXPECTED_ERRORS as exc:
         raise _fail(exc)
@@ -381,9 +398,10 @@ def set_text_cmd(
     if text is None and size is None and color is None:
         raise typer.BadParameter("pass --text, --size and/or --color")
     root = root.resolve()
+    store = LocalProjectStore(root)
     try:
         project = timeline_service.set_text_properties(
-            root, name, _clip_id(root, name, clip, track), text=text, font_size=size, color=color
+            store, name, _clip_id(store, name, clip, track), text=text, font_size=size, color=color
         )
     except _EXPECTED_ERRORS as exc:
         raise _fail(exc)
@@ -399,8 +417,9 @@ def render_cmd(
 ) -> None:
     """Render the project to an mp4 in the root."""
     root = root.resolve()
+    store = LocalProjectStore(root)
     try:
-        project, filename, out_path = timeline_service.plan_render(root, name, output, overwrite)
+        project, filename, out_path = timeline_service.plan_render(store, root, name, output, overwrite)
         timeline_service.run_render(project, root, out_path)
     except _EXPECTED_ERRORS as exc:
         raise _fail(exc)
