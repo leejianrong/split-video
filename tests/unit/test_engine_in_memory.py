@@ -75,7 +75,7 @@ def test_split_project_edits_through_the_stores(media):
 def test_export_plans_and_writes_through_the_media_store(media, monkeypatch):
     written_by_ffmpeg = []
 
-    def fake_extract(source, start, end, out_path, precise, output_format=None):
+    def fake_extract(source, start, end, out_path, precise, output_format=None, cancel=None):
         written_by_ffmpeg.append((source.name, start, end, out_path.name))
 
     monkeypatch.setattr(project, "extract_segment", fake_extract)
@@ -218,7 +218,7 @@ def test_render_reads_every_source_and_writes_the_output_through_the_media_store
     p, _ = ops.add_clip(p, p.tracks[0].id, "sub/b.mp4", 30.0, out_point=4.0)
     captured = {}
 
-    def fake_ffmpeg(plan, inputs, out_path, total, progress):
+    def fake_ffmpeg(plan, inputs, out_path, total, progress, cancel=None):
         captured.update(inputs=inputs, out=out_path, total=total)
         progress(1.0)
 

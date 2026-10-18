@@ -20,6 +20,7 @@ from typing import Any
 from split_video import assets, timeline, timeline_ops
 from split_video import store as store_module
 from split_video.ffmpeg import ProbeError
+from split_video.jobs import CancelToken
 from split_video.media_store import MediaError, MediaOutsideRootError, MediaStore
 from split_video.render import render
 from split_video.store import ProjectStore
@@ -367,9 +368,13 @@ def plan_render(
 
 
 def run_render(
-    project: Project, media: MediaStore, out_id: str, progress: Callable[[float], None] | None = None
+    project: Project,
+    media: MediaStore,
+    out_id: str,
+    progress: Callable[[float], None] | None = None,
+    cancel: CancelToken | None = None,
 ) -> None:
-    render(project, media, out_id, progress)
+    render(project, media, out_id, progress, cancel)
 
 
 # --- describing ---------------------------------------------------------------

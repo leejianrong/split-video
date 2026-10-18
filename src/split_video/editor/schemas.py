@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from pydantic import BaseModel
 
 # Project identification convention: every endpoint that works on a video
@@ -166,3 +168,26 @@ class ExportStatusResponse(BaseModel):
     manifest_path: str | None = None
     files: list[str] | None = None
     error: str | None = None
+
+
+class JobOut(BaseModel):
+    """One job, whatever its kind (see `split_video.jobs.JobInfo`)."""
+
+    id: str
+    kind: str  # export | analysis | render (transcription is reserved)
+    state: str  # queued | running | done | error | cancelled
+    label: str | None = None
+    completed: float
+    total: float  # 0 while unknown; the unit depends on the kind
+    fraction: float  # completed / total, 0.0..1.0
+    message: str | None = None  # the item being worked on
+    result: Any = None  # JSON summary: partial while running, final when done
+    error: str | None = None
+    created_at: float  # unix seconds
+    started_at: float | None = None
+    finished_at: float | None = None
+    cancel_requested: bool = False
+
+
+class JobListOut(BaseModel):
+    jobs: list[JobOut]  # newest first

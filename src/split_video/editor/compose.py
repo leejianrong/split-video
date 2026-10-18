@@ -9,20 +9,20 @@ and the CLI/MCP can edit the same project.
 
 from __future__ import annotations
 
-import threading
-import uuid
 from collections.abc import Callable
-from dataclasses import dataclass
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from starlette.responses import Response
 
 from split_video import assets, timeline_service
+from split_video.editor.job_routes import cancel_job, job_of_kind
 from split_video.editor.media_response import media_response
 from split_video.editor.revisions import WRITE_RESPONSES, base_revision
 from split_video.errors import RevisionConflictError
-from split_video.ffmpeg import ExtractError, ProbeError
+from split_video.ffmpeg import ProbeError
+from split_video.job_work import RENDER_STEPS, render_work
+from split_video.jobs import RENDER, JobInfo, JobQueue
 from split_video.media_store import MediaError, MediaOutsideRootError, MediaStore
 from split_video.store import ProjectStore
 from split_video.timeline import (
@@ -193,14 +193,6 @@ class RenderStatusOut(BaseModel):
     error: str | None = None
 
 
-@dataclass
-class _RenderJob:
-    status: str = "running"
-    progress: float = 0.0
-    output: str | None = None
-    error: str | None = None
-
-
 def _http(exc: TimelineError) -> HTTPException:
     """The HTTP status that best matches a timeline failure."""
     if isinstance(exc, ProjectNotFoundError | SourceNotFoundError | AssetNotFoundError):
@@ -214,9 +206,8 @@ def _http(exc: TimelineError) -> HTTPException:
     return HTTPException(status_code=status, detail=str(exc))
 
 
-def make_router(media: MediaStore, store: ProjectStore) -> APIRouter:
+def make_router(media: MediaStore, store: ProjectStore, jobs: JobQueue) -> APIRouter:
     router = APIRouter()
-    jobs: dict[str, _RenderJob] = {}
 
     def clip_out(c: Clip, row: assets.Located | None) -> ClipOut:
         return ClipOut(
@@ -460,31 +451,30 @@ def make_router(media: MediaStore, store: ProjectStore) -> APIRouter:
         except TimelineError as exc:
             raise _http(exc) from None
 
-        job = _RenderJob()
-        job_id = uuid.uuid4().hex
-        jobs[job_id] = job
-
-        def run() -> None:
-            def on_progress(fraction: float) -> None:
-                job.progress = fraction
-
-            try:
-                timeline_service.run_render(project, media, out_id, on_progress)
-                job.output = filename
-                job.status = "done"
-            except (TimelineError, ExtractError, ProbeError, MediaError, OSError) as exc:
-                job.error = str(exc)
-                job.status = "error"
-
-        threading.Thread(target=run, daemon=True).start()
+        work = render_work(project, media, out_id, filename)
+        job_id = jobs.submit(RENDER, work, label=filename, total=RENDER_STEPS)
         return RenderStartOut(job_id=job_id)
+
+    def render_out(job: JobInfo) -> RenderStatusOut:
+        summary = job.result or {}
+        return RenderStatusOut(
+            # The polling shape predates queued/cancelled: queued reads as running, and a cancelled
+            # render reports status "cancelled" with error "cancelled".
+            status="running" if job.state == "queued" else job.state,
+            progress=job.fraction,
+            output=summary.get("output"),
+            error="cancelled" if job.state == "cancelled" else job.error,
+        )
 
     @router.get("/compose/render/{job_id}", response_model=RenderStatusOut)
     def render_status(job_id: str) -> RenderStatusOut:
-        job = jobs.get(job_id)
-        if job is None:
-            raise HTTPException(status_code=404, detail="unknown job id")
-        return RenderStatusOut(status=job.status, progress=job.progress, output=job.output, error=job.error)
+        return render_out(job_of_kind(jobs, job_id, RENDER))
+
+    @router.post("/compose/render/{job_id}/cancel", response_model=RenderStatusOut)
+    def render_cancel(job_id: str) -> RenderStatusOut:
+        """Stop a render: ffmpeg is terminated and the partial output file deleted (the same as
+        `POST /jobs/{job_id}/cancel`, answering in the polling shape)."""
+        return render_out(cancel_job(jobs, job_id, RENDER))
 
     return router
 

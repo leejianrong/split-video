@@ -12,7 +12,7 @@ candidate gap regardless of length — everything else is free.
 depend on anything user-tunable — so it only ever computes once per file.
 
 `ClassificationCache` is populated by an explicit background job (see
-`editor/jobs.py`'s `start_audio_analysis`) rather than lazily on first
+`job_work.analysis_work`) rather than lazily on first
 request — inference over a long recording takes real time, so it's opt-in
 via the editor's "Analyze audio" action. Its `rethreshold` re-derives
 regions from the cached per-frame bucket scores, so retuning a threshold
