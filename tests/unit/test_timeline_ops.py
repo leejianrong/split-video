@@ -241,3 +241,23 @@ def test_move_track_changes_stacking_order():
     assert [t.id for t in p.tracks] == [audio, main, overlay]
     with pytest.raises(TimelineError):
         ops.move_track(p, audio, 5)
+
+
+def test_set_clip_properties_updates_and_validates():
+    p, tid, a, b = _two_clips()
+    p = ops.set_clip_properties(p, a, gain=2.0, muted=True, x=0.25, scale=0.5, opacity=0.8, brightness=0.1)
+    clip = ops.find_clip_in(p, a)
+    assert (clip.gain, clip.muted, clip.x, clip.scale, clip.opacity, clip.brightness) == (
+        2.0,
+        True,
+        0.25,
+        0.5,
+        0.8,
+        0.1,
+    )
+    assert clip.start == 0.0 and ops.find_clip_in(p, b).start == 10.0  # layout untouched
+    for bad in ({"opacity": 1.5}, {"gain": -1}, {"scale": 0}, {"colour": 1}, {"x": True}, {}):
+        with pytest.raises(TimelineError):
+            ops.set_clip_properties(p, a, **bad)
+    with pytest.raises(TimelineError):
+        ops.set_clip_properties(p, "zzz", gain=1.0)

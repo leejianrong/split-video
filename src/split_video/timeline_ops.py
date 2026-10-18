@@ -216,6 +216,46 @@ def set_transition(project: Project, clip_id: str, transition: str, duration: fl
     return _with_clips(project, track, clips)
 
 
+# Settable per-clip properties and their allowed (low, high) range. Everything
+# here is a plain number except `muted`.
+CLIP_PROPERTY_RANGES: dict[str, tuple[float, float]] = {
+    "gain": (0.0, 4.0),
+    "x": (0.0, 1.0),
+    "y": (0.0, 1.0),
+    "scale": (0.05, 4.0),
+    "opacity": (0.0, 1.0),
+    "brightness": (-1.0, 1.0),
+    "contrast": (0.0, 3.0),
+    "saturation": (0.0, 3.0),
+}
+
+
+def set_clip_properties(project: Project, clip_id: str, **properties: float | bool) -> Project:
+    """Change a clip's gain/mute, overlay placement or colour adjustment.
+
+    Only the names in `CLIP_PROPERTY_RANGES` plus `muted` are accepted, and a
+    value outside its range is an error rather than being clamped.
+    """
+    if not properties:
+        raise TimelineError("no properties given")
+    changes: dict[str, float | bool] = {}
+    for name, value in properties.items():
+        if name == "muted":
+            changes[name] = bool(value)
+        elif name in CLIP_PROPERTY_RANGES:
+            low, high = CLIP_PROPERTY_RANGES[name]
+            if isinstance(value, bool) or not low <= value <= high:
+                raise TimelineError(f"{name} must be between {low:g} and {high:g}")
+            changes[name] = float(value)
+        else:
+            valid = ", ".join(["muted", *CLIP_PROPERTY_RANGES])
+            raise TimelineError(f"unknown clip property {name!r}; choose from {valid}")
+    track, i = find_clip(project, clip_id)
+    clips = list(track.clips)
+    clips[i] = replace(clips[i], **changes)
+    return _with_clips(project, track, clips)
+
+
 def add_track(project: Project, kind: str, *, magnetic: bool = False) -> tuple[Project, Track]:
     """Append a new empty track on top of the stack. Extra tracks are free
     (clips placed by start time) unless `magnetic` is asked for."""

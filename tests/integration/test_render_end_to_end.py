@@ -64,3 +64,57 @@ def test_missing_source_and_empty_project_are_clear_errors(two_sources):
         render(p, two_sources, two_sources / "o.mp4")
     with pytest.raises(TimelineError, match="no clips"):
         render(empty_project(), two_sources, two_sources / "o.mp4")
+
+
+def _frame_rgb(path, t, x, y):
+    """The (r, g, b) of one pixel of the frame at time `t`."""
+    out = subprocess.run(
+        ["ffmpeg", "-v", "error", "-ss", str(t), "-i", str(path), "-frames:v", "1", "-vf", f"crop=1:1:{x}:{y}",
+         "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
+        capture_output=True, check=True,
+    ).stdout  # fmt: skip
+    return tuple(out[:3])
+
+
+def test_overlay_clip_appears_only_in_its_window_and_place(two_sources):
+    p = empty_project()
+    tid = p.tracks[0].id
+    p, _ = ops.add_clip(p, tid, "red.mp4", 4.0)
+    p, overlay = ops.add_track(p, "video")
+    p, blue = ops.add_clip(p, overlay.id, "blue.mp4", 2.0, start=1.0)
+    p = ops.set_clip_properties(p, blue.id, x=0.75, y=0.25, scale=0.25)
+    out = two_sources / "out.mp4"
+    render(p, two_sources, out)
+    assert probe_duration(out) == pytest.approx(4.0, abs=0.3)
+    inside, outside = (240, 60), (60, 180)  # centre of the overlay vs. a base-only corner
+    red, blue_rgb = (255, 0, 0), (0, 0, 255)
+
+    def close(rgb, want):
+        return all(abs(a - b) < 40 for a, b in zip(rgb, want, strict=True))
+
+    assert close(_frame_rgb(out, 2.0, *inside), blue_rgb)
+    assert close(_frame_rgb(out, 2.0, *outside), red)
+    assert close(_frame_rgb(out, 0.3, *inside), red)  # before the overlay starts
+    assert close(_frame_rgb(out, 3.6, *inside), red)  # after it ends
+
+
+def test_half_opacity_blends_with_the_base(two_sources):
+    p = empty_project()
+    p, _ = ops.add_clip(p, p.tracks[0].id, "red.mp4", 4.0)
+    p, overlay = ops.add_track(p, "video")
+    p, blue = ops.add_clip(p, overlay.id, "blue.mp4", 3.0, start=0.0)
+    p = ops.set_clip_properties(p, blue.id, opacity=0.5)
+    out = two_sources / "out.mp4"
+    render(p, two_sources, out)
+    r, g, b = _frame_rgb(out, 1.0, 160, 120)
+    assert 60 < r < 200 and 60 < b < 200  # a mix of red and blue, neither pure
+
+
+def test_overlay_only_project_renders_over_black(two_sources):
+    p = empty_project()
+    p, overlay = ops.add_track(p, "video")
+    p, _ = ops.add_clip(p, overlay.id, "blue.mp4", 2.0, start=1.0)
+    out = two_sources / "out.mp4"
+    render(p, two_sources, out)
+    assert probe_duration(out) == pytest.approx(3.0, abs=0.3)
+    assert max(_frame_rgb(out, 0.3, 160, 120)) < 40

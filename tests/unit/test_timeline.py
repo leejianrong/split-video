@@ -5,7 +5,10 @@ from split_video.timeline import Clip, Project, TimelineError, Track
 
 
 def _project():
-    clip = Clip(id="c1", source="a/one.mp4", in_point=1.0, out_point=6.0, start=0.0, gain=0.5, muted=True)
+    clip = Clip(
+        id="c1", source="a/one.mp4", in_point=1.0, out_point=6.0, gain=0.5, muted=True, x=0.2, y=0.8, scale=0.4,
+        opacity=0.5, brightness=0.1, contrast=1.2, saturation=0.9,
+    )  # fmt: skip
     clip2 = Clip(
         id="c2",
         source="two.mp4",

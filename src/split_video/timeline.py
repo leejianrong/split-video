@@ -47,6 +47,19 @@ class Clip:
     # How this clip is joined to the one before it on the same track.
     transition: str = "cut"
     transition_duration: float = 0.0
+    # Overlay placement for clips on upper video tracks: where the clip's
+    # centre sits as a fraction of the frame, its width as a fraction of the
+    # frame width (1.0 = full width), and how opaque it is. The main track's
+    # clips always fill the frame.
+    x: float = 0.5
+    y: float = 0.5
+    scale: float = 1.0
+    opacity: float = 1.0
+    # Colour adjustment, applied to the clip's video (ffmpeg `eq` semantics:
+    # brightness -1..1 around 0, contrast and saturation multipliers around 1).
+    brightness: float = 0.0
+    contrast: float = 1.0
+    saturation: float = 1.0
 
     @property
     def duration(self) -> float:
@@ -146,6 +159,13 @@ def to_dict(project: Project) -> dict[str, Any]:
                         "muted": c.muted,
                         "transition": c.transition,
                         "transition_duration": c.transition_duration,
+                        "x": c.x,
+                        "y": c.y,
+                        "scale": c.scale,
+                        "opacity": c.opacity,
+                        "brightness": c.brightness,
+                        "contrast": c.contrast,
+                        "saturation": c.saturation,
                     }
                     for c in t.clips
                 ],
@@ -172,6 +192,13 @@ def from_dict(data: dict[str, Any]) -> Project:
                 muted=bool(c.get("muted", False)),
                 transition=str(c.get("transition", "cut")),
                 transition_duration=float(c.get("transition_duration", 0.0)),
+                x=float(c.get("x", 0.5)),
+                y=float(c.get("y", 0.5)),
+                scale=float(c.get("scale", 1.0)),
+                opacity=float(c.get("opacity", 1.0)),
+                brightness=float(c.get("brightness", 0.0)),
+                contrast=float(c.get("contrast", 1.0)),
+                saturation=float(c.get("saturation", 1.0)),
             )
             for c in t.get("clips", [])
         )
