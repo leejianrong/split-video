@@ -1,6 +1,7 @@
 import pytest
 
 from split_video import timeline
+from split_video.local_media_store import LocalMediaStore
 from split_video.timeline import Clip, Project, TimelineError, Track
 
 
@@ -37,18 +38,13 @@ def test_durations():
     assert p.duration == 9.0
 
 
-def test_resolve_source_rejects_escape(tmp_path):
-    assert timeline.resolve_source(tmp_path, "a/b.mp4") == (tmp_path / "a/b.mp4").resolve()
-    with pytest.raises(TimelineError):
-        timeline.resolve_source(tmp_path, "../secret.mp4")
-    with pytest.raises(TimelineError):
-        timeline.resolve_source(tmp_path, "/etc/passwd")
-
-
-def test_relative_source_rejects_outside(tmp_path):
-    assert timeline.relative_source(tmp_path, tmp_path / "a" / "b.mp4") == "a/b.mp4"
-    with pytest.raises(TimelineError):
-        timeline.relative_source(tmp_path, tmp_path.parent / "b.mp4")
+def test_source_media_id_rejects_escape(tmp_path):
+    media = LocalMediaStore(tmp_path)
+    assert timeline.source_media_id(media, "a/b.mp4") == "a/b.mp4"
+    with pytest.raises(timeline.OutsideRootError):
+        timeline.source_media_id(media, "../secret.mp4")
+    with pytest.raises(timeline.OutsideRootError):
+        timeline.source_media_id(media, "/etc/passwd")
 
 
 @pytest.mark.parametrize("name", ["", "a/b", "a\\b", "..", ".hidden"])

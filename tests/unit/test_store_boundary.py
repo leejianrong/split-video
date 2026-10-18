@@ -1,4 +1,4 @@
-"""Only the local store knows where project files live."""
+"""Only the local stores know where project files, media and caches live."""
 
 import re
 from pathlib import Path
@@ -26,10 +26,38 @@ FORBIDDEN = re.compile(
 
 @pytest.mark.parametrize("module", GUARDED)
 def test_module_does_not_build_project_paths(module):
+    # Prose in docstrings and comments may name the files; code may not.
+    assert not FORBIDDEN.findall(_code(module)), f"{module} builds a project path itself"
+
+
+# The engine proper: no pathlib at all. Every media location is an opaque id handled by the MediaStore.
+ENGINE = [
+    "project.py",
+    "timeline_service.py",
+    "timeline.py",
+    "timeline_ops.py",
+    "render.py",
+    "editor/cache.py",
+    "editor/jobs.py",
+    "editor/compose.py",
+]
+# Adapters may take a `Path` root at their entry point (and app.py serves its static dir) but
+# must not do filesystem work or root-relative arithmetic on media themselves.
+ADAPTERS = ["mcp_server.py", "editor/app.py", "editor/media_response.py", "project_cli.py", "compose_cli.py"]
+MEDIA_FORBIDDEN = re.compile(
+    r"\.split-video-cache|CACHE_DIR_NAME|cache_store|resolve_within_root|resolve_source|relative_source"
+    r"|\.relative_to\(|\.with_name\(|\.glob\(|\.rglob\(|\.stat\(\)"
+    r"|FileResponse|PathEscapesRootError|editor\.browse|\broot\s*/"
+)
+# Adapters resolve their entry-point root once to build the local stores; the engine never resolves paths.
+ENGINE_FORBIDDEN = re.compile(r"\.resolve\(\)|\.iterdir\(|\.is_file\(\)|\.is_dir\(\)|\.exists\(\)|\.mkdir\(|\.unlink\(")
+PATHLIB_IMPORT = re.compile(r"^\s*(from pathlib import|import pathlib)", re.MULTILINE)
+
+
+def _code(module: str) -> str:
     code = []
     in_doc = False
     for line in (SRC / module).read_text().splitlines():
-        # Prose in docstrings and comments may name the files; code may not.
         stripped = line.strip()
         if stripped.count('"""') == 1:
             in_doc = not in_doc
@@ -37,7 +65,34 @@ def test_module_does_not_build_project_paths(module):
         if in_doc or stripped.startswith(("#", '"""')):
             continue
         code.append(line)
-    assert not FORBIDDEN.findall("\n".join(code)), f"{module} builds a project path itself"
+    return "\n".join(code)
+
+
+@pytest.mark.parametrize("module", ENGINE + ADAPTERS)
+def test_module_builds_no_media_paths_or_cache_locations(module):
+    assert not MEDIA_FORBIDDEN.findall(_code(module)), f"{module} does its own media path handling"
+
+
+@pytest.mark.parametrize("module", ENGINE)
+def test_engine_modules_do_not_resolve_paths(module):
+    assert not ENGINE_FORBIDDEN.search(_code(module)), f"{module} resolves a path"
+
+
+@pytest.mark.parametrize("module", ENGINE)
+def test_engine_modules_import_no_pathlib(module):
+    assert not PATHLIB_IMPORT.search(_code(module)), f"{module} imports pathlib"
+
+
+def test_the_browse_and_cache_helpers_are_gone():
+    assert not (SRC / "editor" / "browse.py").exists()
+    assert not (SRC / "editor" / "cache_store.py").exists()
+
+
+def test_the_local_media_store_is_the_one_place_with_the_cache_dir_and_containment_checks():
+    text = (SRC / "local_media_store.py").read_text()
+    assert ".split-video-cache" in text and "is outside" not in text and "MediaOutsideRootError" in text
+    others = [p for p in SRC.rglob("*.py") if p.name != "local_media_store.py"]
+    assert not [p.name for p in others if ".split-video-cache" in _code(str(p.relative_to(SRC)))]
 
 
 def test_the_local_store_is_the_one_place_with_the_file_names():

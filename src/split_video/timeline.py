@@ -11,7 +11,7 @@ The model already has tracks, each holding clips placed at an explicit
 `start`, even though the first phase only edits one gap-free video track:
 that way later phases (overlays, audio tracks) don't need a new file format.
 
-Nothing here touches ffmpeg or the disk (see `store.py` for persistence); editing rules
+Nothing here touches ffmpeg or the disk (see `store.py` for persistence, `media_store.py` for media); editing rules
 live in `timeline_ops.py` and rendering in `render.py`.
 """
 
@@ -19,8 +19,9 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any
+
+from split_video.media_store import MediaOutsideRootError, MediaStore
 
 FORMAT_VERSION = 1
 
@@ -35,7 +36,7 @@ class TimelineError(ValueError):
 @dataclass(frozen=True)
 class Clip:
     id: str
-    source: str  # path relative to the project's root directory
+    source: str  # media id: the path relative to the project's root directory
     in_point: float  # seconds into the source where the clip starts
     out_point: float  # seconds into the source where the clip ends
     start: float = 0.0  # where the clip begins on the track, in seconds
@@ -106,28 +107,16 @@ def empty_project() -> Project:
     return Project(tracks=(Track(id=new_id(), kind="video"),))
 
 
-def resolve_source(root: Path, source: str) -> Path:
-    """The absolute path of a clip's `source` under `root`.
+def source_media_id(media: MediaStore, source: str) -> str:
+    """The canonical media id of a clip's `source`, as stored in a project file.
 
-    Raises `TimelineError` if it would escape `root`, so a crafted project
+    Raises `OutsideRootError` if it would leave the store, so a crafted project
     file or API call can't make the render read arbitrary files.
     """
-    root = root.resolve()
-    path = (root / source).resolve()
-    if path != root and root not in path.parents:
-        raise OutsideRootError(f"source {source!r} is outside the project directory")
-    return path
-
-
-def relative_source(root: Path, path: Path) -> str:
-    """`path` as a root-relative string (the form clips store); the inverse
-    of `resolve_source`, and subject to the same containment rule."""
-    root = root.resolve()
-    resolved = (root / path).resolve() if not path.is_absolute() else path.resolve()
     try:
-        return resolved.relative_to(root).as_posix()
-    except ValueError:
-        raise OutsideRootError(f"{str(path)!r} is outside the project directory") from None
+        return media.resolve(source, strict=True)
+    except MediaOutsideRootError:
+        raise OutsideRootError(f"source {source!r} is outside the project directory") from None
 
 
 def validate_name(name: str) -> None:

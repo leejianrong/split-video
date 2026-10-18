@@ -149,7 +149,7 @@ def split(
 
     if manifest:
         manifest_data = build_manifest(
-            source_path=source,
+            source_name=source.name,
             segments=segments,
             filenames=filenames,
             parameters={

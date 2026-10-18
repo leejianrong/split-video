@@ -9,13 +9,13 @@ from __future__ import annotations
 
 import threading
 import uuid
-from pathlib import Path
 from typing import Any
 
 from split_video import project
 from split_video.editor import classify
 from split_video.editor.cache import ClassificationCache
-from split_video.ffmpeg import ExtractError, ProbeError, probe_duration
+from split_video.ffmpeg import ExtractError, ProbeError
+from split_video.media_store import MediaError, MediaStore
 
 
 class ExportJob:
@@ -50,6 +50,7 @@ class JobStore:
 
 def start_export(
     job_store: JobStore,
+    media: MediaStore,
     plan: project.ExportPlan,
     precise: bool,
     output_format: str | None,
@@ -59,7 +60,7 @@ def start_export(
     job_id, job = job_store.create(len(plan.segments))
     thread = threading.Thread(
         target=_run_export,
-        args=(job, plan, precise, output_format, write_manifest_file, parameters),
+        args=(job, media, plan, precise, output_format, write_manifest_file, parameters),
         daemon=True,
     )
     thread.start()
@@ -68,6 +69,7 @@ def start_export(
 
 def _run_export(
     job: ExportJob,
+    media: MediaStore,
     plan: project.ExportPlan,
     precise: bool,
     output_format: str | None,
@@ -78,13 +80,14 @@ def _run_export(
         with job.lock:
             job.current_file = filename
 
-    def on_file_done(path: str) -> None:
+    def on_file_done(media_id: str) -> None:
         with job.lock:
             job.completed += 1
-            job.files.append(path)
+            job.files.append(media.display_path(media_id))
 
     try:
-        _, manifest_path = project.run_export(
+        _, manifest_id = project.run_export(
+            media,
             plan,
             precise=precise,
             output_format=output_format,
@@ -94,11 +97,11 @@ def _run_export(
             on_file_done=on_file_done,
         )
         with job.lock:
-            job.output_dir = str(plan.output_dir)
-            if manifest_path is not None:
-                job.manifest_path = str(manifest_path)
+            job.output_dir = media.display_path(plan.output_dir)
+            if manifest_id is not None:
+                job.manifest_path = media.display_path(manifest_id)
             job.status = "done"
-    except (ExtractError, OSError) as exc:
+    except (ExtractError, MediaError, OSError) as exc:
         with job.lock:
             job.status = "error"
             job.error = str(exc)
@@ -145,33 +148,36 @@ class AnalysisJobStore:
 
 def start_audio_analysis(
     job_store: AnalysisJobStore,
-    source: Path,
+    media: MediaStore,
+    source: str,
     cache: ClassificationCache,
     thresholds: dict[str, float],
 ) -> str:
     job_id, job = job_store.create()
-    thread = threading.Thread(target=_run_analysis, args=(job, source, cache, thresholds), daemon=True)
+    thread = threading.Thread(target=_run_analysis, args=(job, media, source, cache, thresholds), daemon=True)
     thread.start()
     return job_id
 
 
-def _run_analysis(job: AnalysisJob, source: Path, cache: ClassificationCache, thresholds: dict[str, float]) -> None:
+def _run_analysis(
+    job: AnalysisJob, media: MediaStore, source: str, cache: ClassificationCache, thresholds: dict[str, float]
+) -> None:
     try:
         # Set an upfront estimate from duration alone so the progress bar
         # isn't stuck at 0/0 during the (possibly slow) PCM decode below,
         # which happens before the real per-frame count is known.
         with job.lock:
-            job.total = max(1, int(probe_duration(source) * classify.SAMPLE_RATE) // classify.HOP_SAMPLES)
+            job.total = max(1, int(media.probe(source).duration * classify.SAMPLE_RATE) // classify.HOP_SAMPLES)
 
         def on_progress(completed: int, total: int) -> None:
             with job.lock:
                 job.completed = completed
                 job.total = total
 
-        project.run_analysis(source, cache, thresholds, on_progress)
+        project.run_analysis(media, source, cache, thresholds, on_progress)
         with job.lock:
             job.status = "done"
-    except (classify.ModelNotFoundError, ExtractError, ProbeError, OSError) as exc:
+    except (classify.ModelNotFoundError, ExtractError, ProbeError, MediaError, OSError) as exc:
         with job.lock:
             job.status = "error"
             job.error = str(exc)

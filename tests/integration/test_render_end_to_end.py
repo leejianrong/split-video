@@ -4,6 +4,7 @@ import pytest
 
 from split_video import timeline_ops as ops
 from split_video.ffmpeg import probe_duration, probe_media
+from split_video.local_media_store import LocalMediaStore
 from split_video.render import render
 from split_video.timeline import TimelineError, empty_project
 
@@ -36,7 +37,7 @@ def _project(root, transition=None):
 def test_render_with_cut(two_sources):
     seen = []
     out = two_sources / "out.mp4"
-    render(_project(two_sources), two_sources, out, progress=seen.append)
+    render(_project(two_sources), LocalMediaStore(two_sources), out.name, progress=seen.append)
     assert probe_duration(out) == pytest.approx(7.0, abs=0.3)
     assert probe_media(out).has_audio
     assert seen[-1] == 1.0 and seen == sorted(seen)
@@ -44,7 +45,7 @@ def test_render_with_cut(two_sources):
 
 def test_render_with_crossfade_is_shorter(two_sources):
     out = two_sources / "out.mp4"
-    render(_project(two_sources, transition=1.0), two_sources, out)
+    render(_project(two_sources, transition=1.0), LocalMediaStore(two_sources), out.name)
     assert probe_duration(out) == pytest.approx(6.0, abs=0.3)
 
 
@@ -53,7 +54,7 @@ def test_render_respects_trim(two_sources):
     clip = p.tracks[0].clips[0]
     p = ops.trim_clip(p, clip.id, 4.0, in_point=1.0, out_point=3.0)
     out = two_sources / "out.mp4"
-    render(p, two_sources, out)
+    render(p, LocalMediaStore(two_sources), out.name)
     assert probe_duration(out) == pytest.approx(5.0, abs=0.3)
 
 
@@ -61,9 +62,9 @@ def test_missing_source_and_empty_project_are_clear_errors(two_sources):
     p = _project(two_sources)
     (two_sources / "blue.mp4").unlink()
     with pytest.raises(TimelineError, match="not found"):
-        render(p, two_sources, two_sources / "o.mp4")
+        render(p, LocalMediaStore(two_sources), "o.mp4")
     with pytest.raises(TimelineError, match="no clips"):
-        render(empty_project(), two_sources, two_sources / "o.mp4")
+        render(empty_project(), LocalMediaStore(two_sources), "o.mp4")
 
 
 def _frame_rgb(path, t, x, y):
@@ -84,7 +85,7 @@ def test_overlay_clip_appears_only_in_its_window_and_place(two_sources):
     p, blue = ops.add_clip(p, overlay.id, "blue.mp4", 2.0, start=1.0)
     p = ops.set_clip_properties(p, blue.id, x=0.75, y=0.25, scale=0.25)
     out = two_sources / "out.mp4"
-    render(p, two_sources, out)
+    render(p, LocalMediaStore(two_sources), out.name)
     assert probe_duration(out) == pytest.approx(4.0, abs=0.3)
     inside, outside = (240, 60), (60, 180)  # centre of the overlay vs. a base-only corner
     red, blue_rgb = (255, 0, 0), (0, 0, 255)
@@ -105,7 +106,7 @@ def test_half_opacity_blends_with_the_base(two_sources):
     p, blue = ops.add_clip(p, overlay.id, "blue.mp4", 3.0, start=0.0)
     p = ops.set_clip_properties(p, blue.id, opacity=0.5)
     out = two_sources / "out.mp4"
-    render(p, two_sources, out)
+    render(p, LocalMediaStore(two_sources), out.name)
     r, g, b = _frame_rgb(out, 1.0, 160, 120)
     assert 60 < r < 200 and 60 < b < 200  # a mix of red and blue, neither pure
 
@@ -115,7 +116,7 @@ def test_overlay_only_project_renders_over_black(two_sources):
     p, overlay = ops.add_track(p, "video")
     p, _ = ops.add_clip(p, overlay.id, "blue.mp4", 2.0, start=1.0)
     out = two_sources / "out.mp4"
-    render(p, two_sources, out)
+    render(p, LocalMediaStore(two_sources), out.name)
     assert probe_duration(out) == pytest.approx(3.0, abs=0.3)
     assert max(_frame_rgb(out, 0.3, 160, 120)) < 40
 
@@ -141,7 +142,7 @@ def _single(two_sources, **props):
     if props:
         p = ops.set_clip_properties(p, clip.id, **props)
     out = two_sources / "out.mp4"
-    render(p, two_sources, out)
+    render(p, LocalMediaStore(two_sources), out.name)
     return out
 
 
@@ -166,7 +167,7 @@ def test_audio_track_is_mixed_with_the_main_audio(two_sources):
     p, track = ops.add_track(p, "audio")
     p, _ = ops.add_clip(p, track.id, "music.wav", 6.0, start=1.0)
     out = two_sources / "out.mp4"
-    render(p, two_sources, out)
+    render(p, LocalMediaStore(two_sources), out.name)
     assert probe_duration(out) == pytest.approx(7.0, abs=0.3)  # the audio track is the longest thing
     assert _volume(out)[0] > -40  # music is audible even though the main clip is muted
 
@@ -180,7 +181,7 @@ def test_brightness_and_saturation_change_the_picture(two_sources):
         if props:
             p = ops.set_clip_properties(p, clip.id, **props)
         out = two_sources / f"{source}-{len(props)}.mp4"
-        render(p, two_sources, out)
+        render(p, LocalMediaStore(two_sources), out.name)
         return out
 
     plain = _frame_rgb(render_clip("grey.mp4"), 1.0, 160, 120)
@@ -201,7 +202,7 @@ def _text_project(text, font_size=0.2, color="#ffffff"):
 
 def test_text_overlay_draws_in_its_window_only(two_sources):
     out = two_sources / "out.mp4"
-    render(_text_project("MMMM", color="#00ff00"), two_sources, out)
+    render(_text_project("MMMM", color="#00ff00"), LocalMediaStore(two_sources), out.name)
 
     # A strip across the middle of the frame: the glyphs are green somewhere inside the window only.
     def has_green(t):
@@ -215,7 +216,7 @@ def test_text_overlay_draws_in_its_window_only(two_sources):
 
 def test_text_with_quotes_colons_and_percent_renders(two_sources):
     out = two_sources / "out.mp4"
-    render(_text_project("It's 5:30 - 100% \\ done"), two_sources, out)
+    render(_text_project("It's 5:30 - 100% \\ done"), LocalMediaStore(two_sources), out.name)
     assert probe_duration(out) == pytest.approx(4.0, abs=0.3)
 
 
@@ -225,4 +226,4 @@ def test_missing_font_is_a_clear_error(two_sources, monkeypatch):
     monkeypatch.setattr(render_module, "_FONT_CANDIDATES", ())
     monkeypatch.delenv("SPLIT_VIDEO_FONT", raising=False)
     with pytest.raises(TimelineError, match="no font found"):
-        render(_text_project("hi"), two_sources, two_sources / "out.mp4")
+        render(_text_project("hi"), LocalMediaStore(two_sources), "out.mp4")

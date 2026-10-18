@@ -24,11 +24,12 @@ from __future__ import annotations
 import os
 import subprocess
 from collections.abc import Callable
+from contextlib import ExitStack
 from dataclasses import dataclass
-from pathlib import Path
 
-from split_video.ffmpeg import ExtractError, MediaInfo, _require_binary, probe_media
-from split_video.timeline import Clip, Project, TimelineError, Track, resolve_source
+from split_video.ffmpeg import ExtractError, MediaInfo, _require_binary
+from split_video.media_store import MediaStore
+from split_video.timeline import Clip, Project, TimelineError, Track, source_media_id
 
 FPS = 30
 AUDIO_RATE = 48000
@@ -49,7 +50,7 @@ def find_font() -> str:
     """A TrueType font file for text clips: `$SPLIT_VIDEO_FONT` if set, else the first common one."""
     candidates = [os.environ["SPLIT_VIDEO_FONT"]] if os.environ.get("SPLIT_VIDEO_FONT") else []
     for path in [*candidates, *_FONT_CANDIDATES]:
-        if Path(path).is_file():
+        if os.path.isfile(path):
             return path
     raise TimelineError(
         "no font found for text clips; install a TrueType font (e.g. fonts-dejavu-core) "
@@ -217,41 +218,36 @@ def build_plan(project: Project, infos: dict[str, MediaInfo], width: int, height
     return Plan(ordered, ";".join(parts), vlabel, alabel, width, height)
 
 
-def _clip_inputs(clips: list[Clip], root: Path) -> list[str]:
+def _clip_inputs(clips: list[Clip], paths: list[str]) -> list[str]:
+    """`-ss/-t/-i` arguments for each clip, reading the matching local path."""
     args: list[str] = []
-    for clip in clips:
-        args += [
-            "-ss",
-            f"{clip.in_point:.3f}",
-            "-t",
-            f"{clip.duration:.3f}",
-            "-i",
-            str(resolve_source(root, clip.source)),
-        ]
+    for clip, path in zip(clips, paths):
+        args += ["-ss", f"{clip.in_point:.3f}", "-t", f"{clip.duration:.3f}", "-i", path]
     return args
 
 
 def render(
     project: Project,
-    root: Path,
-    out_path: Path,
+    media: MediaStore,
+    out_id: str,
     progress: Callable[[float], None] | None = None,
 ) -> None:
-    """Write the project to `out_path` (an mp4). `progress` gets 0.0..1.0."""
+    """Write the project to `out_id` (an mp4 in `media`). `progress` gets 0.0..1.0."""
     video_clips = [c for t in project.tracks if t.kind == "video" for c in t.clips]
     if not video_clips:
         raise TimelineError("the timeline has no clips to render")
 
     infos: dict[str, MediaInfo] = {}
+    ids: dict[str, str] = {}  # clip source -> canonical media id
     for track in project.tracks:
         for clip in track.clips:
             if clip.kind == "text":
                 continue
             if clip.source not in infos:
-                source = resolve_source(root, clip.source)
-                if not source.is_file():
+                ids[clip.source] = source_media_id(media, clip.source)
+                if not media.is_file(ids[clip.source]):
                     raise TimelineError(f"source file not found: {clip.source}")
-                infos[clip.source] = probe_media(source)
+                infos[clip.source] = media.probe(ids[clip.source])
             if track.kind == "video" and infos[clip.source].width is None:
                 raise TimelineError(f"{clip.source} has no video stream")
             if track.kind == "audio" and not infos[clip.source].has_audio:
@@ -267,13 +263,23 @@ def render(
     plan = build_plan(project, infos, width, height, font)
     total = project.duration
 
+    with ExitStack() as stack:
+        # Every input, and the output, as real paths for ffmpeg for the whole run.
+        inputs = [str(stack.enter_context(media.local_path(ids[c.source]))) for c in plan.clips]
+        out_path = stack.enter_context(media.write_local(out_id))
+        _run_ffmpeg(plan, inputs, str(out_path), total, progress)
+
+
+def _run_ffmpeg(
+    plan: Plan, inputs: list[str], out_path: str, total: float, progress: Callable[[float], None] | None
+) -> None:
     cmd = [
         _require_binary("ffmpeg"),
         "-y",
         "-nostats",
         "-progress",
         "pipe:1",
-        *_clip_inputs(plan.clips, root),
+        *_clip_inputs(plan.clips, inputs),
         "-filter_complex",
         plan.graph,
         "-map",
@@ -290,7 +296,7 @@ def render(
         "aac",
         "-movflags",
         "+faststart",
-        str(out_path),
+        out_path,
     ]
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     assert proc.stdout is not None and proc.stderr is not None
@@ -302,6 +308,6 @@ def render(
                 pass  # ffmpeg prints out_time_us=N/A before the first frame
     stderr = proc.stderr.read()
     if proc.wait() != 0:
-        raise ExtractError(f"ffmpeg failed rendering '{out_path.name}': {stderr.strip()[-2000:]}")
+        raise ExtractError(f"ffmpeg failed rendering '{os.path.basename(out_path)}': {stderr.strip()[-2000:]}")
     if progress:
         progress(1.0)

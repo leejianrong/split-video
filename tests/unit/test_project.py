@@ -3,6 +3,8 @@ import itertools
 import pytest
 
 from split_video import project
+from split_video.local_media_store import LocalMediaStore
+from split_video.media_store import InMemoryMediaStore
 from split_video.segments import Segment
 from split_video.store import SavedSegment
 from split_video.timefmt import parse_time
@@ -101,27 +103,27 @@ def test_select_for_export_defaults_to_included_and_only_overrides_it():
 
 
 def test_plan_export_names_files_and_detects_conflicts(tmp_path):
-    source = tmp_path / "show.mp4"
-    source.touch()
-    plan = project.plan_export(source, [(0, 5, None), (5, 9, "Encore")])
+    media = LocalMediaStore(tmp_path)
+    (tmp_path / "show.mp4").touch()
+    plan = project.plan_export(media, "show.mp4", [(0, 5, None), (5, 9, "Encore")])
     assert plan.filenames == ["01 - show.mp4", "Encore.mp4"]
-    assert plan.output_dir == tmp_path / "show_split"
+    assert plan.output_dir == "show_split"
 
-    plan.output_dir.mkdir()
-    (plan.output_dir / "Encore.mp4").touch()
+    (tmp_path / "show_split").mkdir()
+    (tmp_path / "show_split" / "Encore.mp4").touch()
     with pytest.raises(project.ExportConflictError, match="Encore.mp4"):
-        project.plan_export(source, [(0, 5, None), (5, 9, "Encore")])
-    project.plan_export(source, [(0, 5, None), (5, 9, "Encore")], overwrite=True)
+        project.plan_export(media, "show.mp4", [(0, 5, None), (5, 9, "Encore")])
+    project.plan_export(media, "show.mp4", [(0, 5, None), (5, 9, "Encore")], overwrite=True)
 
 
-def test_plan_export_rejects_bad_segment_lists(tmp_path):
-    source = tmp_path / "show.mp4"
+def test_plan_export_rejects_bad_segment_lists():
+    media = InMemoryMediaStore()
     with pytest.raises(project.ProjectError, match="empty"):
-        project.plan_export(source, [])
+        project.plan_export(media, "show.mp4", [])
     with pytest.raises(project.ProjectError, match="overlap"):
-        project.plan_export(source, [(0, 6, None), (5, 9, None)])
+        project.plan_export(media, "show.mp4", [(0, 6, None), (5, 9, None)])
     with pytest.raises(project.ProjectError, match="unique"):
-        project.plan_export(source, [(0, 5, "x"), (5, 9, "x")])
+        project.plan_export(media, "show.mp4", [(0, 5, "x"), (5, 9, "x")])
 
 
 def test_contiguous_collapses_trimmed_silence_gaps_into_single_boundaries():
