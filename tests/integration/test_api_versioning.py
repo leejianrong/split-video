@@ -10,6 +10,8 @@ from split_video.editor.app import create_app
 from split_video.editor.schemas import StateParams
 
 DEFAULTS = StateParams(silence_threshold=-35.0, min_silence_duration=2.0, min_song_length=2.0, padding=0.15)
+# Routes added after versioning shipped never had an unversioned spelling, so they get no alias.
+NO_LEGACY_ALIAS = {"/api/v1/events"}
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -39,6 +41,8 @@ def test_every_route_is_under_api_v1(tmp_path):
 def test_every_v1_operation_has_a_deprecated_alias(tmp_path):
     client = TestClient(create_app(tmp_path, DEFAULTS))
     for path, method in _operations(client.app):
+        if path in NO_LEGACY_ALIAS:
+            continue
         legacy = path.removeprefix("/api/v1")
         if legacy.startswith("/media/"):
             pass  # /media/... keeps its pre-versioning spelling

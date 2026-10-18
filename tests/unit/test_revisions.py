@@ -478,3 +478,46 @@ def test_older_readers_ignore_the_extra_revision_key(tmp_path):
     assert data["revision"] == 1 and data["version"] == 2
     old = timeline.from_dict(data)  # from_dict is unchanged since before revisions: it reads named keys only
     assert old == store.load_timeline("show") and old.revision == 0  # an old reader just doesn't see it
+
+
+# --- peek_revisions (SPL-37): how the event stream notices other processes' writes -------------
+
+
+@pytest.mark.parametrize("kind", ["local", "memory"])
+def test_peek_revisions_reports_timelines_and_the_requested_split_projects(tmp_path, kind):
+    store = LocalProjectStore(tmp_path) if kind == "local" else InMemoryProjectStore()
+    assert store.peek_revisions() == {}
+    store.create_timeline("a")
+    store.create_timeline("b")
+    store.update_timeline("b", lambda p: p)
+    store.save_split("v.mp4", [SavedSegment(0.0, 1.0)])
+    found = store.peek_revisions(["v.mp4", "unsaved.mp4"])
+    assert found == {("timeline", "a"): 0, ("timeline", "b"): 1, ("split", "v.mp4"): 1, ("split", "unsaved.mp4"): 0}
+    assert ("split", "v.mp4") not in store.peek_revisions()  # split projects only when asked for
+    store.save_split("v.mp4", [SavedSegment(0.0, 2.0)])
+    assert store.peek_revisions(["v.mp4"])[("split", "v.mp4")] == 2
+
+
+def test_local_peek_sees_a_write_by_another_store_instance_and_survives_damage(tmp_path):
+    store, other = LocalProjectStore(tmp_path), LocalProjectStore(tmp_path)
+    store.create_timeline("t")
+    assert store.peek_revisions()[("timeline", "t")] == 0
+    for expected in range(1, 12):  # same-size files across 9 -> 10 included: the cache must not go stale
+        other.update_timeline("t", lambda p: p)
+        assert store.peek_revisions()[("timeline", "t")] == expected
+    other.timeline_path("t").write_text("{ not json")
+    assert store.peek_revisions()[("timeline", "t")] == 0  # unreadable counts as 0, never raises
+    assert store.peek_revisions(["../escape.mp4"]) == {("timeline", "t"): 0}  # bad ids are left out
+
+
+def test_revision_changes_name_the_store_that_wrote_them(tmp_path):
+    seen = []
+    unsubscribe = subscribe_revisions(seen.append)
+    try:
+        store = LocalProjectStore(tmp_path)
+        memory = InMemoryProjectStore()
+        store.create_timeline("t")
+        memory.create_timeline("m")
+    finally:
+        unsubscribe()
+    assert [c.origin for c in seen] == [store, memory]

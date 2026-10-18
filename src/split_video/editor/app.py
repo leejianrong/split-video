@@ -17,6 +17,8 @@ from split_video.editor.cache import ClassificationCache, SilenceCache, Waveform
 from split_video.editor.classify import ClassificationRegion
 from split_video.editor.compose import make_media_router as make_compose_media_router
 from split_video.editor.compose import make_router as make_compose_router
+from split_video.editor.events import EventBus, EventsConfig
+from split_video.editor.events import make_router as make_events_router
 from split_video.editor.job_routes import cancel_job, job_of_kind
 from split_video.editor.job_routes import make_router as make_jobs_router
 from split_video.editor.media_response import media_response
@@ -121,21 +123,26 @@ def create_app(
     store: ProjectStore | None = None,
     media: MediaStore | None = None,
     jobs: JobQueue | None = None,
+    events: EventsConfig | None = None,
 ) -> FastAPI:
     """`root` is either a video file to open immediately (the historical
     `split-video edit <file>` behavior, unchanged) or a directory to pick a
     video from via the in-browser file picker. Projects are read and written
     through `store` and media (sources, outputs, caches) through `media`; by default
     both are local-disk stores rooted at the browse root. Export, analysis and render run as jobs on
-    `jobs`, by default an in-process thread-pool queue owned (and shut down) by the app."""
+    `jobs`, by default an in-process thread-pool queue owned (and shut down) by the app. `events` tunes the
+    `/api/v1/events` stream (poll, keepalive and throttle intervals); the bus is `app.state.events`."""
     # `version` is the API version, not the package version, so the committed
     # openapi.json only changes when the API does.
     own_jobs = jobs is None
+    projects: dict[str, _ProjectState] = {}
+    projects_lock = threading.Lock()
     jobs = InProcessJobQueue() if jobs is None else jobs
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         yield
+        bus.close()  # end open event streams (the server's own shutdown hook does this earlier, see serve.py)
         if own_jobs and isinstance(jobs, InProcessJobQueue):
             jobs.shutdown()  # stop running ffmpeg processes with the server
 
@@ -181,9 +188,14 @@ def create_app(
     # Registry of per-project state, keyed by canonical source media id and built
     # lazily on first use. The project id a client sends is the video's path
     # relative to the browse root; there is no "currently open" file.
-    projects: dict[str, _ProjectState] = {}
-    projects_lock = threading.Lock()
     default_project_id = root.name if root.is_file() else None
+
+    def _open_project_ids() -> list[str]:
+        with projects_lock:
+            return [p.project_id for p in projects.values()]
+
+    bus = EventBus(jobs, store, _open_project_ids, events)
+    app.state.events = bus
 
     def _segments_out(segments: list[SavedSegment]) -> list[SegmentOut]:
         return [
@@ -449,6 +461,8 @@ def create_app(
 
     app.include_router(api, prefix=API_PREFIX)
     app.include_router(media_routes, prefix=API_PREFIX)
+    # The event stream is new in v1 and has no deprecated alias: it is registered only under /api/v1.
+    app.include_router(make_events_router(bus), prefix=API_PREFIX)
     # Deprecated aliases for one release: /api/... and /media/... as they were
     # before versioning. Not in the OpenAPI schema; responses carry a
     # `Deprecation` header (set by the middleware above). Registered after /api/v1 so it can't shadow it.

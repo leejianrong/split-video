@@ -376,6 +376,11 @@ from the code. After changing a route or schema, regenerate it with
 Project state responses carry a `revision`, and writes take an optional
 `If-Match` header; see [Revisions](#revisions-editing-the-same-project-from-two-places).
 
+`GET /api/v1/events` is a server-sent-events stream of job progress and project
+revision changes, including edits made by the CLI or MCP server in another
+process (`curl -N localhost:8765/api/v1/events`). The polling endpoints keep
+working; the frame format is in the route's description in the schema.
+
 Contributing? See [CONTRIBUTING.md](CONTRIBUTING.md) for running tests,
 the pre-push hook, and cutting a release.
 

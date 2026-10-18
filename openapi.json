@@ -3381,6 +3381,112 @@
         "summary": "Detect"
       }
     },
+    "/api/v1/events": {
+      "get": {
+        "description": "A `text/event-stream` of job progress and project changes; keep it open instead of polling. Frames: `event: hello` first (server `time`, `resync`, `resumed`, `last_event_id`, and the `jobs` queued or running now); `event: job` with `{type: submitted|progress|state, job: <the JobOut of GET /jobs/{id}>, previous?: <state>}`; `event: project` with `{kind: split|timeline, project_id, revision, source: local|external}` (`local`: written through this server; `external`: another process, e.g. the CLI or MCP server, changed the project and the server noticed within about a second); `: keepalive` comment lines when quiet; `event: overflow` (the client fell behind, reconnect) and `event: shutdown` (the server is stopping) end the stream. Every `job` and `project` frame has an increasing `id:`; a reconnect with `Last-Event-ID` replays what it missed from the last 500 events, or gets `hello` with `resync: true` (refetch state) if that is no longer possible. `progress` is throttled to about 10 per second per job and the final progress always precedes the job's `state` event. `kind` (`job`, `project`; repeatable or comma-separated), `job` and `project` filter the stream; `hello`, `overflow` and `shutdown` are always sent. The polling endpoints stay available.",
+        "operationId": "events_api_v1_events_get",
+        "parameters": [
+          {
+            "description": "Only these kinds of event: `job`, `project` (repeat or comma-separate).",
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only these kinds of event: `job`, `project` (repeat or comma-separate).",
+              "title": "Kind"
+            }
+          },
+          {
+            "description": "Only this job's events (implies `kind=job` unless `kind` is given).",
+            "in": "query",
+            "name": "job",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only this job's events (implies `kind=job` unless `kind` is given).",
+              "title": "Job"
+            }
+          },
+          {
+            "description": "Only this project's events (a project id; implies `kind=project` unless `kind` is given).",
+            "in": "query",
+            "name": "project",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only this project's events (a project id; implies `kind=project` unless `kind` is given).",
+              "title": "Project"
+            }
+          },
+          {
+            "description": "Resume after this event id.",
+            "in": "header",
+            "name": "Last-Event-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Resume after this event id.",
+              "title": "Last-Event-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "The event stream."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Event stream (SSE)"
+      }
+    },
     "/api/v1/export": {
       "post": {
         "operationId": "export_api_v1_export_post",

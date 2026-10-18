@@ -31,7 +31,7 @@ import logging
 import os
 import posixpath
 import threading
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager
 from dataclasses import replace
 from pathlib import Path
@@ -130,6 +130,8 @@ class LocalProjectStore:
 
     def __init__(self, root: Path) -> None:
         self.root = root
+        self._peeked: dict[str, tuple[tuple[int, int, int], int]] = {}  # path -> ((mtime_ns, size, inode), revision)
+        self._peek_lock = threading.Lock()
 
     # --- paths -----------------------------------------------------------------
 
@@ -204,7 +206,7 @@ class LocalProjectStore:
             current = _revision_of(_read_json(path))
             check_base_revision("split project", project_id, current, base_revision)
             self._write_split(video.name, path, segments, current + 1)
-        announce_revision(RevisionChange("split", project_id, current + 1))
+        announce_revision(RevisionChange("split", project_id, current + 1, self))
         return current + 1
 
     def update_split(
@@ -220,7 +222,7 @@ class LocalProjectStore:
             check_base_revision("split project", project_id, current, base_revision)
             segments = change(self._parse_split(data))
             self._write_split(video.name, path, segments, current + 1)
-        announce_revision(RevisionChange("split", project_id, current + 1))
+        announce_revision(RevisionChange("split", project_id, current + 1, self))
         return Versioned(segments, current + 1)
 
     # --- timeline projects -------------------------------------------------------
@@ -263,7 +265,7 @@ class LocalProjectStore:
             current = _revision_of(_read_json(path))
             check_base_revision("timeline project", name, current, base_revision)
             self._write_timeline(path, project, current + 1)
-        announce_revision(RevisionChange("timeline", name, current + 1))
+        announce_revision(RevisionChange("timeline", name, current + 1, self))
         return current + 1
 
     def update_timeline(
@@ -277,7 +279,7 @@ class LocalProjectStore:
             check_base_revision("timeline project", name, stored.revision, base_revision)
             new = change(stored)
             self._write_timeline(path, new, stored.revision + 1)
-        announce_revision(RevisionChange("timeline", name, stored.revision + 1))
+        announce_revision(RevisionChange("timeline", name, stored.revision + 1, self))
         return replace(new, revision=stored.revision + 1)
 
     def create_timeline(self, name: str) -> Project:
@@ -287,5 +289,37 @@ class LocalProjectStore:
                 raise ProjectExistsError(f"project {name!r} already exists")
             project = timeline.empty_project()
             self._write_timeline(path, project, 0)
-        announce_revision(RevisionChange("timeline", name, 0))
+        announce_revision(RevisionChange("timeline", name, 0, self))
         return project
+
+    # --- noticing other processes' writes ------------------------------------------
+
+    def peek_revisions(self, split_ids: Iterable[str] = ()) -> dict[tuple[str, str], int]:
+        found: dict[tuple[str, str], int] = {}
+        for name in self.list_timelines():
+            found[("timeline", name)] = self._peek_revision(self.root / f"{name}{TIMELINE_SUFFIX}")
+        for project_id in split_ids:
+            try:
+                path = self.split_sidecar_path(project_id)
+            except ValueError:
+                continue
+            found[("split", project_id)] = self._peek_revision(path)
+        return found
+
+    def _peek_revision(self, path: Path) -> int:
+        """The revision in `path`, re-reading the file only when its size, mtime or inode changed since
+        the last peek (a timeline file can be large; this runs about once a second)."""
+        try:
+            st = path.stat()
+        except OSError:
+            return 0
+        stamp = (st.st_mtime_ns, st.st_size, st.st_ino)
+        key = str(path)
+        with self._peek_lock:
+            cached = self._peeked.get(key)
+        if cached is not None and cached[0] == stamp:
+            return cached[1]
+        revision = _revision_of(_read_json(path))
+        with self._peek_lock:
+            self._peeked[key] = (stamp, revision)
+        return revision
