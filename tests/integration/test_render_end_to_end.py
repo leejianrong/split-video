@@ -169,3 +169,23 @@ def test_audio_track_is_mixed_with_the_main_audio(two_sources):
     render(p, two_sources, out)
     assert probe_duration(out) == pytest.approx(7.0, abs=0.3)  # the audio track is the longest thing
     assert _volume(out)[0] > -40  # music is audible even though the main clip is muted
+
+
+def test_brightness_and_saturation_change_the_picture(two_sources):
+    _make(two_sources / "grey.mp4", 2, "gray")
+
+    def render_clip(source, **props):
+        p = empty_project()
+        p, clip = ops.add_clip(p, p.tracks[0].id, source, 2.0)
+        if props:
+            p = ops.set_clip_properties(p, clip.id, **props)
+        out = two_sources / f"{source}-{len(props)}.mp4"
+        render(p, two_sources, out)
+        return out
+
+    plain = _frame_rgb(render_clip("grey.mp4"), 1.0, 160, 120)
+    bright = _frame_rgb(render_clip("grey.mp4", brightness=0.3), 1.0, 160, 120)
+    assert bright[0] > plain[0] + 40
+
+    red = _frame_rgb(render_clip("red.mp4", saturation=0.0), 1.0, 160, 120)
+    assert max(red) - min(red) < 25  # no longer red

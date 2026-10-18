@@ -113,3 +113,23 @@ def test_overlay_video_clip_sound_is_mixed_in():
     p, _ = ops.add_clip(p, overlay.id, "pip.mp4", 3.0, start=1.0)
     plan = _audio_graph(p)
     assert "[1:a]" in plan.graph and "adelay=1000|1000[ax0]" in plan.graph
+
+
+def test_colour_adjustment_adds_eq_only_when_not_neutral():
+    p, tid = _main([5, 4])
+    a, b = p.tracks[0].clips
+    p = ops.set_clip_properties(p, a.id, brightness=0.2, contrast=1.5, saturation=0.5)
+    graph = build_plan(p, _infos(p), 320, 240).graph
+    assert graph.count("eq=") == 1
+    assert "force_original_aspect_ratio=decrease,eq=brightness=0.2:contrast=1.5:saturation=0.5,pad=" in graph
+
+
+def test_colour_adjustment_applies_to_overlay_clips_too():
+    p, tid = _main([10])
+    p, overlay = ops.add_track(p, "video")
+    p, clip = ops.add_clip(p, overlay.id, "pip.mp4", 3.0)
+    p = ops.set_clip_properties(p, clip.id, saturation=0.0)
+    assert (
+        "scale=320:-2,eq=brightness=0:contrast=1:saturation=0,format=yuva420p"
+        in build_plan(p, _infos(p), 320, 240).graph
+    )
