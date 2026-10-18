@@ -95,7 +95,7 @@ def resolve_source(root: Path, source: str) -> Path:
     root = root.resolve()
     path = (root / source).resolve()
     if path != root and root not in path.parents:
-        raise TimelineError(f"source {source!r} is outside the project directory")
+        raise OutsideRootError(f"source {source!r} is outside the project directory")
     return path
 
 
@@ -107,7 +107,7 @@ def relative_source(root: Path, path: Path) -> str:
     try:
         return resolved.relative_to(root).as_posix()
     except ValueError:
-        raise TimelineError(f"{str(path)!r} is outside the project directory") from None
+        raise OutsideRootError(f"{str(path)!r} is outside the project directory") from None
 
 
 def project_path(root: Path, name: str) -> Path:
@@ -192,3 +192,23 @@ def save(path: Path, project: Project) -> None:
     with tmp.open("w") as f:
         json.dump(to_dict(project), f, separators=(",", ":"))
     os.replace(tmp, path)
+
+
+class ProjectNotFoundError(TimelineError):
+    """No timeline project with that name exists in the directory."""
+
+
+class ProjectExistsError(TimelineError):
+    """A timeline project with that name already exists."""
+
+
+class OutsideRootError(TimelineError):
+    """A path resolves outside the project directory."""
+
+
+class SourceNotFoundError(TimelineError):
+    """A clip's source file doesn't exist."""
+
+
+class OutputExistsError(TimelineError):
+    """The render output exists and overwriting wasn't asked for."""
