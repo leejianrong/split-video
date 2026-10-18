@@ -1,0 +1,194 @@
+"""The multi-clip timeline project model and its file format.
+
+Separate from `project.py`/`project_store.py`, which model one video cut
+into segments: a timeline project arranges clips from several source videos
+on tracks and lives in its own `<name>.split-video-timeline.json` file in
+the directory being edited. Sources are stored as paths relative to that
+directory (the editor's browse root), so the file stays valid when the
+folder is moved or mounted at a different path, e.g. into Docker.
+
+The model already has tracks, each holding clips placed at an explicit
+`start`, even though the first phase only edits one gap-free video track:
+that way later phases (overlays, audio tracks) don't need a new file format.
+
+Nothing here touches ffmpeg or the disk beyond `load`/`save`; editing rules
+live in `timeline_ops.py` and rendering in `render.py`.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import uuid
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+FORMAT_VERSION = 1
+FILE_SUFFIX = ".split-video-timeline.json"
+
+TRACK_KINDS = ("video", "audio")
+TRANSITIONS = ("cut", "crossfade")
+
+
+class TimelineError(ValueError):
+    """The request can't be applied to the timeline (bad path, bad range, ...)."""
+
+
+@dataclass(frozen=True)
+class Clip:
+    id: str
+    source: str  # path relative to the project's root directory
+    in_point: float  # seconds into the source where the clip starts
+    out_point: float  # seconds into the source where the clip ends
+    start: float = 0.0  # where the clip begins on the track, in seconds
+    gain: float = 1.0
+    muted: bool = False
+    # How this clip is joined to the one before it on the same track.
+    transition: str = "cut"
+    transition_duration: float = 0.0
+
+    @property
+    def duration(self) -> float:
+        return self.out_point - self.in_point
+
+    @property
+    def end(self) -> float:
+        return self.start + self.duration
+
+
+@dataclass(frozen=True)
+class Track:
+    id: str
+    kind: str = "video"
+    clips: tuple[Clip, ...] = ()
+
+    @property
+    def end(self) -> float:
+        return max((c.end for c in self.clips), default=0.0)
+
+
+@dataclass(frozen=True)
+class Project:
+    tracks: tuple[Track, ...] = field(default_factory=tuple)
+
+    @property
+    def duration(self) -> float:
+        return max((t.end for t in self.tracks), default=0.0)
+
+
+def new_id() -> str:
+    return uuid.uuid4().hex[:8]
+
+
+def empty_project() -> Project:
+    """A project with the one video track Phase 2 edits."""
+    return Project(tracks=(Track(id=new_id(), kind="video"),))
+
+
+def resolve_source(root: Path, source: str) -> Path:
+    """The absolute path of a clip's `source` under `root`.
+
+    Raises `TimelineError` if it would escape `root`, so a crafted project
+    file or API call can't make the render read arbitrary files.
+    """
+    root = root.resolve()
+    path = (root / source).resolve()
+    if path != root and root not in path.parents:
+        raise TimelineError(f"source {source!r} is outside the project directory")
+    return path
+
+
+def relative_source(root: Path, path: Path) -> str:
+    """`path` as a root-relative string (the form clips store); the inverse
+    of `resolve_source`, and subject to the same containment rule."""
+    root = root.resolve()
+    resolved = (root / path).resolve() if not path.is_absolute() else path.resolve()
+    try:
+        return resolved.relative_to(root).as_posix()
+    except ValueError:
+        raise TimelineError(f"{str(path)!r} is outside the project directory") from None
+
+
+def project_path(root: Path, name: str) -> Path:
+    if not name or "/" in name or "\\" in name or name.startswith("."):
+        raise TimelineError(f"invalid project name {name!r}")
+    return root / f"{name}{FILE_SUFFIX}"
+
+
+def list_projects(root: Path) -> list[str]:
+    return sorted(p.name.removesuffix(FILE_SUFFIX) for p in root.glob(f"*{FILE_SUFFIX}"))
+
+
+# --- serialisation ----------------------------------------------------------
+
+
+def to_dict(project: Project) -> dict[str, Any]:
+    return {
+        "version": FORMAT_VERSION,
+        "tracks": [
+            {
+                "id": t.id,
+                "kind": t.kind,
+                "clips": [
+                    {
+                        "id": c.id,
+                        "source": c.source,
+                        "in": c.in_point,
+                        "out": c.out_point,
+                        "start": c.start,
+                        "gain": c.gain,
+                        "muted": c.muted,
+                        "transition": c.transition,
+                        "transition_duration": c.transition_duration,
+                    }
+                    for c in t.clips
+                ],
+            }
+            for t in project.tracks
+        ],
+    }
+
+
+def from_dict(data: dict[str, Any]) -> Project:
+    tracks = []
+    for t in data["tracks"]:
+        kind = str(t.get("kind", "video"))
+        if kind not in TRACK_KINDS:
+            raise ValueError(f"unknown track kind {kind!r}")
+        clips = tuple(
+            Clip(
+                id=str(c["id"]),
+                source=str(c["source"]),
+                in_point=float(c["in"]),
+                out_point=float(c["out"]),
+                start=float(c.get("start", 0.0)),
+                gain=float(c.get("gain", 1.0)),
+                muted=bool(c.get("muted", False)),
+                transition=str(c.get("transition", "cut")),
+                transition_duration=float(c.get("transition_duration", 0.0)),
+            )
+            for c in t.get("clips", [])
+        )
+        tracks.append(Track(id=str(t["id"]), kind=kind, clips=clips))
+    return Project(tracks=tuple(tracks))
+
+
+def load(path: Path) -> Project:
+    """The project at `path`, or an empty one if the file is missing or
+    unreadable — a damaged file should open as a blank project, not crash."""
+    try:
+        with path.open() as f:
+            return from_dict(json.load(f))
+    except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError):
+        return empty_project()
+
+
+def save(path: Path, project: Project) -> None:
+    """Write atomically (temp file then rename) so a concurrent `load` never
+    sees a half-written project."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.parent / f"{path.name}.tmp"
+    with tmp.open("w") as f:
+        json.dump(to_dict(project), f, separators=(",", ":"))
+    os.replace(tmp, path)
