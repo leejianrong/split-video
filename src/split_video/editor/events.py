@@ -71,7 +71,9 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Header, HTTPException, Query
 from starlette.responses import StreamingResponse
 
+from split_video.editor.auth import principal_dependency
 from split_video.editor.job_routes import job_out
+from split_video.identity import LOCAL_PRINCIPAL, Principal, can_see_job
 from split_video.jobs import JobEvent, JobProgress, JobQueue, JobStateChanged
 from split_video.store import ProjectStore, RevisionChange, subscribe_revisions
 
@@ -101,6 +103,7 @@ class _Event:
     data: dict[str, Any]
     job_id: str | None = None
     project_id: str | None = None
+    owner: str | None = None  # a job event's job owner; project events carry none and go to everyone
 
     @property
     def frame(self) -> str:
@@ -120,7 +123,10 @@ class _Throttle:
 
 
 class _Client:
-    def __init__(self, kinds: frozenset[str], job: str | None, project: str | None, queue_size: int) -> None:
+    def __init__(
+        self, kinds: frozenset[str], job: str | None, project: str | None, queue_size: int, principal: Principal
+    ) -> None:
+        self.principal = principal
         self.kinds = kinds
         self.job = job
         self.project = project
@@ -131,6 +137,8 @@ class _Client:
         if event.name not in self.kinds:
             return False
         if event.name == "job":
+            if not can_see_job(event.owner, self.principal):
+                return False
             return self.job is None or event.job_id == self.job
         return self.project is None or event.project_id == self.project
 
@@ -215,11 +223,16 @@ class EventBus:
     # --- clients ------------------------------------------------------------------------------
 
     async def connect(
-        self, kinds: frozenset[str], job: str | None, project: str | None, last_event_id: int | None
+        self,
+        kinds: frozenset[str],
+        job: str | None,
+        project: str | None,
+        last_event_id: int | None,
+        principal: Principal = LOCAL_PRINCIPAL,
     ) -> _Client:
         """Register a client and queue its `hello` (and any replay). Starts listening if needed."""
         loop = asyncio.get_running_loop()
-        client = _Client(kinds, job, project, self.config.client_queue_size)
+        client = _Client(kinds, job, project, self.config.client_queue_size, principal)
         if self._closed:
             client.queue.put_nowait(_frame("shutdown"))
             client.queue.put_nowait(_CLOSE)
@@ -262,7 +275,11 @@ class EventBus:
         jobs = []
         if "job" in client.kinds:
             active = [*self._jobs.list(state="running"), *self._jobs.list(state="queued")]
-            jobs = [job_out(i).model_dump(mode="json") for i in active if client.job in (None, i.id)]
+            jobs = [
+                job_out(i).model_dump(mode="json")
+                for i in active
+                if client.job in (None, i.id) and can_see_job(i.owner, client.principal)
+            ]
         hello = {
             "time": time.time(),
             "resync": resync,
@@ -360,9 +377,15 @@ class EventBus:
     # --- publishing (loop thread) --------------------------------------------------------------
 
     def _publish(
-        self, name: str, data: dict[str, Any], *, job_id: str | None = None, project_id: str | None = None
+        self,
+        name: str,
+        data: dict[str, Any],
+        *,
+        job_id: str | None = None,
+        project_id: str | None = None,
+        owner: str | None = None,
     ) -> None:
-        event = _Event(self._next_id, name, data, job_id, project_id)
+        event = _Event(self._next_id, name, data, job_id, project_id, owner)
         self._next_id += 1
         self._ring.append(event)
         for client in list(self._clients):
@@ -404,7 +427,7 @@ class EventBus:
             data: dict[str, Any] = {"type": "state", "job": _job_json(event), "previous": event.previous}
         else:
             data = {"type": "submitted", "job": _job_json(event)}
-        self._publish("job", data, job_id=job_id)
+        self._publish("job", data, job_id=job_id, owner=event.job.owner)
 
     def _on_progress(self, event: JobProgress) -> None:
         job_id = event.job.id
@@ -430,7 +453,7 @@ class EventBus:
 
     def _send_progress(self, state: _Throttle, event: JobProgress) -> None:
         state.last_sent = time.monotonic()
-        self._publish("job", {"type": "progress", "job": _job_json(event)}, job_id=event.job.id)
+        self._publish("job", {"type": "progress", "job": _job_json(event)}, job_id=event.job.id, owner=event.job.owner)
 
     # --- project revisions -----------------------------------------------------------------------
 
@@ -588,6 +611,7 @@ def make_router(bus: EventBus) -> APIRouter:
         last_event_id: Annotated[
             str | None, Header(alias="Last-Event-ID", description="Resume after this event id.")
         ] = None,
+        principal: Principal = principal_dependency,
     ) -> StreamingResponse:
         try:
             kinds, job_id, project_id = parse_filters(kind or [], job, project)
@@ -598,7 +622,7 @@ def make_router(bus: EventBus) -> APIRouter:
             if last_event_id and last_event_id.strip().isascii() and last_event_id.strip().isdigit()
             else None
         )
-        client = await bus.connect(kinds, job_id, project_id, resume)
+        client = await bus.connect(kinds, job_id, project_id, resume, principal)
         return _EventStreamResponse(bus, client)
 
     return router

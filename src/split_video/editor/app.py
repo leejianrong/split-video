@@ -13,10 +13,23 @@ from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request
 from fastapi.staticfiles import StaticFiles
 from starlette.responses import Response
 
+from split_video.editor.auth import (
+    SECURITY_DESCRIPTION,
+    SECURITY_SCHEME,
+    UNAUTHORIZED_RESPONSES,
+    Authenticator,
+    AuthMiddleware,
+    Unauthorized,
+    authenticator_from_env,
+    current_principal,
+    principal_dependency,
+    unauthorized_response,
+)
 from split_video.editor.cache import ClassificationCache, SilenceCache, WaveformCache
 from split_video.editor.classify import ClassificationRegion
 from split_video.editor.compose import make_media_router as make_compose_media_router
 from split_video.editor.compose import make_router as make_compose_router
+from split_video.editor.context import RequestContext, make_context_dependency
 from split_video.editor.events import EventBus, EventsConfig
 from split_video.editor.events import make_router as make_events_router
 from split_video.editor.job_routes import cancel_job, job_of_kind
@@ -47,8 +60,10 @@ from split_video.editor.schemas import (
     StateParams,
     StateResponse,
     WaveformResponse,
+    WhoAmIOut,
 )
 from split_video.errors import RevisionConflictError
+from split_video.identity import LOCAL_PRINCIPAL, Principal
 from split_video.job_work import analysis_work, export_work
 from split_video.jobs import ANALYSIS, EXPORT, InProcessJobQueue, JobInfo, JobQueue
 from split_video.local_media_store import LocalMediaStore
@@ -58,6 +73,7 @@ from split_video.project import ExportConflictError, ProjectError, plan_export
 from split_video.segments import Segment, compute_segments
 from split_video.silence import SilenceInterval
 from split_video.store import ProjectStore, SavedSegment
+from split_video.store_provider import SharedStoreProvider, StoreProvider
 
 STATIC_DIR = Path(__file__).parent / "static"
 
@@ -124,6 +140,8 @@ def create_app(
     media: MediaStore | None = None,
     jobs: JobQueue | None = None,
     events: EventsConfig | None = None,
+    provider: StoreProvider | None = None,
+    authenticator: Authenticator | None = None,
 ) -> FastAPI:
     """`root` is either a video file to open immediately (the historical
     `split-video edit <file>` behavior, unchanged) or a directory to pick a
@@ -131,11 +149,16 @@ def create_app(
     through `store` and media (sources, outputs, caches) through `media`; by default
     both are local-disk stores rooted at the browse root. Export, analysis and render run as jobs on
     `jobs`, by default an in-process thread-pool queue owned (and shut down) by the app. `events` tunes the
-    `/api/v1/events` stream (poll, keepalive and throttle intervals); the bus is `app.state.events`."""
+    `/api/v1/events` stream (poll, keepalive and throttle intervals); the bus is `app.state.events`.
+
+    Every request is made by a `Principal`, decided by `authenticator` (default: from the environment, see
+    `editor/auth.py`: local single-user mode with no checks unless `SPLIT_VIDEO_TOKEN` is set). Routes get
+    their stores from `provider` for that principal; `store`/`media` are the shorthand for a provider that
+    returns the same two stores to everyone (give one or the other, not both)."""
     # `version` is the API version, not the package version, so the committed
     # openapi.json only changes when the API does.
     own_jobs = jobs is None
-    projects: dict[str, _ProjectState] = {}
+    projects: dict[tuple[str, str], _ProjectState] = {}  # (principal id, source media id)
     projects_lock = threading.Lock()
     jobs = InProcessJobQueue() if jobs is None else jobs
 
@@ -147,6 +170,15 @@ def create_app(
             jobs.shutdown()  # stop running ffmpeg processes with the server
 
     app = FastAPI(title="split-video editor", version="1", lifespan=lifespan)
+    authenticator = authenticator_from_env() if authenticator is None else authenticator
+    app.state.authenticator = authenticator
+
+    @app.exception_handler(Unauthorized)
+    async def unauthorized(request: Request, exc: Unauthorized) -> Response:
+        return unauthorized_response()
+
+    # Under /api/ and /media/ nothing is routed before the caller is authenticated (a no-op in local mode).
+    app.add_middleware(AuthMiddleware, authenticator=authenticator)
 
     @app.exception_handler(RevisionConflictError)
     async def revision_conflict(request: Request, exc: RevisionConflictError) -> Response:
@@ -181,10 +213,16 @@ def create_app(
         return response
 
     browse_root = root.parent if root.is_file() else root
-    if store is None:
-        store = LocalProjectStore(browse_root.resolve())
-    if media is None:
-        media = LocalMediaStore(browse_root.resolve())
+    if provider is not None and (store is not None or media is not None):
+        raise ValueError("give either provider or store/media, not both")
+    if provider is None:
+        provider = SharedStoreProvider(
+            store if store is not None else LocalProjectStore(browse_root.resolve()),
+            media if media is not None else LocalMediaStore(browse_root.resolve()),
+        )
+    app.state.stores = provider
+    request_context = make_context_dependency(provider)
+    context_dependency = Depends(request_context)
     # Registry of per-project state, keyed by canonical source media id and built
     # lazily on first use. The project id a client sends is the video's path
     # relative to the browse root; there is no "currently open" file.
@@ -194,7 +232,9 @@ def create_app(
         with projects_lock:
             return [p.project_id for p in projects.values()]
 
-    bus = EventBus(jobs, store, _open_project_ids, events)
+    # The bus watches one store: the local principal's. Project events of a per-principal provider's other
+    # stores are not reported (a documented limitation; project events carry no owner either).
+    bus = EventBus(jobs, provider.project_store(LOCAL_PRINCIPAL), _open_project_ids, events)
     app.state.events = bus
 
     def _segments_out(segments: list[SavedSegment]) -> list[SegmentOut]:
@@ -220,7 +260,7 @@ def create_app(
     def _silences_out(silences: list[SilenceInterval]) -> list[SilenceIntervalOut]:
         return [SilenceIntervalOut(start=s.start, end=s.end) for s in silences]
 
-    def _resolve(path: str) -> str:
+    def _resolve(media: MediaStore, path: str) -> str:
         try:
             media_id = media.resolve(path)
         except MediaOutsideRootError:
@@ -229,25 +269,30 @@ def create_app(
             raise HTTPException(status_code=404, detail="file not found")
         return media_id
 
-    def _get_project(path: str) -> _ProjectState:
+    def _get_project(ctx: RequestContext, path: str) -> _ProjectState:
         """The state for project `path`, built on first use (probing and the caches)."""
-        source = _resolve(path)
+        media = ctx.media
+        source = _resolve(media, path)
+        key = (ctx.principal.id, source)
         with projects_lock:
-            project = projects.get(source)
+            project = projects.get(key)
         if project is None:
             # The id is the canonical (symlink-resolved) source id,
             # so a symlinked video keeps its project beside the real file.
             built = _build_project_state(source, source, media)  # outside the lock: probes with ffmpeg
             with projects_lock:
-                project = projects.setdefault(source, built)
+                project = projects.setdefault(key, built)
         return project
 
-    def project_dep(path: str = Query(..., description=PROJECT_PATH_DESCRIPTION)) -> _ProjectState:
-        return _get_project(path)
+    def project_dep(
+        path: str = Query(..., description=PROJECT_PATH_DESCRIPTION), ctx: RequestContext = context_dependency
+    ) -> _ProjectState:
+        return _get_project(ctx, path)
 
     project_dependency = Depends(project_dep)
 
-    def _state_response(project: _ProjectState, path: str) -> StateResponse:
+    def _state_response(ctx: RequestContext, project: _ProjectState, path: str) -> StateResponse:
+        store, media = ctx.store, ctx.media
         # A never-saved project has no segments: the frontend's onboarding step proposes them (#16).
         saved = store.load_split_versioned(project.project_id)
         return StateResponse(
@@ -272,9 +317,9 @@ def create_app(
         )
 
     @api.get("/browse", response_model=BrowseResponse)
-    def browse(path: str = "") -> BrowseResponse:
+    def browse(path: str = "", ctx: RequestContext = context_dependency) -> BrowseResponse:
         try:
-            listing = media.list_dir(path)
+            listing = ctx.media.list_dir(path)
         except MediaOutsideRootError:
             raise HTTPException(status_code=400, detail="path escapes the browse root")
         except MediaNotFoundError:
@@ -286,22 +331,25 @@ def create_app(
         )
 
     @api.post("/open", response_model=StateResponse)
-    def open_file(request: OpenRequest) -> StateResponse:
-        return _state_response(_get_project(request.path), request.path)
+    def open_file(request: OpenRequest, ctx: RequestContext = context_dependency) -> StateResponse:
+        return _state_response(ctx, _get_project(ctx, request.path), request.path)
 
     @api.get("/state", response_model=StateResponse)
-    def get_state(path: str = Query(..., description=PROJECT_PATH_DESCRIPTION)) -> StateResponse:
-        return _state_response(_get_project(path), path)
+    def get_state(
+        path: str = Query(..., description=PROJECT_PATH_DESCRIPTION), ctx: RequestContext = context_dependency
+    ) -> StateResponse:
+        return _state_response(ctx, _get_project(ctx, path), path)
 
     @api.post("/project", response_model=StateResponse, responses=WRITE_RESPONSES)
     def save_current_project(
         request: ProjectSaveRequest,
         path: str = Query(..., description=PROJECT_PATH_DESCRIPTION),
         base: int | None = Depends(base_revision),
+        ctx: RequestContext = context_dependency,
     ) -> StateResponse:
         """Replace the project's segments. Send `If-Match` with the revision they were edited from;
         409 `revision_conflict` if the project changed since (the response says its current revision)."""
-        project = _get_project(path)
+        project = _get_project(ctx, path)
         segments = [
             SavedSegment(
                 start=s.start,
@@ -313,12 +361,14 @@ def create_app(
             )
             for s in request.segments
         ]
-        store.save_split(project.project_id, segments, base)
-        return _state_response(project, path)
+        ctx.store.save_split(project.project_id, segments, base)
+        return _state_response(ctx, project, path)
 
     @media_routes.get("/media/source")
-    def get_media(request: Request, project: _ProjectState = project_dependency) -> Response:
-        return media_response(media, project.source, request)
+    def get_media(
+        request: Request, project: _ProjectState = project_dependency, ctx: RequestContext = context_dependency
+    ) -> Response:
+        return media_response(ctx.media, project.source, request)
 
     @api.post("/detect", response_model=DetectResponse)
     def detect(request: DetectRequest, project: _ProjectState = project_dependency) -> DetectResponse:
@@ -349,27 +399,32 @@ def create_app(
         )
 
     @api.post("/analyze", response_model=AnalyzeStartResponse)
-    def analyze(project: _ProjectState = project_dependency) -> AnalyzeStartResponse:
+    def analyze(
+        project: _ProjectState = project_dependency, ctx: RequestContext = context_dependency
+    ) -> AnalyzeStartResponse:
+        media, owner = ctx.media, ctx.principal.id
         cache = project.classification_cache
         if cache.is_analyzed:
             # Already have a result — this session, or loaded from a
             # sidecar cache on disk. Report a job that's already "done"
             # instead of re-decoding audio and rerunning inference.
-            return AnalyzeStartResponse(job_id=jobs.record_done(ANALYSIS, label=media.name(project.source)))
+            return AnalyzeStartResponse(
+                job_id=jobs.record_done(ANALYSIS, label=media.name(project.source), owner=owner)
+            )
         work = analysis_work(media, project.source, cache, cache.get_thresholds())
-        return AnalyzeStartResponse(job_id=jobs.submit(ANALYSIS, work, label=media.name(project.source)))
+        return AnalyzeStartResponse(job_id=jobs.submit(ANALYSIS, work, label=media.name(project.source), owner=owner))
 
     @api.get("/analyze/{job_id}", response_model=AnalyzeStatusResponse)
-    def analyze_status(job_id: str) -> AnalyzeStatusResponse:
-        job = job_of_kind(jobs, job_id, ANALYSIS)
+    def analyze_status(job_id: str, ctx: RequestContext = context_dependency) -> AnalyzeStatusResponse:
+        job = job_of_kind(jobs, job_id, ANALYSIS, ctx.principal)
         return AnalyzeStatusResponse(
             status=_legacy_status(job), completed=int(job.completed), total=int(job.total), error=_legacy_error(job)
         )
 
     @api.post("/analyze/{job_id}/cancel", response_model=AnalyzeStatusResponse)
-    def analyze_cancel(job_id: str) -> AnalyzeStatusResponse:
+    def analyze_cancel(job_id: str, ctx: RequestContext = context_dependency) -> AnalyzeStatusResponse:
         """Stop an analysis job (the same as `POST /jobs/{job_id}/cancel`, answering in the polling shape)."""
-        job = cancel_job(jobs, job_id, ANALYSIS)
+        job = cancel_job(jobs, job_id, ANALYSIS, ctx.principal)
         return AnalyzeStatusResponse(
             status=_legacy_status(job), completed=int(job.completed), total=int(job.total), error=_legacy_error(job)
         )
@@ -403,7 +458,10 @@ def create_app(
         return SegmentsResponse(segments=_segments_out(_to_saved(computed)))
 
     @api.post("/export", response_model=ExportStartResponse)
-    def export(request: ExportRequest, project: _ProjectState = project_dependency) -> ExportStartResponse:
+    def export(
+        request: ExportRequest, project: _ProjectState = project_dependency, ctx: RequestContext = context_dependency
+    ) -> ExportStartResponse:
+        media = ctx.media
         try:
             plan = plan_export(
                 media,
@@ -430,7 +488,9 @@ def create_app(
                 "precise": request.precise,
             },
         )
-        job_id = jobs.submit(EXPORT, work, label=media.name(project.source), total=len(plan.segments))
+        job_id = jobs.submit(
+            EXPORT, work, label=media.name(project.source), total=len(plan.segments), owner=ctx.principal.id
+        )
         return ExportStartResponse(job_id=job_id)
 
     def _export_status(job: JobInfo) -> ExportStatusResponse:
@@ -447,27 +507,56 @@ def create_app(
         )
 
     @api.get("/export/{job_id}", response_model=ExportStatusResponse)
-    def export_status(job_id: str) -> ExportStatusResponse:
-        return _export_status(job_of_kind(jobs, job_id, EXPORT))
+    def export_status(job_id: str, ctx: RequestContext = context_dependency) -> ExportStatusResponse:
+        return _export_status(job_of_kind(jobs, job_id, EXPORT, ctx.principal))
 
     @api.post("/export/{job_id}/cancel", response_model=ExportStatusResponse)
-    def export_cancel(job_id: str) -> ExportStatusResponse:
+    def export_cancel(job_id: str, ctx: RequestContext = context_dependency) -> ExportStatusResponse:
         """Stop an export (the same as `POST /jobs/{job_id}/cancel`): files already written stay, the one in progress is removed."""
-        return _export_status(cancel_job(jobs, job_id, EXPORT))
+        return _export_status(cancel_job(jobs, job_id, EXPORT, ctx.principal))
 
     api.include_router(make_jobs_router(jobs))
-    api.include_router(make_compose_router(media, store, jobs))
-    media_routes.include_router(make_compose_media_router(media))
+    api.include_router(make_compose_router(provider, jobs))
+    media_routes.include_router(make_compose_media_router(provider))
 
-    app.include_router(api, prefix=API_PREFIX)
-    app.include_router(media_routes, prefix=API_PREFIX)
+    # New in v1, no deprecated alias.
+    v1_only = APIRouter()
+
+    @v1_only.get("/whoami", response_model=WhoAmIOut)
+    def whoami(principal: Principal = principal_dependency) -> WhoAmIOut:
+        """The principal this request is made as; use it to check that a token works."""
+        return WhoAmIOut(
+            id=principal.id, name=principal.name, kind=principal.kind, auth_required=authenticator.required
+        )
+
+    # Every router goes in with the principal dependency (belt and braces with `AuthMiddleware`) and the
+    # documented 401, so a route added to any of them is protected without doing anything.
+    guard: dict = {"dependencies": [Depends(current_principal)], "responses": UNAUTHORIZED_RESPONSES}
+    app.include_router(api, prefix=API_PREFIX, **guard)
+    app.include_router(media_routes, prefix=API_PREFIX, **guard)
+    app.include_router(v1_only, prefix=API_PREFIX, **guard)
     # The event stream is new in v1 and has no deprecated alias: it is registered only under /api/v1.
-    app.include_router(make_events_router(bus), prefix=API_PREFIX)
+    app.include_router(make_events_router(bus), prefix=API_PREFIX, **guard)
     # Deprecated aliases for one release: /api/... and /media/... as they were
     # before versioning. Not in the OpenAPI schema; responses carry a
     # `Deprecation` header (set by the middleware above). Registered after /api/v1 so it can't shadow it.
-    app.include_router(api, prefix="/api", include_in_schema=False)
-    app.include_router(media_routes, include_in_schema=False)
+    app.include_router(api, prefix="/api", include_in_schema=False, **guard)
+    app.include_router(media_routes, include_in_schema=False, **guard)
+
+    default_openapi = app.openapi
+
+    def openapi() -> dict:
+        if app.openapi_schema is None:
+            schema = default_openapi()
+            schema.setdefault("components", {}).setdefault("securitySchemes", {})[SECURITY_SCHEME] = {
+                "type": "http",
+                "scheme": "bearer",
+                "description": SECURITY_DESCRIPTION,
+            }
+            schema["security"] = [{SECURITY_SCHEME: []}]
+        return app.openapi_schema
+
+    app.openapi = openapi  # type: ignore[method-assign]
 
     # Mounted last: Starlette matches routes in registration order, and this
     # catch-all static mount must not shadow the /api/* and /media/* routes.

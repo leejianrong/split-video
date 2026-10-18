@@ -13,6 +13,7 @@ from rich.table import Table
 
 from split_video import compose_cli, project_cli
 from split_video.editor.app import create_app
+from split_video.editor.auth import TOKEN_ENV, authenticator_from_env
 from split_video.editor.schemas import StateParams
 from split_video.editor.serve import serve
 from split_video.ffmpeg import (
@@ -209,13 +210,19 @@ def edit(
         min_song_length=min_song_length,
         padding=silence_padding,
     )
-    editor_app = create_app(source, defaults)
+    authenticator = authenticator_from_env()
+    editor_app = create_app(source, defaults, authenticator=authenticator)
 
     url = f"http://{host}:{port}/"
     if source.is_dir():
         console.print(f"Editor running at [bold]{url}[/bold] — pick a video in the browser. Press Ctrl+C to stop.")
     else:
         console.print(f"Editor running at [bold]{url}[/bold] — press Ctrl+C to stop.")
+    if authenticator.required:
+        # Never the token itself.
+        console.print(
+            f"API token authentication is enabled ({TOKEN_ENV} is set): /api/ and /media/ need a bearer token."
+        )
     if not no_browser:
         threading.Timer(1.0, webbrowser.open, args=[url]).start()
 
