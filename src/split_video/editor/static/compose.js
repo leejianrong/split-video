@@ -31,6 +31,10 @@ const els = {
   trDuration: $("transition-duration"),
   trApply: $("transition-apply"),
   renderStatus: $("render-status"),
+  play: $("play-btn"),
+  scrub: $("scrub"),
+  time: $("time-label"),
+  video: $("video"),
 };
 
 let projectName = null;
@@ -105,7 +109,7 @@ function draw() {
     if (i > 0) els.track.appendChild(joinEl(clip));
     els.track.appendChild(clipEl(clip, i, scale));
   });
-  attachPreview(clips);
+  syncTransport();
 }
 
 function joinEl(clip) {
@@ -281,17 +285,118 @@ els.render.addEventListener("click", async () => {
   }
 });
 
-// --- preview (basic: shows the selected or first clip; see SPL-20 for playback) ---
+// --- preview: play the clips back to back -------------------------------------
+//
+// The playhead is a time on the project timeline. Each clip owns the stretch
+// from its own start to the next clip's start, so a crossfade previews as a
+// cut at the point where the rendered video would start blending, and the
+// preview's length matches the render's.
 
-function attachPreview(clips) {
-  const video = $("video");
-  const clip = clips.find((c) => c.id === selectedClipId) || clips[0];
-  const url = `media/file?path=${encodeURIComponent(clip.source)}`;
-  if (!video.src.endsWith(url)) {
-    video.src = url;
-    video.addEventListener("loadedmetadata", () => (video.currentTime = clip.in_point), { once: true });
-  }
+let playhead = 0;
+let playing = false;
+let loadedClipId = null;
+let rafId = null;
+
+function clipSpan(clips, i) {
+  const clip = clips[i];
+  const until = i + 1 < clips.length ? clips[i + 1].start : clip.end;
+  return { from: clip.start, until };
 }
+
+function clipIndexAt(clips, t) {
+  for (let i = 0; i < clips.length; i++) {
+    if (t < clipSpan(clips, i).until - 1e-6) return i;
+  }
+  return clips.length - 1;
+}
+
+function showTime() {
+  els.time.textContent = `${fmt(playhead)} / ${fmt(project ? project.duration : 0)}`;
+  els.scrub.value = playhead;
+}
+
+// Point the player at the clip under `t` and seek to the matching source time.
+function seekTo(t, { thenPlay = false } = {}) {
+  const clips = videoClips();
+  if (!clips.length) return;
+  playhead = Math.min(Math.max(0, t), project.duration);
+  const i = clipIndexAt(clips, playhead);
+  const clip = clips[i];
+  const sourceTime = clip.in_point + (playhead - clip.start);
+  const ready = () => {
+    els.video.currentTime = sourceTime;
+    if (thenPlay) els.video.play().catch(() => setPlaying(false));
+  };
+  if (loadedClipId === clip.id && els.video.readyState >= 1) {
+    ready();
+  } else {
+    loadedClipId = clip.id;
+    const url = `media/file?path=${encodeURIComponent(clip.source)}`;
+    els.video.addEventListener("loadedmetadata", ready, { once: true });
+    els.video.src = url;
+  }
+  showTime();
+}
+
+function tick() {
+  const clips = videoClips();
+  if (!playing || !clips.length) return;
+  const i = clipIndexAt(clips, playhead);
+  const clip = clips[i];
+  const span = clipSpan(clips, i);
+  if (loadedClipId === clip.id && !els.video.seeking && els.video.readyState >= 2) {
+    playhead = clip.start + (els.video.currentTime - clip.in_point);
+    if (playhead >= span.until - 0.02) {
+      if (i + 1 < clips.length) {
+        seekTo(span.until, { thenPlay: true });
+      } else {
+        setPlaying(false);
+        playhead = project.duration;
+        els.video.pause();
+      }
+    }
+    showTime();
+  }
+  rafId = requestAnimationFrame(tick);
+}
+
+function setPlaying(on) {
+  playing = on;
+  els.play.textContent = on ? "Pause" : "Play";
+  cancelAnimationFrame(rafId);
+  if (on) rafId = requestAnimationFrame(tick);
+  else els.video.pause();
+}
+
+function togglePlay() {
+  if (!videoClips().length) return;
+  if (playing) return setPlaying(false);
+  if (playhead >= project.duration - 0.05) playhead = 0;
+  setPlaying(true);
+  seekTo(playhead, { thenPlay: true });
+}
+
+// Called after every redraw: keep the scrubber's range and playhead valid, and
+// show the frame at the playhead if the clip under it changed (an edit).
+function syncTransport() {
+  const clips = videoClips();
+  els.scrub.max = project.duration;
+  els.play.disabled = !clips.length;
+  els.scrub.disabled = !clips.length;
+  playhead = Math.min(playhead, project.duration);
+  showTime();
+  const clip = clips[clipIndexAt(clips, playhead)];
+  if (clip && !playing && (loadedClipId !== clip.id || selectedClipId === null)) seekTo(playhead);
+}
+
+els.play.addEventListener("click", togglePlay);
+els.scrub.addEventListener("input", () => seekTo(Number(els.scrub.value), { thenPlay: playing }));
+document.addEventListener("keydown", (ev) => {
+  if (ev.code === "Space" && !["INPUT", "SELECT", "TEXTAREA", "BUTTON"].includes(ev.target.tagName)) {
+    ev.preventDefault();
+    togglePlay();
+  }
+});
 
 // --- boot --------------------------------------------------------------------------
 
