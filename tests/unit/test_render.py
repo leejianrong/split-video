@@ -70,3 +70,46 @@ def test_no_main_clips_renders_over_a_black_canvas():
     p, _ = ops.add_clip(p, overlay.id, "pip.mp4", 3.0, start=1.0)
     plan = build_plan(p, _infos(p), 320, 240)
     assert "color=c=black" in plan.graph and "vbase" not in plan.graph and "asilent" in plan.graph
+
+
+def _audio_graph(p):
+    return build_plan(p, _infos(p), 320, 240)
+
+
+def test_main_clip_gain_and_mute_are_applied_before_the_join():
+    p, tid = _main([5, 4])
+    a, b = p.tracks[0].clips
+    p = ops.set_clip_properties(p, a.id, gain=2.0)
+    p = ops.set_clip_properties(p, b.id, muted=True)
+    graph = _audio_graph(p).graph
+    assert "volume=2[a0]" in graph and "volume=0[a1]" in graph
+
+
+def test_audio_track_clip_is_delayed_scaled_and_mixed():
+    p, tid = _main([10])
+    p, music = ops.add_track(p, "audio")
+    p, clip = ops.add_clip(p, music.id, "m.wav", 8.0, start=2.5)
+    p = ops.set_clip_properties(p, clip.id, gain=0.5)
+    plan = _audio_graph(p)
+    assert "volume=0.5,adelay=2500|2500[ax0]" in plan.graph
+    assert "[a0][ax0]amix=inputs=2:normalize=0" in plan.graph and plan.audio_label == "amixed"
+
+
+def test_muted_and_audio_less_clips_add_nothing_to_the_mix():
+    p, tid = _main([10])
+    p, music = ops.add_track(p, "audio")
+    p, a = ops.add_clip(p, music.id, "m1.wav", 3.0, start=0.0)
+    p, b = ops.add_clip(p, music.id, "m2.wav", 3.0, start=4.0)
+    p = ops.set_clip_properties(p, a.id, muted=True)
+    infos = _infos(p)
+    infos["m2.wav"] = MediaInfo(3, None, None, False)
+    plan = build_plan(p, infos, 320, 240)
+    assert "amix" not in plan.graph and plan.audio_label == "a0"
+
+
+def test_overlay_video_clip_sound_is_mixed_in():
+    p, tid = _main([10])
+    p, overlay = ops.add_track(p, "video")
+    p, _ = ops.add_clip(p, overlay.id, "pip.mp4", 3.0, start=1.0)
+    plan = _audio_graph(p)
+    assert "[1:a]" in plan.graph and "adelay=1000|1000[ax0]" in plan.graph

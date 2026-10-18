@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any
 
 from split_video import timeline, timeline_ops
-from split_video.ffmpeg import ProbeError, probe_media
+from split_video.ffmpeg import MediaInfo, ProbeError, probe_media
 from split_video.render import render
 from split_video.timeline import (
     OutputExistsError,
@@ -47,8 +47,8 @@ def source_duration(root: Path, source: str) -> float | None:
         return None
 
 
-def _probe_new_source(root: Path, rel: str) -> tuple[str, float]:
-    """A root-relative source string and its duration, for a path the caller named."""
+def _probe_new_source(root: Path, rel: str) -> tuple[str, MediaInfo]:
+    """A root-relative source string and its media info, for a path the caller named."""
     root = root.resolve()
     path = (root / rel.lstrip("/")).resolve()
     if path != root and root not in path.parents:
@@ -56,7 +56,7 @@ def _probe_new_source(root: Path, rel: str) -> tuple[str, float]:
     if not path.is_file():
         raise SourceNotFoundError(f"file not found: {rel}")
     try:
-        return timeline.relative_source(root, path), probe_media(path).duration
+        return timeline.relative_source(root, path), probe_media(path)
     except ProbeError as exc:
         raise TimelineError(str(exc)) from None
 
@@ -115,20 +115,27 @@ def add_clip(
     *,
     track_id: str | None = None,
     index: int | None = None,
+    start: float | None = None,
     in_point: float = 0.0,
     out_point: float | None = None,
 ) -> Project:
-    source, duration = _probe_new_source(root, path)
+    source, info = _probe_new_source(root, path)
 
     def change(project: Project) -> Project:
+        target = timeline_ops.find_track(project, track_id) if track_id else video_track(project)
+        if target.kind == "video" and info.width is None:
+            raise TimelineError(f"{path} has no video stream, so it can't go on a video track")
+        if target.kind == "audio" and not info.has_audio:
+            raise TimelineError(f"{path} has no audio stream, so it can't go on an audio track")
         new, _ = timeline_ops.add_clip(
             project,
-            track_id or video_track(project).id,
+            target.id,
             source,
-            duration,
+            info.duration,
             in_point=in_point,
             out_point=out_point,
             index=index,
+            start=start,
         )
         return new
 
