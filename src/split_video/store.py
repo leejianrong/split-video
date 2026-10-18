@@ -28,8 +28,8 @@ from __future__ import annotations
 import copy
 import logging
 import threading
-from collections.abc import Callable
-from dataclasses import dataclass, replace
+from collections.abc import Callable, Iterable
+from dataclasses import dataclass, field, replace
 from typing import Generic, Literal, Protocol, TypeVar, runtime_checkable
 
 from split_video import timeline
@@ -73,6 +73,9 @@ class RevisionChange:
     kind: Literal["split", "timeline"]
     project_id: str  # the video's id for a split project, the name for a timeline
     revision: int  # the new revision
+    # The store instance that wrote it, so a listener can tell its own store's writes from another
+    # instance's in the same process (SPL-37 labels the former `local`, the latter `external`).
+    origin: object = field(default=None, compare=False, repr=False)
 
 
 RevisionListener = Callable[[RevisionChange], None]
@@ -181,6 +184,14 @@ class ProjectStore(Protocol):
         is taken. Atomic with respect to other creators."""
         ...
 
+    def peek_revisions(self, split_ids: Iterable[str] = ()) -> dict[tuple[str, str], int]:
+        """Cheaply read the current revision of every timeline project and of each split project in
+        `split_ids`, keyed `("timeline", name)` / `("split", project_id)`. A split project with
+        nothing saved is revision 0; an id the store can't use is left out. Never raises for
+        damaged files. This is how a server notices edits made by other processes (the CLI, the MCP
+        server), which `announce_revision` can't tell it about; it takes no write lock."""
+        ...
+
 
 class InMemoryProjectStore:
     """A `ProjectStore` that keeps everything in dicts; nothing touches disk."""
@@ -204,7 +215,7 @@ class InMemoryProjectStore:
     def save_split(self, project_id: str, segments: list[SavedSegment], base_revision: int | None = None) -> int:
         with self._lock:
             revision = self._commit_split(project_id, list(segments), base_revision)
-        announce_revision(RevisionChange("split", project_id, revision))
+        announce_revision(RevisionChange("split", project_id, revision, self))
         return revision
 
     def update_split(
@@ -219,7 +230,7 @@ class InMemoryProjectStore:
             check_base_revision("split project", project_id, current, base_revision)
             segments = list(change(None if found is None else list(found[0])))
             revision = self._commit_split(project_id, segments, None)
-        announce_revision(RevisionChange("split", project_id, revision))
+        announce_revision(RevisionChange("split", project_id, revision, self))
         return Versioned(segments, revision)
 
     def _commit_split(self, project_id: str, segments: list[SavedSegment], base_revision: int | None) -> int:
@@ -257,7 +268,7 @@ class InMemoryProjectStore:
         timeline.validate_name(name)
         with self._lock:
             revision = self._commit_timeline(name, project, base_revision)
-        announce_revision(RevisionChange("timeline", name, revision))
+        announce_revision(RevisionChange("timeline", name, revision, self))
         return revision
 
     def update_timeline(
@@ -271,7 +282,7 @@ class InMemoryProjectStore:
             check_base_revision("timeline project", name, found[1], base_revision)
             new = change(replace(copy.deepcopy(found[0]), revision=found[1]))
             revision = self._commit_timeline(name, new, None)
-        announce_revision(RevisionChange("timeline", name, revision))
+        announce_revision(RevisionChange("timeline", name, revision, self))
         return replace(new, revision=revision)
 
     def _commit_timeline(self, name: str, project: Project, base_revision: int | None) -> int:
@@ -288,5 +299,13 @@ class InMemoryProjectStore:
                 raise ProjectExistsError(f"project {name!r} already exists")
             project = timeline.empty_project()
             self._timelines[name] = (project, 0)
-        announce_revision(RevisionChange("timeline", name, 0))
+        announce_revision(RevisionChange("timeline", name, 0, self))
         return project
+
+    def peek_revisions(self, split_ids: Iterable[str] = ()) -> dict[tuple[str, str], int]:
+        with self._lock:
+            found: dict[tuple[str, str], int] = {("timeline", n): rev for n, (_, rev) in self._timelines.items()}
+            for project_id in split_ids:
+                split = self._splits.get(project_id)
+                found[("split", project_id)] = 0 if split is None else split[1]
+        return found

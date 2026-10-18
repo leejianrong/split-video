@@ -8,13 +8,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import typer
-import uvicorn
 from rich.console import Console
 from rich.table import Table
 
 from split_video import compose_cli, project_cli
 from split_video.editor.app import create_app
 from split_video.editor.schemas import StateParams
+from split_video.editor.serve import serve
 from split_video.ffmpeg import (
     ExtractError,
     FfmpegNotFoundError,
@@ -219,7 +219,7 @@ def edit(
     if not no_browser:
         threading.Timer(1.0, webbrowser.open, args=[url]).start()
 
-    uvicorn.run(editor_app, host=host, port=port, log_level="warning")
+    serve(editor_app, host, port)
 
 
 @app.command("mcp")
