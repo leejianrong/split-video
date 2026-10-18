@@ -14,6 +14,7 @@ in list order: a later video track draws over an earlier one.
 
 from __future__ import annotations
 
+import re
 from dataclasses import replace
 
 from split_video.timeline import (
@@ -25,6 +26,8 @@ from split_video.timeline import (
     Track,
     new_id,
 )
+
+_COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 
 # Shortest clip the editor allows, so a trim can't produce a zero-length clip.
 MIN_CLIP = 0.1
@@ -253,6 +256,67 @@ def set_clip_properties(project: Project, clip_id: str, **properties: float | bo
     track, i = find_clip(project, clip_id)
     clips = list(track.clips)
     clips[i] = replace(clips[i], **changes)
+    return _with_clips(project, track, clips)
+
+
+def add_text_clip(
+    project: Project,
+    track_id: str,
+    text: str,
+    duration: float,
+    *,
+    start: float = 0.0,
+    font_size: float = 0.08,
+    color: str = "#ffffff",
+    x: float = 0.5,
+    y: float = 0.85,
+) -> tuple[Project, Clip]:
+    """Put a text title on a free video track, drawn for `duration` seconds from `start`."""
+    track = find_track(project, track_id)
+    if track.kind != "video" or track.magnetic:
+        raise TimelineError("text goes on an overlay video track, not the main or an audio track")
+    if duration < MIN_CLIP:
+        raise TimelineError(f"a clip must be at least {MIN_CLIP:g}s long")
+    clip = Clip(id=new_id(), source="", in_point=0.0, out_point=duration, start=start, kind="text", x=x, y=y)
+    clip = _text_properties(clip, text=text, font_size=font_size, color=color)
+    new = _with_clips(project, track, [*track.clips, clip])
+    return new, find_clip_in(new, clip.id)
+
+
+def _text_properties(
+    clip: Clip, *, text: str | None = None, font_size: float | None = None, color: str | None = None
+) -> Clip:
+    changes: dict[str, str | float] = {}
+    if text is not None:
+        if not text.strip():
+            raise TimelineError("text can't be empty")
+        changes["text"] = text
+    if font_size is not None:
+        if not 0.01 <= font_size <= 0.5:
+            raise TimelineError("font_size must be between 0.01 and 0.5 (a fraction of the frame height)")
+        changes["font_size"] = float(font_size)
+    if color is not None:
+        if not _COLOR_RE.match(color):
+            raise TimelineError("color must look like #rrggbb")
+        changes["color"] = color
+    return replace(clip, **changes)
+
+
+def set_text_properties(
+    project: Project,
+    clip_id: str,
+    *,
+    text: str | None = None,
+    font_size: float | None = None,
+    color: str | None = None,
+) -> Project:
+    track, i = find_clip(project, clip_id)
+    if track.clips[i].kind != "text":
+        raise TimelineError("only text clips have text properties")
+    if text is None and font_size is None and color is None:
+        raise TimelineError("no properties given")
+    clips = list(track.clips)
+    clips[i] = _text_properties(clips[i], text=text, font_size=font_size, color=color)
     return _with_clips(project, track, clips)
 
 
