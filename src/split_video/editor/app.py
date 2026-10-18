@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import threading
+from dataclasses import dataclass, field
 from pathlib import Path
+from urllib.parse import quote
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.staticfiles import StaticFiles
 from starlette.responses import FileResponse
 
@@ -27,6 +29,7 @@ from split_video.editor.project_store import SavedSegment
 from split_video.editor.project_store import load as load_project
 from split_video.editor.project_store import save as save_project
 from split_video.editor.schemas import (
+    PROJECT_PATH_DESCRIPTION,
     AnalyzeStartResponse,
     AnalyzeStatusResponse,
     BrowseEntryOut,
@@ -58,33 +61,40 @@ from split_video.silence import SilenceInterval
 STATIC_DIR = Path(__file__).parent / "static"
 
 
-class _Session:
-    """The one file currently open for editing, if any.
+@dataclass
+class _ProjectState:
+    """Everything the editor holds in memory for one source video.
 
-    A local single-user tool only ever edits one file at a time, so this is
-    deliberately just mutable state on the app rather than a per-client
-    session store — `/api/open` swaps it out, everything else reads it.
+    One instance per resolved source path, owned by the app's project
+    registry (see `create_app`); nothing here is shared between projects.
     """
 
-    def __init__(self) -> None:
-        self.lock = threading.Lock()
-        self.source: Path | None = None
-        self.total_duration: float = 0.0
-        self.cache: SilenceCache | None = None
-        self.waveform_cache: WaveformCache | None = None
-        self.classification_cache: ClassificationCache | None = None
-        self.initial_silences: list[SilenceInterval] = []
-        # SavedSegment (not the plain core `Segment`) since these carry the
-        # editor-only label/color/included/export_name metadata from #19/#18
-        # alongside start/end — see project_store.py.
-        self.initial_segments: list[SavedSegment] = []
-        # Whether `initial_segments` came from a saved project file — see
-        # #14. A fresh (never-saved) file opens with an empty segment list
-        # (the frontend's onboarding step — silence detection and/or audio
-        # analysis, both on demand — is what actually proposes splits; see
-        # #16 for why that used to happen eagerly on open instead, and
-        # blocked the server on a long recording's silence scan).
-        self.resumed = False
+    source: Path
+    total_duration: float
+    cache: SilenceCache
+    waveform_cache: WaveformCache
+    classification_cache: ClassificationCache
+    # SavedSegment (not the plain core `Segment`) since these carry the
+    # editor-only label/color/included/export_name metadata alongside
+    # start/end — see project_store.py. A never-saved file starts empty; the
+    # frontend's onboarding step is what proposes splits (see #16).
+    initial_segments: list[SavedSegment]
+    # Whether `initial_segments` came from a saved project file (see #14).
+    resumed: bool
+    lock: threading.Lock = field(default_factory=threading.Lock)
+
+
+def _build_project_state(source: Path) -> _ProjectState:
+    saved = load_project(source)
+    return _ProjectState(
+        source=source,
+        total_duration=probe_duration(source),
+        cache=SilenceCache(source),
+        waveform_cache=WaveformCache(source),
+        classification_cache=ClassificationCache(source),
+        initial_segments=saved if saved is not None else [],
+        resumed=saved is not None,
+    )
 
 
 def create_app(root: Path, defaults: StateParams) -> FastAPI:
@@ -114,7 +124,12 @@ def create_app(root: Path, defaults: StateParams) -> FastAPI:
     browse_root = root.parent if root.is_file() else root
     job_store = JobStore()
     analysis_job_store = AnalysisJobStore()
-    session = _Session()
+    # Registry of per-project state, keyed by resolved source path and built
+    # lazily on first use. The project id a client sends is the video's path
+    # relative to the browse root; there is no "currently open" file.
+    projects: dict[Path, _ProjectState] = {}
+    projects_lock = threading.Lock()
+    default_project_path = root.name if root.is_file() else None
 
     def _segments_out(segments: list[SavedSegment]) -> list[SegmentOut]:
         return [
@@ -139,48 +154,58 @@ def create_app(root: Path, defaults: StateParams) -> FastAPI:
     def _silences_out(silences: list[SilenceInterval]) -> list[SilenceIntervalOut]:
         return [SilenceIntervalOut(start=s.start, end=s.end) for s in silences]
 
-    def _require_open() -> Path:
-        if session.source is None:
-            raise HTTPException(status_code=409, detail="no file is open; call /api/open first")
-        return session.source
+    def _resolve(path: str) -> Path:
+        try:
+            resolved = resolve_within_root(browse_root, path)
+        except PathEscapesRootError:
+            raise HTTPException(status_code=400, detail="path escapes the browse root")
+        if not resolved.is_file():
+            raise HTTPException(status_code=404, detail="file not found")
+        return resolved
 
-    def _open(source: Path) -> None:
-        session.source = source
-        session.total_duration = probe_duration(source)
-        session.cache = SilenceCache(source)
-        session.waveform_cache = WaveformCache(source)
-        session.classification_cache = ClassificationCache(source)
-        session.initial_silences = []
+    def _get_project(path: str, refresh: bool = False) -> _ProjectState:
+        """The state for project `path`, built on first use. `refresh`
+        re-reads the saved project sidecar (what `/api/open` means) while
+        keeping the already-built caches."""
+        source = _resolve(path)
+        with projects_lock:
+            project = projects.get(source)
+        if project is None:
+            built = _build_project_state(source)  # outside the lock: probes with ffmpeg
+            with projects_lock:
+                project = projects.setdefault(source, built)
+        if refresh:
+            saved = load_project(source)
+            with project.lock:
+                project.initial_segments = saved if saved is not None else []
+                project.resumed = saved is not None
+        return project
 
-        saved = load_project(source)
-        if saved is not None:
-            session.initial_segments = saved
-            session.resumed = True
-        else:
-            session.initial_segments = []
-            session.resumed = False
+    def project_dep(path: str = Query(..., description=PROJECT_PATH_DESCRIPTION)) -> _ProjectState:
+        return _get_project(path)
 
-    def _state_response() -> StateResponse:
-        source = _require_open()
-        with session.lock:
+    project_dependency = Depends(project_dep)
+
+    def _state_response(project: _ProjectState, path: str) -> StateResponse:
+        with project.lock:
             return StateResponse(
-                filename=source.name,
-                duration=session.total_duration,
-                video_url="/media/source",
+                filename=project.source.name,
+                duration=project.total_duration,
+                video_url=f"/media/source?path={quote(path, safe='/')}",
                 params=defaults,
-                silences=_silences_out(session.initial_silences),
-                segments=_segments_out(session.initial_segments),
-                resumed=session.resumed,
+                silences=[],
+                segments=_segments_out(project.initial_segments),
+                resumed=project.resumed,
             )
-
-    if root.is_file():
-        _open(root)
 
     @app.get("/api/session", response_model=SessionResponse)
     def get_session() -> SessionResponse:
+        # No per-server "open file": this only tells the frontend which file
+        # (if any) the server was started on, so it can open it directly.
         return SessionResponse(
-            file_open=session.source is not None,
-            filename=session.source.name if session.source is not None else None,
+            file_open=default_project_path is not None,
+            filename=default_project_path,
+            path=default_project_path,
         )
 
     @app.get("/api/browse", response_model=BrowseResponse)
@@ -199,22 +224,17 @@ def create_app(root: Path, defaults: StateParams) -> FastAPI:
 
     @app.post("/api/open", response_model=StateResponse)
     def open_file(request: OpenRequest) -> StateResponse:
-        try:
-            resolved = resolve_within_root(browse_root, request.path)
-        except PathEscapesRootError:
-            raise HTTPException(status_code=400, detail="path escapes the browse root")
-        if not resolved.is_file():
-            raise HTTPException(status_code=404, detail="file not found")
-        _open(resolved)
-        return _state_response()
+        return _state_response(_get_project(request.path, refresh=True), request.path)
 
     @app.get("/api/state", response_model=StateResponse)
-    def get_state() -> StateResponse:
-        return _state_response()
+    def get_state(path: str = Query(..., description=PROJECT_PATH_DESCRIPTION)) -> StateResponse:
+        return _state_response(_get_project(path), path)
 
     @app.post("/api/project", response_model=StateResponse)
-    def save_current_project(request: ProjectSaveRequest) -> StateResponse:
-        source = _require_open()
+    def save_current_project(
+        request: ProjectSaveRequest, path: str = Query(..., description=PROJECT_PATH_DESCRIPTION)
+    ) -> StateResponse:
+        project = _get_project(path)
         segments = [
             SavedSegment(
                 start=s.start,
@@ -226,26 +246,24 @@ def create_app(root: Path, defaults: StateParams) -> FastAPI:
             )
             for s in request.segments
         ]
-        save_project(source, segments)
-        with session.lock:
-            session.initial_segments = segments
-            session.resumed = True
-        return _state_response()
+        save_project(project.source, segments)
+        with project.lock:
+            project.initial_segments = segments
+            project.resumed = True
+        return _state_response(project, path)
 
     @app.get("/media/source")
-    def get_media() -> FileResponse:
-        return FileResponse(_require_open())
+    def get_media(project: _ProjectState = project_dependency) -> FileResponse:
+        return FileResponse(project.source)
 
     @app.post("/api/detect", response_model=DetectResponse)
-    def detect(request: DetectRequest) -> DetectResponse:
-        _require_open()
-        silences = session.cache.get_raw_silences(request.silence_threshold)
+    def detect(request: DetectRequest, project: _ProjectState = project_dependency) -> DetectResponse:
+        silences = project.cache.get_raw_silences(request.silence_threshold)
         return DetectResponse(silences=_silences_out(silences))
 
     @app.get("/api/waveform", response_model=WaveformResponse)
-    def waveform() -> WaveformResponse:
-        _require_open()
-        peaks = session.waveform_cache.get_peaks()
+    def waveform(project: _ProjectState = project_dependency) -> WaveformResponse:
+        peaks = project.waveform_cache.get_peaks()
         return WaveformResponse(buckets=peaks.buckets)
 
     def _region_out(region: ClassificationRegion) -> ClassificationRegionOut:
@@ -267,9 +285,8 @@ def create_app(root: Path, defaults: StateParams) -> FastAPI:
         )
 
     @app.post("/api/analyze", response_model=AnalyzeStartResponse)
-    def analyze() -> AnalyzeStartResponse:
-        source = _require_open()
-        cache = session.classification_cache
+    def analyze(project: _ProjectState = project_dependency) -> AnalyzeStartResponse:
+        cache = project.classification_cache
         if cache.is_analyzed:
             # Already have a result — this session, or loaded from a
             # sidecar cache on disk. Report a job that's already "done"
@@ -277,7 +294,7 @@ def create_app(root: Path, defaults: StateParams) -> FastAPI:
             job_id, _ = analysis_job_store.create_done(total=0)
             return AnalyzeStartResponse(job_id=job_id)
         thresholds = cache.get_thresholds()
-        job_id = start_audio_analysis(analysis_job_store, source, cache, thresholds)
+        job_id = start_audio_analysis(analysis_job_store, project.source, cache, thresholds)
         return AnalyzeStartResponse(job_id=job_id)
 
     @app.get("/api/analyze/{job_id}", response_model=AnalyzeStatusResponse)
@@ -289,15 +306,15 @@ def create_app(root: Path, defaults: StateParams) -> FastAPI:
             return AnalyzeStatusResponse(status=job.status, completed=job.completed, total=job.total, error=job.error)
 
     @app.get("/api/classification", response_model=ClassificationResponse)
-    def classification() -> ClassificationResponse:
-        _require_open()
-        cache = session.classification_cache
+    def classification(project: _ProjectState = project_dependency) -> ClassificationResponse:
+        cache = project.classification_cache
         return _classification_out(cache, cache.is_analyzed)
 
     @app.post("/api/classification/thresholds", response_model=ClassificationResponse)
-    def rethreshold_classification(request: RethresholdRequest) -> ClassificationResponse:
-        _require_open()
-        cache = session.classification_cache
+    def rethreshold_classification(
+        request: RethresholdRequest, project: _ProjectState = project_dependency
+    ) -> ClassificationResponse:
+        cache = project.classification_cache
         try:
             cache.rethreshold(request.thresholds)
         except RuntimeError as exc:
@@ -317,11 +334,10 @@ def create_app(root: Path, defaults: StateParams) -> FastAPI:
         return SegmentsResponse(segments=_segments_out(_to_saved(computed)))
 
     @app.post("/api/export", response_model=ExportStartResponse)
-    def export(request: ExportRequest) -> ExportStartResponse:
-        source = _require_open()
+    def export(request: ExportRequest, project: _ProjectState = project_dependency) -> ExportStartResponse:
         try:
             plan = plan_export(
-                source,
+                project.source,
                 [(s.start, s.end, s.name) for s in request.segments],
                 output_format=request.output_format,
                 overwrite=request.overwrite,

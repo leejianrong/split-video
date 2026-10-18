@@ -28,6 +28,20 @@ export async function requestJSON(path, options = {}) {
   return res.json();
 }
 
+// The project id (the video's path relative to the browse root) every
+// project-scoped call carries as a `path` query parameter. It lives only in
+// this page's memory, so two tabs can edit two files independently.
+let currentPath = null;
+
+export function setProjectPath(path) {
+  currentPath = path;
+}
+
+function projectUrl(base) {
+  if (currentPath === null) throw new Error("no project selected");
+  return `${base}?path=${encodeURIComponent(currentPath)}`;
+}
+
 export async function getSession() {
   return requestJSON("api/session");
 }
@@ -37,6 +51,7 @@ export async function browse(path = "") {
 }
 
 export async function openFile(path) {
+  setProjectPath(path);
   return requestJSON("api/open", {
     method: "POST",
     body: JSON.stringify({ path }),
@@ -44,11 +59,11 @@ export async function openFile(path) {
 }
 
 export async function getState() {
-  return requestJSON("api/state");
+  return requestJSON(projectUrl("api/state"));
 }
 
 export async function saveProject(segments) {
-  return requestJSON("api/project", {
+  return requestJSON(projectUrl("api/project"), {
     method: "POST",
     body: JSON.stringify({
       segments: segments.map((s) => ({
@@ -64,14 +79,14 @@ export async function saveProject(segments) {
 }
 
 export async function detectSilence(silenceThreshold) {
-  return requestJSON("api/detect", {
+  return requestJSON(projectUrl("api/detect"), {
     method: "POST",
     body: JSON.stringify({ silence_threshold: silenceThreshold }),
   });
 }
 
 export async function getWaveform() {
-  return requestJSON("api/waveform");
+  return requestJSON(projectUrl("api/waveform"));
 }
 
 // Only one segments recompute should ever be in flight: a new call aborts
@@ -103,7 +118,7 @@ export async function computeSegments({ silences, duration, minSilenceDuration, 
 }
 
 export async function startExport({ segments, precise, outputFormat, overwrite, manifest }) {
-  return requestJSON("api/export", {
+  return requestJSON(projectUrl("api/export"), {
     method: "POST",
     body: JSON.stringify({
       segments,
@@ -120,7 +135,7 @@ export async function getExportStatus(jobId) {
 }
 
 export async function startAnalysis() {
-  return requestJSON("api/analyze", { method: "POST" });
+  return requestJSON(projectUrl("api/analyze"), { method: "POST" });
 }
 
 export async function getAnalysisStatus(jobId) {
@@ -128,11 +143,11 @@ export async function getAnalysisStatus(jobId) {
 }
 
 export async function getClassification() {
-  return requestJSON("api/classification");
+  return requestJSON(projectUrl("api/classification"));
 }
 
 export async function setClassificationThresholds(thresholds) {
-  return requestJSON("api/classification/thresholds", {
+  return requestJSON(projectUrl("api/classification/thresholds"), {
     method: "POST",
     body: JSON.stringify({ thresholds }),
   });

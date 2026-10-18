@@ -73,6 +73,7 @@ async function main() {
     return;
   }
 
+  api.setProjectPath(session.path);
   filePicker.classList.add("hidden");
   appMain.classList.remove("hidden");
   await bootEditor();

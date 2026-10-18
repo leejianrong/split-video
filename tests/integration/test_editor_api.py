@@ -17,7 +17,13 @@ def _client(source):
     return TestClient(create_app(source, DEFAULTS))
 
 
-def _detect_segments(client, duration, **overrides):
+def _q(source):
+    """Query params identifying the project (the file name, relative to the
+    browse root, which is the clip's directory in these tests)."""
+    return {"path": source.name}
+
+
+def _detect_segments(client, source, duration, **overrides):
     """Runs the same silence-detect + compute-segments pair the editor's
     onboarding step (see #14/#19's follow-up) calls on demand — nothing
     happens automatically on open any more (see #16: it used to, and that's
@@ -29,7 +35,9 @@ def _detect_segments(client, duration, **overrides):
         "padding": DEFAULTS.padding,
         **overrides,
     }
-    silences = client.post("/api/detect", json={"silence_threshold": params["silence_threshold"]}).json()["silences"]
+    silences = client.post(
+        "/api/detect", params=_q(source), json={"silence_threshold": params["silence_threshold"]}
+    ).json()["silences"]
     response = client.post(
         "/api/segments",
         json={
@@ -45,7 +53,7 @@ def _detect_segments(client, duration, **overrides):
 
 def test_state_returns_no_segments_until_something_proposes_them(three_songs_clip):
     client = _client(three_songs_clip)
-    response = client.get("/api/state")
+    response = client.get("/api/state", params=_q(three_songs_clip))
     assert response.status_code == 200
     body = response.json()
     assert body["filename"] == three_songs_clip.name
@@ -69,18 +77,18 @@ def test_detect_only_calls_ffmpeg_once_per_distinct_threshold(three_songs_clip, 
     assert call_count["n"] == 0  # nothing runs until explicitly requested
 
     for _ in range(3):
-        response = client.post("/api/detect", json={"silence_threshold": -35.0})
+        response = client.post("/api/detect", params=_q(three_songs_clip), json={"silence_threshold": -35.0})
         assert response.status_code == 200
     assert call_count["n"] == 1  # repeats with the same threshold are cache hits
 
-    response = client.post("/api/detect", json={"silence_threshold": -40.0})
+    response = client.post("/api/detect", params=_q(three_songs_clip), json={"silence_threshold": -40.0})
     assert response.status_code == 200
     assert call_count["n"] == 2  # a new threshold is the only thing that re-invokes ffmpeg
 
 
 def test_waveform_returns_buckets_spanning_the_clip(three_songs_clip):
     client = _client(three_songs_clip)
-    response = client.get("/api/waveform")
+    response = client.get("/api/waveform", params=_q(three_songs_clip))
     assert response.status_code == 200
     buckets = response.json()["buckets"]
     assert len(buckets) > 0
@@ -102,20 +110,34 @@ def test_waveform_only_decodes_audio_once(three_songs_clip, monkeypatch):
     assert call_count["n"] == 0  # not computed eagerly on open
 
     for _ in range(3):
-        response = client.get("/api/waveform")
+        response = client.get("/api/waveform", params=_q(three_songs_clip))
         assert response.status_code == 200
     assert call_count["n"] == 1  # repeats are cache hits
 
 
-def test_waveform_before_open_is_409(three_songs_clip):
+def test_project_endpoints_require_the_path_param(three_songs_clip):
     client = TestClient(create_app(three_songs_clip.parent, DEFAULTS))
-    response = client.get("/api/waveform")
-    assert response.status_code == 409
+    for method, url in [
+        ("get", "/api/state"),
+        ("get", "/api/waveform"),
+        ("get", "/api/classification"),
+        ("get", "/media/source"),
+    ]:
+        assert getattr(client, method)(url).status_code == 422, url
+
+
+def test_project_endpoints_reject_unknown_and_escaping_paths(three_songs_clip):
+    client = TestClient(create_app(three_songs_clip.parent, DEFAULTS))
+    for url in ["/api/state", "/api/waveform", "/api/classification", "/media/source"]:
+        assert client.get(url, params={"path": "nope.mp4"}).status_code == 404, url
+        assert client.get(url, params={"path": "../x.mp4"}).status_code == 400, url
+    assert client.post("/api/project", params={"path": "nope.mp4"}, json={"segments": []}).status_code == 404
+    assert client.post("/api/analyze", params={"path": "../x.mp4"}).status_code == 400
 
 
 def test_classification_before_analyze_reports_not_analyzed(three_songs_clip):
     client = _client(three_songs_clip)
-    response = client.get("/api/classification")
+    response = client.get("/api/classification", params=_q(three_songs_clip))
     assert response.status_code == 200
     body = response.json()
     assert body["analyzed"] is False
@@ -124,15 +146,11 @@ def test_classification_before_analyze_reports_not_analyzed(three_songs_clip):
     assert set(body["thresholds"]) == {"music", "singing", "speech", "applause_crowd", "laughter", "silence_other"}
 
 
-def test_classification_before_open_is_409(three_songs_clip):
-    client = TestClient(create_app(three_songs_clip.parent, DEFAULTS))
-    response = client.get("/api/classification")
-    assert response.status_code == 409
-
-
 def test_rethreshold_before_analyze_is_409(three_songs_clip):
     client = _client(three_songs_clip)
-    response = client.post("/api/classification/thresholds", json={"thresholds": {"music": 0.5}})
+    response = client.post(
+        "/api/classification/thresholds", params=_q(three_songs_clip), json={"thresholds": {"music": 0.5}}
+    )
     assert response.status_code == 409
 
 
@@ -140,14 +158,14 @@ def test_rethreshold_before_analyze_is_409(three_songs_clip):
 def test_analyze_runs_yamnet_and_populates_classification(three_songs_clip):
     client = _client(three_songs_clip)
 
-    response = client.post("/api/analyze")
+    response = client.post("/api/analyze", params=_q(three_songs_clip))
     assert response.status_code == 200
     job_id = response.json()["job_id"]
 
     status = _poll_until_done(client, job_id, status_path=f"/api/analyze/{job_id}")
     assert status["status"] == "done", status.get("error")
 
-    response = client.get("/api/classification")
+    response = client.get("/api/classification", params=_q(three_songs_clip))
     assert response.status_code == 200
     body = response.json()
     assert body["analyzed"] is True
@@ -167,7 +185,9 @@ def test_analyze_runs_yamnet_and_populates_classification(three_songs_clip):
 
     # Retuning a threshold re-derives regions without rerunning inference —
     # exercised here by round-tripping through the endpoint successfully.
-    response = client.post("/api/classification/thresholds", json={"thresholds": {"music": 0.999}})
+    response = client.post(
+        "/api/classification/thresholds", params=_q(three_songs_clip), json={"thresholds": {"music": 0.999}}
+    )
     assert response.status_code == 200
     assert response.json()["thresholds"]["music"] == 0.999
 
@@ -184,7 +204,7 @@ def test_analyze_is_a_no_op_once_already_analyzed(three_songs_clip, monkeypatch)
 
     client = _client(three_songs_clip)
 
-    first = client.post("/api/analyze")
+    first = client.post("/api/analyze", params=_q(three_songs_clip))
     assert first.status_code == 200
     status = _poll_until_done(client, first.json()["job_id"], status_path=f"/api/analyze/{first.json()['job_id']}")
     assert status["status"] == "done", status.get("error")
@@ -192,7 +212,7 @@ def test_analyze_is_a_no_op_once_already_analyzed(three_songs_clip, monkeypatch)
 
     # A second click (or a page reload hitting an already-analyzed source)
     # should report done immediately rather than rerunning inference.
-    second = client.post("/api/analyze")
+    second = client.post("/api/analyze", params=_q(three_songs_clip))
     assert second.status_code == 200
     status = _poll_until_done(client, second.json()["job_id"], status_path=f"/api/analyze/{second.json()['job_id']}")
     assert status["status"] == "done"
@@ -201,8 +221,10 @@ def test_analyze_is_a_no_op_once_already_analyzed(three_songs_clip, monkeypatch)
 
 def test_segments_endpoint_is_pure_and_never_touches_ffmpeg(three_songs_clip, monkeypatch):
     client = _client(three_songs_clip)
-    duration = client.get("/api/state").json()["duration"]
-    silences_response = client.post("/api/detect", json={"silence_threshold": -35.0}).json()["silences"]
+    duration = client.get("/api/state", params=_q(three_songs_clip)).json()["duration"]
+    silences_response = client.post(
+        "/api/detect", params=_q(three_songs_clip), json={"silence_threshold": -35.0}
+    ).json()["silences"]
 
     def fail_if_called(*args, **kwargs):
         raise AssertionError("detect_silence should not be called by /api/segments")
@@ -225,11 +247,12 @@ def test_segments_endpoint_is_pure_and_never_touches_ffmpeg(three_songs_clip, mo
 
 def test_export_writes_files_and_manifest(three_songs_clip):
     client = _client(three_songs_clip)
-    duration = client.get("/api/state").json()["duration"]
-    segments = _detect_segments(client, duration)
+    duration = client.get("/api/state", params=_q(three_songs_clip)).json()["duration"]
+    segments = _detect_segments(client, three_songs_clip, duration)
 
     response = client.post(
         "/api/export",
+        params=_q(three_songs_clip),
         json={"segments": [{"start": s["start"], "end": s["end"]} for s in segments]},
     )
     assert response.status_code == 200
@@ -248,6 +271,7 @@ def test_export_rejects_overlapping_segments(three_songs_clip):
     client = _client(three_songs_clip)
     response = client.post(
         "/api/export",
+        params=_q(three_songs_clip),
         json={"segments": [{"start": 0.0, "end": 10.0}, {"start": 5.0, "end": 15.0}]},
     )
     assert response.status_code == 422
@@ -255,7 +279,7 @@ def test_export_rejects_overlapping_segments(three_songs_clip):
 
 def test_media_source_supports_range_requests(three_songs_clip):
     client = _client(three_songs_clip)
-    response = client.get("/media/source", headers={"Range": "bytes=0-99"})
+    response = client.get("/media/source", params=_q(three_songs_clip), headers={"Range": "bytes=0-99"})
     assert response.status_code == 206
     assert "Content-Range" in response.headers
     assert len(response.content) == 100
@@ -265,20 +289,14 @@ def test_session_reports_file_open_for_file_source(three_songs_clip):
     client = _client(three_songs_clip)
     response = client.get("/api/session")
     assert response.status_code == 200
-    assert response.json() == {"file_open": True, "filename": three_songs_clip.name}
+    assert response.json() == {"file_open": True, "filename": three_songs_clip.name, "path": three_songs_clip.name}
 
 
 def test_directory_source_starts_with_no_file_open(three_songs_clip):
     client = TestClient(create_app(three_songs_clip.parent, DEFAULTS))
     response = client.get("/api/session")
     assert response.status_code == 200
-    assert response.json() == {"file_open": False, "filename": None}
-
-
-def test_state_before_open_is_409(three_songs_clip):
-    client = TestClient(create_app(three_songs_clip.parent, DEFAULTS))
-    response = client.get("/api/state")
-    assert response.status_code == 409
+    assert response.json() == {"file_open": False, "filename": None, "path": None}
 
 
 def test_browse_lists_video_in_directory_root(three_songs_clip):
@@ -304,10 +322,11 @@ def test_open_then_state_matches_direct_file_mode(three_songs_clip):
     assert open_response.status_code == 200
     assert open_response.json()["filename"] == three_songs_clip.name
 
-    session = client.get("/api/session").json()
-    assert session == {"file_open": True, "filename": three_songs_clip.name}
+    # Opening keeps no server-side "current file": the session only reports
+    # what the server was started on (a directory here).
+    assert client.get("/api/session").json()["file_open"] is False
 
-    state = client.get("/api/state").json()
+    state = client.get("/api/state", params=_q(three_songs_clip)).json()
     assert state["filename"] == open_response.json()["filename"]
     assert state["duration"] == open_response.json()["duration"]
     assert state["segments"] == []
@@ -328,7 +347,7 @@ def test_open_rejects_path_escaping_root(three_songs_clip, tmp_path):
 
 def test_saved_splits_are_not_resumed_before_a_save(three_songs_clip):
     client = _client(three_songs_clip)
-    state = client.get("/api/state").json()
+    state = client.get("/api/state", params=_q(three_songs_clip)).json()
     assert state["resumed"] is False
 
 
@@ -336,7 +355,7 @@ def test_saving_splits_is_resumed_by_a_later_session(three_songs_clip):
     client = _client(three_songs_clip)
     custom_splits = [{"start": 0.0, "end": 6.0}, {"start": 6.0, "end": 13.0}, {"start": 13.0, "end": 21.0}]
 
-    save_response = client.post("/api/project", json={"segments": custom_splits})
+    save_response = client.post("/api/project", params=_q(three_songs_clip), json={"segments": custom_splits})
     assert save_response.status_code == 200
     assert save_response.json()["resumed"] is True
     assert [{"start": s["start"], "end": s["end"]} for s in save_response.json()["segments"]] == custom_splits
@@ -345,7 +364,7 @@ def test_saving_splits_is_resumed_by_a_later_session(three_songs_clip):
     # `edit` is re-run later) should pick the saved splits back up instead
     # of re-running silence detection from scratch.
     reopened = _client(three_songs_clip)
-    state = reopened.get("/api/state").json()
+    state = reopened.get("/api/state", params=_q(three_songs_clip)).json()
     assert state["resumed"] is True
     assert [{"start": s["start"], "end": s["end"]} for s in state["segments"]] == custom_splits
 
@@ -357,10 +376,10 @@ def test_saved_labels_and_colors_are_resumed(three_songs_clip):
         {"start": 6.0, "end": 13.0, "label": "Stage talk", "color": None, "included": False, "export_name": None},
         {"start": 13.0, "end": 21.0, "label": "", "color": "#2f855a", "included": True, "export_name": None},
     ]
-    client.post("/api/project", json={"segments": segments})
+    client.post("/api/project", params=_q(three_songs_clip), json={"segments": segments})
 
     reopened = _client(three_songs_clip)
-    state = reopened.get("/api/state").json()
+    state = reopened.get("/api/state", params=_q(three_songs_clip)).json()
     got = [
         {
             "start": s["start"],
@@ -379,6 +398,7 @@ def test_export_uses_custom_names_when_given(three_songs_clip):
     client = _client(three_songs_clip)
     response = client.post(
         "/api/export",
+        params=_q(three_songs_clip),
         json={
             "segments": [
                 {"start": 0.0, "end": 6.0, "name": "intro"},
@@ -403,6 +423,7 @@ def test_export_rejects_duplicate_resolved_names(three_songs_clip):
     client = _client(three_songs_clip)
     response = client.post(
         "/api/export",
+        params=_q(three_songs_clip),
         json={
             "segments": [
                 {"start": 0.0, "end": 6.0, "name": "same"},
@@ -429,7 +450,7 @@ def test_static_assets_are_never_cached(three_songs_clip):
 
 def test_api_responses_are_unaffected_by_the_no_store_header(three_songs_clip):
     client = _client(three_songs_clip)
-    response = client.get("/api/state")
+    response = client.get("/api/state", params=_q(three_songs_clip))
     assert response.status_code == 200
     assert "cache-control" not in {k.lower() for k in response.headers}
 

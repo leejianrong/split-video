@@ -92,3 +92,12 @@ def leading_trailing_silence_clip(tmp_path):
         ],
     )
     return path
+
+
+@pytest.fixture
+def two_songs_clip(tmp_path):
+    # Shorter than `three_songs_clip` and in the same directory, so tests can
+    # open both from one browse root.
+    path = tmp_path / "two_songs.mp4"
+    _make_clip(path, [("tone", 4), ("silence", 3), ("tone", 4)])
+    return path
