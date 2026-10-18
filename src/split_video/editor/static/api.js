@@ -2,7 +2,7 @@
 // relative — the mount path under which this page is served is the
 // backend's concern, not ours.
 
-async function requestJSON(path, options = {}) {
+export async function requestJSON(path, options = {}) {
   let res;
   try {
     res = await fetch(path, {
