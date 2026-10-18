@@ -118,8 +118,11 @@ def add_clip(
     out_point: float | None = None,
     index: int | None = None,
     start: float | None = None,
+    asset: str = "",
 ) -> tuple[Project, Clip]:
     """Insert a clip of `source` (which is `source_duration` long) on a track.
+    `asset` is the source file's asset id (see `assets.py`); `source` is then its
+    last known path, kept as a hint.
 
     On a magnetic track the clip goes at `index` (default: the end); on a free
     track at `start` seconds (default: after the last clip). Returns the new
@@ -127,7 +130,7 @@ def add_clip(
     track = find_track(project, track_id)
     out = source_duration if out_point is None else out_point
     _check_range(in_point, out, source_duration)
-    clip = Clip(id=new_id(), source=source, in_point=in_point, out_point=out)
+    clip = Clip(id=new_id(), source=source, in_point=in_point, out_point=out, asset=asset)
     clips = list(track.clips)
     if track.magnetic:
         if start is not None:

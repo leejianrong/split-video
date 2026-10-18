@@ -17,8 +17,8 @@ import threading
 from collections.abc import Callable
 from typing import Any
 
-from split_video import timeline, timeline_ops
-from split_video.ffmpeg import MediaInfo, ProbeError
+from split_video import assets, timeline, timeline_ops
+from split_video.ffmpeg import ProbeError
 from split_video.media_store import MediaError, MediaOutsideRootError, MediaStore
 from split_video.render import render
 from split_video.store import ProjectStore
@@ -34,7 +34,7 @@ _lock = threading.Lock()
 
 
 def source_duration(media: MediaStore, source: str) -> float | None:
-    """Duration of a clip's source file, or None if it's missing or unreadable."""
+    """Duration of a source file by path, or None if it's missing or unreadable."""
     if not source:  # text clips have no source
         return None
     try:
@@ -43,16 +43,27 @@ def source_duration(media: MediaStore, source: str) -> float | None:
         return None
 
 
-def _probe_new_source(media: MediaStore, rel: str) -> tuple[str, MediaInfo]:
-    """A canonical source id and its media info, for a path the caller named."""
+def clip_source_duration(book: assets.AssetBook, clip: timeline.Clip) -> float | None:
+    """Duration of a media clip's source file, found by asset id; None for a text clip or a missing file."""
+    if clip.kind != "media":
+        return None
+    found = assets.lookup(book, clip.asset, clip.source)
+    return None if found is None else found.asset.duration
+
+
+def _asset_for_new_clip(media: MediaStore, path: str | None, asset: str | None) -> assets.Asset:
+    """The asset a new clip uses, named by exactly one of a `path` (registered if new) or an asset id."""
+    if (path is None) == (asset is None):
+        raise TimelineError("give exactly one of a file path or an asset id")
     try:
-        media_id = media.resolve(rel)
+        if asset is not None:
+            return assets.get_asset(media, asset)
+        assert path is not None
+        return assets.register_path(media, path)
     except MediaOutsideRootError:
-        raise OutsideRootError(f"{rel!r} is outside the project directory") from None
-    if not media.is_file(media_id):
-        raise SourceNotFoundError(f"file not found: {rel}")
-    try:
-        return media_id, media.probe(media_id)
+        raise OutsideRootError(f"{path!r} is outside the project directory") from None
+    except MediaError:
+        raise SourceNotFoundError(f"file not found: {path}") from None
     except ProbeError as exc:
         raise TimelineError(str(exc)) from None
 
@@ -60,9 +71,23 @@ def _probe_new_source(media: MediaStore, rel: str) -> tuple[str, MediaInfo]:
 # --- loading / saving -------------------------------------------------------
 
 
-def load_existing(store: ProjectStore, name: str) -> Project:
-    """The project `name`; `ProjectNotFoundError` if it doesn't exist."""
-    return store.load_existing_timeline(name)
+def load_existing(store: ProjectStore, name: str, media: MediaStore | None = None) -> Project:
+    """The project `name`; `ProjectNotFoundError` if it doesn't exist.
+
+    With `media`, its clips are linked to assets (see `assets.link_project`): a version 1 project
+    gains asset ids and a moved file is found again. The result is the version 2 model, but the
+    project file is not rewritten by reading; the next edit saves it, or `migrate_project` does."""
+    project = store.load_existing_timeline(name)
+    return project if media is None else assets.link_project(media, project)
+
+
+def migrate_project(store: ProjectStore, media: MediaStore, name: str) -> Project:
+    """Link `name`'s clips to assets and save the project now, rewriting a version 1 file as
+    version 2. A clip whose file is missing keeps its `source` and stays unlinked."""
+    with _lock:
+        project = load_existing(store, name, media)
+        store.save_timeline(name, project)
+    return project
 
 
 def create_project(store: ProjectStore, name: str) -> Project:
@@ -70,10 +95,13 @@ def create_project(store: ProjectStore, name: str) -> Project:
         return store.create_timeline(name)
 
 
-def edit(store: ProjectStore, name: str, change: Callable[[Project], Project]) -> Project:
-    """Load `name`, apply `change`, save and return the result."""
+def edit(
+    store: ProjectStore, name: str, change: Callable[[Project], Project], media: MediaStore | None = None
+) -> Project:
+    """Load `name`, apply `change`, save and return the result. Given `media`, the clips are
+    linked to assets first, so the first edit of a version 1 project saves it as version 2."""
     with _lock:
-        project = change(load_existing(store, name))
+        project = change(load_existing(store, name, media))
         store.save_timeline(name, project)
     return project
 
@@ -110,22 +138,31 @@ def add_clip(
     store: ProjectStore,
     media: MediaStore,
     name: str,
-    path: str,
+    path: str | None = None,
     *,
+    asset: str | None = None,
     track_id: str | None = None,
     index: int | None = None,
     start: float | None = None,
     in_point: float = 0.0,
     out_point: float | None = None,
 ) -> Project:
-    source, info = _probe_new_source(media, path)
+    """Add a clip of the file at `path` or of the asset with id `asset` (exactly one of them).
+
+    A path is registered in the asset table; the clip stores the asset id, and `source` as a hint of
+    the asset's path (which is the first registered one if the same bytes are in the workspace twice)."""
+    record = _asset_for_new_clip(media, path, asset)
+    info = record.info
+    label = path if path is not None else record.path
+    with assets.open_book(media) as book:  # the hint is the path as named, if it's a known copy
+        source = book.source_for(record, media.resolve(path)) if path is not None else record.path
 
     def change(project: Project) -> Project:
         target = timeline_ops.find_track(project, track_id) if track_id else video_track(project)
         if target.kind == "video" and info.width is None:
-            raise TimelineError(f"{path} has no video stream, so it can't go on a video track")
+            raise TimelineError(f"{label} has no video stream, so it can't go on a video track")
         if target.kind == "audio" and not info.has_audio:
-            raise TimelineError(f"{path} has no audio stream, so it can't go on an audio track")
+            raise TimelineError(f"{label} has no audio stream, so it can't go on an audio track")
         new, _ = timeline_ops.add_clip(
             project,
             target.id,
@@ -135,10 +172,11 @@ def add_clip(
             out_point=out_point,
             index=index,
             start=start,
+            asset=record.id,
         )
         return new
 
-    return edit(store, name, change)
+    return edit(store, name, change, media)
 
 
 def trim_clip(
@@ -152,62 +190,95 @@ def trim_clip(
 ) -> Project:
     def change(project: Project) -> Project:
         track, i = timeline_ops.find_clip(project, clip_id)
-        duration = float("inf") if track.clips[i].kind == "text" else source_duration(media, track.clips[i].source)
+        clip = track.clips[i]
+        if clip.kind == "text":
+            duration: float | None = float("inf")
+        else:
+            with assets.open_book(media) as book:
+                duration = clip_source_duration(book, clip)
         if duration is None:
             raise TimelineError("the clip's source file is missing or unreadable")
         return timeline_ops.trim_clip(project, clip_id, duration, in_point=in_point, out_point=out_point)
 
-    return edit(store, name, change)
+    return edit(store, name, change, media)
 
 
-def add_text_clip(store: ProjectStore, name: str, track_id: str, text: str, duration: float, **options: Any) -> Project:
+def add_text_clip(
+    store: ProjectStore,
+    name: str,
+    track_id: str,
+    text: str,
+    duration: float,
+    *,
+    media: MediaStore | None = None,
+    **options: Any,
+) -> Project:
     def change(project: Project) -> Project:
         new, _ = timeline_ops.add_text_clip(project, track_id, text, duration, **options)
         return new
 
-    return edit(store, name, change)
+    return edit(store, name, change, media)
 
 
-def set_clip_properties(store: ProjectStore, name: str, clip_id: str, **properties: float | bool) -> Project:
-    return edit(store, name, lambda p: timeline_ops.set_clip_properties(p, clip_id, **properties))
+def set_clip_properties(
+    store: ProjectStore, name: str, clip_id: str, *, media: MediaStore | None = None, **properties: float | bool
+) -> Project:
+    return edit(store, name, lambda p: timeline_ops.set_clip_properties(p, clip_id, **properties), media)
 
 
-def set_text_properties(store: ProjectStore, name: str, clip_id: str, **properties: str | float | None) -> Project:
-    return edit(store, name, lambda p: timeline_ops.set_text_properties(p, clip_id, **properties))
+def set_text_properties(
+    store: ProjectStore, name: str, clip_id: str, *, media: MediaStore | None = None, **properties: str | float | None
+) -> Project:
+    return edit(store, name, lambda p: timeline_ops.set_text_properties(p, clip_id, **properties), media)
 
 
-def add_track(store: ProjectStore, name: str, kind: str) -> Project:
+def add_track(store: ProjectStore, name: str, kind: str, media: MediaStore | None = None) -> Project:
     def change(project: Project) -> Project:
         new, _ = timeline_ops.add_track(project, kind)
         return new
 
-    return edit(store, name, change)
+    return edit(store, name, change, media)
 
 
-def move_track(store: ProjectStore, name: str, track_id: str, to_index: int) -> Project:
-    return edit(store, name, lambda p: timeline_ops.move_track(p, track_id, to_index))
+def move_track(
+    store: ProjectStore, name: str, track_id: str, to_index: int, media: MediaStore | None = None
+) -> Project:
+    return edit(store, name, lambda p: timeline_ops.move_track(p, track_id, to_index), media)
 
 
-def remove_track(store: ProjectStore, name: str, track_id: str) -> Project:
-    return edit(store, name, lambda p: timeline_ops.remove_track(p, track_id))
+def remove_track(store: ProjectStore, name: str, track_id: str, media: MediaStore | None = None) -> Project:
+    return edit(store, name, lambda p: timeline_ops.remove_track(p, track_id), media)
 
 
 def place_clip(
-    store: ProjectStore, name: str, clip_id: str, *, start: float | None = None, track_id: str | None = None
+    store: ProjectStore,
+    name: str,
+    clip_id: str,
+    *,
+    start: float | None = None,
+    track_id: str | None = None,
+    media: MediaStore | None = None,
 ) -> Project:
-    return edit(store, name, lambda p: timeline_ops.place_clip(p, clip_id, start=start, track_id=track_id))
+    return edit(store, name, lambda p: timeline_ops.place_clip(p, clip_id, start=start, track_id=track_id), media)
 
 
-def move_clip(store: ProjectStore, name: str, clip_id: str, to_index: int) -> Project:
-    return edit(store, name, lambda p: timeline_ops.move_clip(p, clip_id, to_index))
+def move_clip(store: ProjectStore, name: str, clip_id: str, to_index: int, media: MediaStore | None = None) -> Project:
+    return edit(store, name, lambda p: timeline_ops.move_clip(p, clip_id, to_index), media)
 
 
-def remove_clip(store: ProjectStore, name: str, clip_id: str) -> Project:
-    return edit(store, name, lambda p: timeline_ops.remove_clip(p, clip_id))
+def remove_clip(store: ProjectStore, name: str, clip_id: str, media: MediaStore | None = None) -> Project:
+    return edit(store, name, lambda p: timeline_ops.remove_clip(p, clip_id), media)
 
 
-def set_transition(store: ProjectStore, name: str, clip_id: str, transition: str, duration: float = 0.0) -> Project:
-    return edit(store, name, lambda p: timeline_ops.set_transition(p, clip_id, transition, duration))
+def set_transition(
+    store: ProjectStore,
+    name: str,
+    clip_id: str,
+    transition: str,
+    duration: float = 0.0,
+    media: MediaStore | None = None,
+) -> Project:
+    return edit(store, name, lambda p: timeline_ops.set_transition(p, clip_id, transition, duration), media)
 
 
 # --- rendering ---------------------------------------------------------------
@@ -218,7 +289,7 @@ def plan_render(
 ) -> tuple[Project, str, str]:
     """Check a render request and return the project, output filename and the
     output's media id (a plain filename is a file in the root)."""
-    project = load_existing(store, name)
+    project = load_existing(store, name, media)
     filename = output or f"{name}-render.mp4"
     if "/" in filename or "\\" in filename or filename.startswith("."):
         raise TimelineError("output must be a plain filename")
@@ -241,7 +312,14 @@ def run_render(
 
 
 def describe(media: MediaStore, name: str, project: Project) -> dict[str, Any]:
-    """JSON-friendly view of a project, with clips numbered from 1 per track."""
+    """JSON-friendly view of a project, with clips numbered from 1 per track.
+
+    Each media clip shows its `asset` id and its file's current path as `source` (found by
+    asset id, so a renamed file shows where it is now); an unresolvable clip shows its hint."""
+    with assets.open_book(media) as book:
+        rows = {
+            c.id: assets.lookup(book, c.asset, c.source) for t in project.tracks for c in t.clips if c.kind == "media"
+        }
     return {
         "name": name,
         "duration": project.duration,
@@ -255,13 +333,14 @@ def describe(media: MediaStore, name: str, project: Project) -> dict[str, Any]:
                     {
                         "index": i + 1,
                         "id": c.id,
-                        "source": c.source,
+                        "asset": rows[c.id].asset.id if rows.get(c.id) else c.asset,
+                        "source": rows[c.id].source if rows.get(c.id) else c.source,
                         "in": c.in_point,
                         "out": c.out_point,
                         "start": c.start,
                         "end": c.end,
                         "duration": c.duration,
-                        "source_duration": source_duration(media, c.source),
+                        "source_duration": rows[c.id].asset.duration if rows.get(c.id) else None,
                         "gain": c.gain,
                         "muted": c.muted,
                         "transition": c.transition,

@@ -26,7 +26,7 @@ from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp_types import ToolAnnotations
 
-from split_video import project, timeline, timeline_service
+from split_video import assets, project, timeline, timeline_service
 from split_video.editor.cache import ClassificationCache
 from split_video.editor.classify import ModelNotFoundError
 from split_video.ffmpeg import ExtractError, FfmpegNotFoundError, ProbeError
@@ -67,6 +67,11 @@ list_timelines / create_timeline -> add_clip_to_timeline (video paths as
 for list_videos) -> trim_timeline_clip / move_timeline_clip /
 remove_timeline_clip / set_timeline_transition -> show_timeline to review ->
 render_timeline. Clips are numbered from 1 in track order.
+
+Clips reference media by asset id (a_ plus 16 hex digits), not path: list_assets shows
+the ids, paths and stream info of every file a timeline has used, and
+add_clip_to_timeline takes either a video path or an asset id. Timeline results show
+each clip's asset id and its file's current path, so a renamed file is found again.
 
 For overlays, titles and audio, add_timeline_track makes extra tracks (numbered as
 in show_timeline; track 1 is the main video track); add_clip_to_timeline with
@@ -306,10 +311,10 @@ def create_server(root: Path, store: ProjectStore | None = None, media: MediaSto
         return {**extra, **timeline_service.describe(media, name, project_)}
 
     def timeline_clip(name: str, clip: int, track: int | None = None) -> str:
-        return timeline_service.clip_id_at(timeline_service.load_existing(store, name), clip, track)
+        return timeline_service.clip_id_at(timeline_service.load_existing(store, name, media), clip, track)
 
     def timeline_track(name: str, track: int | None) -> str:
-        return timeline_service.track_at(timeline_service.load_existing(store, name), track).id
+        return timeline_service.track_at(timeline_service.load_existing(store, name, media), track).id
 
     @server.tool(annotations=_READ_ONLY)
     async def list_timelines() -> dict[str, Any]:
@@ -324,20 +329,34 @@ def create_server(root: Path, store: ProjectStore | None = None, media: MediaSto
     @server.tool(annotations=_READ_ONLY)
     async def show_timeline(name: str) -> dict[str, Any]:
         """The timeline's tracks and clips: sources, in/out points, where each starts, transitions."""
-        project_ = await run(lambda: timeline_service.load_existing(store, name))
+        project_ = await run(lambda: timeline_service.load_existing(store, name, media))
         return timeline_result(name, project_)
+
+    @server.tool(annotations=_READ_ONLY)
+    async def list_assets() -> dict[str, Any]:
+        """List the assets: every media file a timeline has used, with its asset id (stable, derived
+        from the file's content, so it survives renames), current path, duration, size and stream
+        info (width, height, fps, has_audio). `present` is false if the file is missing."""
+
+        def work() -> list[dict[str, Any]]:
+            with assets.open_book(media) as book:
+                return [a.summary(book.present(a)) for a in book.list()]
+
+        return {"assets": await run(work)}
 
     @server.tool(annotations=_EDITS_PROJECT)
     async def add_clip_to_timeline(
         name: str,
-        video: str,
+        video: str | None = None,
         position: int | None = None,
         in_point: float = 0.0,
         out_point: float | None = None,
         track: int | None = None,
         start: float | None = None,
+        asset: str | None = None,
     ) -> dict[str, Any]:
-        """Add a clip of `video` (path relative to the root; an audio file for an audio track) to a
+        """Add a clip of `video` (path relative to the root; an audio file for an audio track) or of the
+        asset with id `asset` (from list_assets): give exactly one of the two. It goes on a
         track, using seconds `in_point`..`out_point` of it (default: all). `track` is a track number
         from show_timeline (default: the main video track). On the main track `position` (from 1)
         inserts it there, default the end; on any other track `start` (seconds) places it, default
@@ -348,6 +367,7 @@ def create_server(root: Path, store: ProjectStore | None = None, media: MediaSto
                 media,
                 name,
                 video,
+                asset=asset,
                 track_id=None if track is None else timeline_track(name, track),
                 index=None if position is None else position - 1,
                 start=start,
@@ -377,7 +397,7 @@ def create_server(root: Path, store: ProjectStore | None = None, media: MediaSto
     async def move_timeline_clip(name: str, clip: int, to_position: int) -> dict[str, Any]:
         """Move clip number `clip` to `to_position` (both from 1)."""
         project_ = await run(
-            lambda: timeline_service.move_clip(store, name, timeline_clip(name, clip), to_position - 1)
+            lambda: timeline_service.move_clip(store, name, timeline_clip(name, clip), to_position - 1, media)
         )
         return timeline_result(name, project_)
 
@@ -385,7 +405,7 @@ def create_server(root: Path, store: ProjectStore | None = None, media: MediaSto
     async def remove_timeline_clip(name: str, clip: int, track: int | None = None) -> dict[str, Any]:
         """Remove clip number `clip` (on `track`, default the main video track) from the timeline;
         the source file is untouched."""
-        project_ = await run(lambda: timeline_service.remove_clip(store, name, timeline_clip(name, clip, track)))
+        project_ = await run(lambda: timeline_service.remove_clip(store, name, timeline_clip(name, clip, track), media))
         return timeline_result(name, project_)
 
     @server.tool(annotations=_EDITS_PROJECT)
@@ -394,7 +414,7 @@ def create_server(root: Path, store: ProjectStore | None = None, media: MediaSto
         (`duration` seconds). The first clip has nothing to fade from."""
         project_ = await run(
             lambda: timeline_service.set_transition(
-                store, name, timeline_clip(name, clip), transition, 0.0 if transition == "cut" else duration
+                store, name, timeline_clip(name, clip), transition, 0.0 if transition == "cut" else duration, media
             )
         )
         return timeline_result(name, project_)
@@ -403,19 +423,19 @@ def create_server(root: Path, store: ProjectStore | None = None, media: MediaSto
     async def add_timeline_track(name: str, kind: str = "video") -> dict[str, Any]:
         """Add an empty track ("video" or "audio") on top of the stack. Clips on it are placed by start
         time and may overlap clips on other tracks; a later video track draws over earlier ones."""
-        return timeline_result(name, await run(timeline_service.add_track, store, name, kind))
+        return timeline_result(name, await run(timeline_service.add_track, store, name, kind, media))
 
     @server.tool(annotations=_REPLACES_PROJECT)
     async def remove_timeline_track(name: str, track: int) -> dict[str, Any]:
         """Remove track number `track` (from show_timeline) and its clips. The last video track stays."""
-        project_ = await run(lambda: timeline_service.remove_track(store, name, timeline_track(name, track)))
+        project_ = await run(lambda: timeline_service.remove_track(store, name, timeline_track(name, track), media))
         return timeline_result(name, project_)
 
     @server.tool(annotations=_EDITS_PROJECT)
     async def move_timeline_track(name: str, track: int, to_position: int) -> dict[str, Any]:
         """Change track number `track`'s place in the stack to `to_position` (both from 1)."""
         project_ = await run(
-            lambda: timeline_service.move_track(store, name, timeline_track(name, track), to_position - 1)
+            lambda: timeline_service.move_track(store, name, timeline_track(name, track), to_position - 1, media)
         )
         return timeline_result(name, project_)
 
@@ -434,6 +454,7 @@ def create_server(root: Path, store: ProjectStore | None = None, media: MediaSto
                 timeline_clip(name, clip, track),
                 start=start,
                 track_id=None if to_track is None else timeline_track(name, to_track),
+                media=media,
             )
         )
         return timeline_result(name, project_)
@@ -465,7 +486,9 @@ def create_server(root: Path, store: ProjectStore | None = None, media: MediaSto
         if not changes:
             raise ToolError("pass at least one property to change")
         project_ = await run(
-            lambda: timeline_service.set_clip_properties(store, name, timeline_clip(name, clip, track), **changes)
+            lambda: timeline_service.set_clip_properties(
+                store, name, timeline_clip(name, clip, track), media=media, **changes
+            )
         )
         return timeline_result(name, project_)
 
@@ -486,7 +509,7 @@ def create_server(root: Path, store: ProjectStore | None = None, media: MediaSto
         `size` is the text height as a fraction of the frame, `color` is #rrggbb, `x`/`y` the centre."""
 
         def work() -> timeline.Project:
-            loaded = timeline_service.load_existing(store, name)
+            loaded = timeline_service.load_existing(store, name, media)
             if track is None:
                 chosen = next((t for t in loaded.tracks if t.kind == "video" and not t.magnetic), None)
                 if chosen is None:
@@ -495,7 +518,7 @@ def create_server(root: Path, store: ProjectStore | None = None, media: MediaSto
             else:
                 track_id = timeline_service.track_at(loaded, track).id
             return timeline_service.add_text_clip(
-                store, name, track_id, text, duration, start=start, font_size=size, color=color, x=x, y=y
+                store, name, track_id, text, duration, media=media, start=start, font_size=size, color=color, x=x, y=y
             )
 
         return timeline_result(name, await run(work))
@@ -514,7 +537,7 @@ def create_server(root: Path, store: ProjectStore | None = None, media: MediaSto
             raise ToolError("pass text, size and/or color")
         project_ = await run(
             lambda: timeline_service.set_text_properties(
-                store, name, timeline_clip(name, clip, track), text=text, font_size=size, color=color
+                store, name, timeline_clip(name, clip, track), media=media, text=text, font_size=size, color=color
             )
         )
         return timeline_result(name, project_)

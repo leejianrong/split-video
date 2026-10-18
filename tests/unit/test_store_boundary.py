@@ -36,6 +36,7 @@ ENGINE = [
     "timeline_service.py",
     "timeline.py",
     "timeline_ops.py",
+    "assets.py",
     "render.py",
     "editor/cache.py",
     "editor/jobs.py",
@@ -98,3 +99,9 @@ def test_the_local_media_store_is_the_one_place_with_the_cache_dir_and_containme
 def test_the_local_store_is_the_one_place_with_the_file_names():
     text = (SRC / "local_store.py").read_text()
     assert ".split-video-project.json" in text and ".split-video-timeline.json" in text
+
+
+def test_the_local_media_store_is_the_one_place_with_the_asset_table_file_name():
+    assert ".split-video-assets.json" in (SRC / "local_media_store.py").read_text()
+    others = [p for p in SRC.rglob("*.py") if p.name != "local_media_store.py"]
+    assert not [p.name for p in others if ".split-video-assets.json" in _code(str(p.relative_to(SRC)))]

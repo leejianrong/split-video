@@ -3,6 +3,17 @@
     "schemas": {
       "AddClipRequest": {
         "properties": {
+          "asset": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Asset"
+          },
           "in_point": {
             "default": 0.0,
             "title": "In Point",
@@ -31,8 +42,15 @@
             "title": "Out Point"
           },
           "path": {
-            "title": "Path",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Path"
           },
           "start": {
             "anyOf": [
@@ -57,9 +75,6 @@
             "title": "Track Id"
           }
         },
-        "required": [
-          "path"
-        ],
         "title": "AddClipRequest",
         "type": "object"
       },
@@ -164,6 +179,109 @@
           "total"
         ],
         "title": "AnalyzeStatusResponse",
+        "type": "object"
+      },
+      "AssetListOut": {
+        "properties": {
+          "assets": {
+            "items": {
+              "$ref": "#/components/schemas/AssetOut"
+            },
+            "title": "Assets",
+            "type": "array"
+          }
+        },
+        "required": [
+          "assets"
+        ],
+        "title": "AssetListOut",
+        "type": "object"
+      },
+      "AssetOut": {
+        "properties": {
+          "copies": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Copies",
+            "type": "array"
+          },
+          "duration": {
+            "title": "Duration",
+            "type": "number"
+          },
+          "fps": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fps"
+          },
+          "has_audio": {
+            "title": "Has Audio",
+            "type": "boolean"
+          },
+          "height": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Height"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "mtime": {
+            "title": "Mtime",
+            "type": "number"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "present": {
+            "title": "Present",
+            "type": "boolean"
+          },
+          "size": {
+            "title": "Size",
+            "type": "integer"
+          },
+          "width": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Width"
+          }
+        },
+        "required": [
+          "id",
+          "path",
+          "size",
+          "mtime",
+          "duration",
+          "has_audio",
+          "width",
+          "height",
+          "fps",
+          "copies",
+          "present"
+        ],
+        "title": "AssetOut",
         "type": "object"
       },
       "BrowseEntryOut": {
@@ -312,6 +430,10 @@
       },
       "ClipOut": {
         "properties": {
+          "asset": {
+            "title": "Asset",
+            "type": "string"
+          },
           "brightness": {
             "title": "Brightness",
             "type": "number"
@@ -414,6 +536,7 @@
         },
         "required": [
           "id",
+          "asset",
           "source",
           "in_point",
           "out_point",
@@ -939,6 +1062,19 @@
           }
         },
         "title": "PropertiesRequest",
+        "type": "object"
+      },
+      "RegisterAssetRequest": {
+        "properties": {
+          "path": {
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "title": "RegisterAssetRequest",
         "type": "object"
       },
       "RenderRequest": {
@@ -1541,6 +1677,104 @@
           }
         },
         "summary": "Analyze Status"
+      }
+    },
+    "/api/v1/assets": {
+      "get": {
+        "description": "The workspace's asset table: every media file a timeline clip has used, by content-derived id.",
+        "operationId": "list_assets_api_v1_assets_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetListOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Assets"
+      }
+    },
+    "/api/v1/assets/register": {
+      "post": {
+        "description": "Add the file at `path` to the asset table (idempotent; the same bytes at another path are the same asset).",
+        "operationId": "register_asset_api_v1_assets_register_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterAssetRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Register Asset"
+      }
+    },
+    "/api/v1/assets/{asset_id}": {
+      "get": {
+        "description": "One asset; if its file was renamed or moved it is found again and the table updated.",
+        "operationId": "get_asset_api_v1_assets__asset_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "asset_id",
+            "required": true,
+            "schema": {
+              "title": "Asset Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Asset"
       }
     },
     "/api/v1/browse": {
@@ -2651,6 +2885,44 @@
           }
         },
         "summary": "Export Status"
+      }
+    },
+    "/api/v1/media/asset/{asset_id}": {
+      "get": {
+        "description": "The file of an asset (see /assets), found by id even if it was renamed since.",
+        "operationId": "media_asset_api_v1_media_asset__asset_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "asset_id",
+            "required": true,
+            "schema": {
+              "title": "Asset Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Media Asset"
       }
     },
     "/api/v1/media/file": {

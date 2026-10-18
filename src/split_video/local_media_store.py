@@ -49,6 +49,10 @@ from split_video.media_store import (
 )
 
 CACHE_DIR_NAME = ".split-video-cache"
+# The workspace's asset table (see `assets.py`): one file in the root, not a
+# cache, since clips refer to its asset ids. In the root for the same
+# bind-mount reason as the caches above.
+ASSET_TABLE_NAME = ".split-video-assets.json"
 
 
 class LocalMediaStore:
@@ -210,4 +214,20 @@ class LocalMediaStore:
         tmp_path = path.parent / f"{path.name}.tmp"
         with tmp_path.open("w") as f:
             json.dump({"fingerprint": self._fingerprint(media_id), "payload": payload}, f, separators=(",", ":"))
+        os.replace(tmp_path, path)
+
+    # --- the asset table ----------------------------------------------------------
+
+    def load_asset_table(self) -> Any | None:
+        try:
+            with (self.root / ASSET_TABLE_NAME).open() as f:
+                return json.load(f)
+        except (OSError, json.JSONDecodeError):
+            return None
+
+    def save_asset_table(self, payload: Any) -> None:
+        path = self.root / ASSET_TABLE_NAME
+        tmp_path = path.parent / f"{path.name}.{os.getpid()}.{threading.get_ident()}.tmp"
+        with tmp_path.open("w") as f:
+            json.dump(payload, f, indent=1)
         os.replace(tmp_path, path)

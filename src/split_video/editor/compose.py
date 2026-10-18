@@ -18,12 +18,13 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 from starlette.responses import Response
 
-from split_video import timeline_service
+from split_video import assets, timeline_service
 from split_video.editor.media_response import media_response
 from split_video.ffmpeg import ExtractError, ProbeError
 from split_video.media_store import MediaError, MediaOutsideRootError, MediaStore
 from split_video.store import ProjectStore
 from split_video.timeline import (
+    AssetNotFoundError,
     Clip,
     OutputExistsError,
     OutsideRootError,
@@ -37,7 +38,8 @@ from split_video.timeline import (
 
 class ClipOut(BaseModel):
     id: str
-    source: str
+    asset: str  # the clip's asset id (see /assets); "" for a text clip or a media clip not yet linked
+    source: str  # where the asset's file is now (last known path if it can't be found)
     in_point: float
     out_point: float
     start: float
@@ -82,9 +84,32 @@ class CreateProjectRequest(BaseModel):
     name: str
 
 
+class AssetOut(BaseModel):
+    id: str
+    path: str  # the file's current location, relative to the browse root
+    size: int
+    mtime: float
+    duration: float
+    has_audio: bool
+    width: int | None
+    height: int | None
+    fps: float | None
+    copies: list[str]  # other paths known to hold the same bytes
+    present: bool  # whether the file is at `path` with this content right now
+
+
+class AssetListOut(BaseModel):
+    assets: list[AssetOut]
+
+
+class RegisterAssetRequest(BaseModel):
+    path: str  # relative to the browse root
+
+
 class AddClipRequest(BaseModel):
     track_id: str | None = None  # defaults to the first video track
-    path: str  # relative to the browse root
+    path: str | None = None  # a file relative to the browse root; give exactly one of path and asset
+    asset: str | None = None  # an asset id from /assets
     index: int | None = None  # position on the main track
     start: float | None = None  # seconds, on any other track
     in_point: float = 0.0
@@ -174,7 +199,7 @@ class _RenderJob:
 
 def _http(exc: TimelineError) -> HTTPException:
     """The HTTP status that best matches a timeline failure."""
-    if isinstance(exc, ProjectNotFoundError | SourceNotFoundError):
+    if isinstance(exc, ProjectNotFoundError | SourceNotFoundError | AssetNotFoundError):
         status = 404
     elif isinstance(exc, ProjectExistsError | OutputExistsError):
         status = 409
@@ -189,16 +214,17 @@ def make_router(media: MediaStore, store: ProjectStore) -> APIRouter:
     router = APIRouter()
     jobs: dict[str, _RenderJob] = {}
 
-    def clip_out(c: Clip) -> ClipOut:
+    def clip_out(c: Clip, row: assets.Located | None) -> ClipOut:
         return ClipOut(
             id=c.id,
-            source=c.source,
+            asset=row.asset.id if row else c.asset,
+            source=row.source if row else c.source,
             in_point=c.in_point,
             out_point=c.out_point,
             start=c.start,
             end=c.end,
             duration=c.duration,
-            source_duration=timeline_service.source_duration(media, c.source),
+            source_duration=row.asset.duration if row else None,
             gain=c.gain,
             muted=c.muted,
             transition=c.transition,
@@ -216,12 +242,25 @@ def make_router(media: MediaStore, store: ProjectStore) -> APIRouter:
             color=c.color,
         )
 
+    def asset_out(book: assets.AssetBook, a: assets.Asset) -> AssetOut:
+        return AssetOut(**a.summary(book.present(a)))
+
     def project_out(name: str, project: Project) -> ProjectOut:
+        # One table load for the whole project; each clip's file is found by asset id.
+        with assets.open_book(media) as book:
+            rows = {
+                c.id: assets.lookup(book, c.asset, c.source)
+                for t in project.tracks
+                for c in t.clips
+                if c.kind == "media"
+            }
         return ProjectOut(
             name=name,
             duration=project.duration,
             tracks=[
-                TrackOut(id=t.id, kind=t.kind, magnetic=t.magnetic, clips=[clip_out(c) for c in t.clips])
+                TrackOut(
+                    id=t.id, kind=t.kind, magnetic=t.magnetic, clips=[clip_out(c, rows.get(c.id)) for c in t.clips]
+                )
                 for t in project.tracks
             ],
         )
@@ -231,6 +270,42 @@ def make_router(media: MediaStore, store: ProjectStore) -> APIRouter:
             return project_out(name, action())
         except TimelineError as exc:
             raise _http(exc) from None
+
+    def asset_error(exc: Exception) -> HTTPException:
+        if isinstance(exc, MediaOutsideRootError):
+            return HTTPException(status_code=400, detail="path escapes the browse root")
+        if isinstance(exc, ProbeError):
+            return HTTPException(status_code=422, detail=str(exc))
+        return HTTPException(status_code=404, detail=str(exc))
+
+    @router.get("/assets", response_model=AssetListOut)
+    def list_assets() -> AssetListOut:
+        """The workspace's asset table: every media file a timeline clip has used, by content-derived id."""
+        with assets.open_book(media) as book:
+            return AssetListOut(assets=[asset_out(book, a) for a in book.list()])
+
+    @router.post("/assets/register", response_model=AssetOut)
+    def register_asset(request: RegisterAssetRequest) -> AssetOut:
+        """Add the file at `path` to the asset table (idempotent; the same bytes at another path are the same asset)."""
+        try:
+            with assets.open_book(media) as book:
+                return asset_out(book, book.register(request.path))
+        except (TimelineError, MediaError, ProbeError) as exc:
+            raise asset_error(exc) from None
+
+    @router.get("/assets/{asset_id}", response_model=AssetOut)
+    def get_asset(asset_id: str) -> AssetOut:
+        """One asset; if its file was renamed or moved it is found again and the table updated."""
+        try:
+            with assets.open_book(media) as book:
+                book.require(asset_id)
+                try:
+                    row = book.locate(asset_id)
+                except SourceNotFoundError:
+                    row = book.require(asset_id)  # missing: still describe it, with present=false
+                return asset_out(book, row)
+        except TimelineError as exc:
+            raise asset_error(exc) from None
 
     @router.get("/compose/projects", response_model=ProjectListOut)
     def list_projects() -> ProjectListOut:
@@ -242,7 +317,7 @@ def make_router(media: MediaStore, store: ProjectStore) -> APIRouter:
 
     @router.get("/compose/projects/{name}", response_model=ProjectOut)
     def get_project(name: str) -> ProjectOut:
-        return respond(name, lambda: timeline_service.load_existing(store, name))
+        return respond(name, lambda: timeline_service.load_existing(store, name, media))
 
     @router.post("/compose/projects/{name}/clips", response_model=ProjectOut)
     def add_clip(name: str, request: AddClipRequest) -> ProjectOut:
@@ -253,6 +328,7 @@ def make_router(media: MediaStore, store: ProjectStore) -> APIRouter:
                 media,
                 name,
                 request.path,
+                asset=request.asset,
                 track_id=request.track_id,
                 index=request.index,
                 start=request.start,
@@ -272,54 +348,58 @@ def make_router(media: MediaStore, store: ProjectStore) -> APIRouter:
 
     @router.post("/compose/projects/{name}/tracks", response_model=ProjectOut)
     def add_track(name: str, request: AddTrackRequest) -> ProjectOut:
-        return respond(name, lambda: timeline_service.add_track(store, name, request.kind))
+        return respond(name, lambda: timeline_service.add_track(store, name, request.kind, media))
 
     @router.delete("/compose/projects/{name}/tracks/{track_id}", response_model=ProjectOut)
     def remove_track(name: str, track_id: str) -> ProjectOut:
-        return respond(name, lambda: timeline_service.remove_track(store, name, track_id))
+        return respond(name, lambda: timeline_service.remove_track(store, name, track_id, media))
 
     @router.post("/compose/projects/{name}/tracks/{track_id}/move", response_model=ProjectOut)
     def move_track(name: str, track_id: str, request: MoveTrackRequest) -> ProjectOut:
-        return respond(name, lambda: timeline_service.move_track(store, name, track_id, request.to_index))
+        return respond(name, lambda: timeline_service.move_track(store, name, track_id, request.to_index, media))
 
     @router.patch("/compose/projects/{name}/clips/{clip_id}/properties", response_model=ProjectOut)
     def set_properties(name: str, clip_id: str, request: PropertiesRequest) -> ProjectOut:
         changes = request.model_dump(exclude_none=True)
-        return respond(name, lambda: timeline_service.set_clip_properties(store, name, clip_id, **changes))
+        return respond(name, lambda: timeline_service.set_clip_properties(store, name, clip_id, media=media, **changes))
 
     @router.post("/compose/projects/{name}/tracks/{track_id}/text", response_model=ProjectOut)
     def add_text(name: str, track_id: str, request: AddTextRequest) -> ProjectOut:
         options = request.model_dump(exclude={"text", "duration"})
         return respond(
             name,
-            lambda: timeline_service.add_text_clip(store, name, track_id, request.text, request.duration, **options),
+            lambda: timeline_service.add_text_clip(
+                store, name, track_id, request.text, request.duration, media=media, **options
+            ),
         )
 
     @router.patch("/compose/projects/{name}/clips/{clip_id}/text", response_model=ProjectOut)
     def set_text(name: str, clip_id: str, request: TextRequest) -> ProjectOut:
         changes = request.model_dump(exclude_none=True)
-        return respond(name, lambda: timeline_service.set_text_properties(store, name, clip_id, **changes))
+        return respond(name, lambda: timeline_service.set_text_properties(store, name, clip_id, media=media, **changes))
 
     @router.post("/compose/projects/{name}/clips/{clip_id}/place", response_model=ProjectOut)
     def place_clip(name: str, clip_id: str, request: PlaceRequest) -> ProjectOut:
         return respond(
             name,
-            lambda: timeline_service.place_clip(store, name, clip_id, start=request.start, track_id=request.track_id),
+            lambda: timeline_service.place_clip(
+                store, name, clip_id, start=request.start, track_id=request.track_id, media=media
+            ),
         )
 
     @router.post("/compose/projects/{name}/clips/{clip_id}/move", response_model=ProjectOut)
     def move_clip(name: str, clip_id: str, request: MoveRequest) -> ProjectOut:
-        return respond(name, lambda: timeline_service.move_clip(store, name, clip_id, request.to_index))
+        return respond(name, lambda: timeline_service.move_clip(store, name, clip_id, request.to_index, media))
 
     @router.delete("/compose/projects/{name}/clips/{clip_id}", response_model=ProjectOut)
     def remove_clip(name: str, clip_id: str) -> ProjectOut:
-        return respond(name, lambda: timeline_service.remove_clip(store, name, clip_id))
+        return respond(name, lambda: timeline_service.remove_clip(store, name, clip_id, media))
 
     @router.put("/compose/projects/{name}/clips/{clip_id}/transition", response_model=ProjectOut)
     def set_transition(name: str, clip_id: str, request: TransitionRequest) -> ProjectOut:
         return respond(
             name,
-            lambda: timeline_service.set_transition(store, name, clip_id, request.transition, request.duration),
+            lambda: timeline_service.set_transition(store, name, clip_id, request.transition, request.duration, media),
         )
 
     @router.post("/compose/projects/{name}/render", response_model=RenderStartOut)
@@ -372,6 +452,15 @@ def make_media_router(media: MediaStore) -> APIRouter:
             raise HTTPException(status_code=400, detail="path escapes the browse root") from None
         if not media.is_file(media_id):
             raise HTTPException(status_code=404, detail="file not found")
+        return media_response(media, media_id, request)
+
+    @router.get("/media/asset/{asset_id}")
+    def media_asset(asset_id: str, request: Request) -> Response:
+        """The file of an asset (see /assets), found by id even if it was renamed since."""
+        try:
+            media_id = assets.media_id_of(media, asset_id)
+        except (TimelineError, MediaError) as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from None
         return media_response(media, media_id, request)
 
     return router
