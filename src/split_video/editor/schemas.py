@@ -4,6 +4,13 @@ from __future__ import annotations
 
 from pydantic import BaseModel
 
+# Project identification convention: every endpoint that works on a video
+# takes the project id as a `path` *query parameter* (GET and POST alike;
+# request bodies never carry it). The id is the video's path relative to the
+# browse root, the same string `/api/open` takes. The server keeps no
+# "currently open" file. Escaping the root gives 400, a missing file 404.
+PROJECT_PATH_DESCRIPTION = "Project id: the video's path relative to the browse root."
+
 
 class SilenceIntervalOut(BaseModel):
     start: float
@@ -29,8 +36,11 @@ class StateParams(BaseModel):
 
 
 class SessionResponse(BaseModel):
+    # The file the server was started on, if any (None when started on a
+    # directory). Informational only: no per-server state is kept for it.
     file_open: bool
     filename: str | None = None
+    path: str | None = None  # project id to pass as `path` to open that file
 
 
 class BrowseEntryOut(BaseModel):
