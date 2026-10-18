@@ -118,3 +118,54 @@ def test_overlay_only_project_renders_over_black(two_sources):
     render(p, two_sources, out)
     assert probe_duration(out) == pytest.approx(3.0, abs=0.3)
     assert max(_frame_rgb(out, 0.3, 160, 120)) < 40
+
+
+def _volume(path):
+    """(mean_volume, max_volume) in dB as measured by ffmpeg's volumedetect."""
+    err = subprocess.run(
+        ["ffmpeg", "-i", str(path), "-af", "volumedetect", "-vn", "-f", "null", "-"],
+        capture_output=True,
+        text=True,
+        check=False,
+    ).stderr
+    values = {}
+    for key in ("mean_volume", "max_volume"):
+        line = next(line for line in err.splitlines() if f"{key}:" in line)
+        values[key] = float(line.split(f"{key}:")[1].split("dB")[0])
+    return values["mean_volume"], values["max_volume"]
+
+
+def _single(two_sources, **props):
+    p = empty_project()
+    p, clip = ops.add_clip(p, p.tracks[0].id, "red.mp4", 4.0)
+    if props:
+        p = ops.set_clip_properties(p, clip.id, **props)
+    out = two_sources / "out.mp4"
+    render(p, two_sources, out)
+    return out
+
+
+def test_gain_changes_loudness_by_the_expected_amount(two_sources):
+    base = _volume(_single(two_sources))[0]
+    boosted = _volume(_single(two_sources, gain=2.0))[0]
+    assert boosted - base == pytest.approx(6.0, abs=1.0)
+
+
+def test_muted_clip_is_silent(two_sources):
+    assert _volume(_single(two_sources, muted=True))[1] < -60
+
+
+def test_audio_track_is_mixed_with_the_main_audio(two_sources):
+    subprocess.run(
+        ["ffmpeg", "-y", "-f", "lavfi", "-i", "sine=frequency=880:duration=6", str(two_sources / "music.wav")],
+        capture_output=True, check=True,
+    )  # fmt: skip
+    p = empty_project()
+    p, main = ops.add_clip(p, p.tracks[0].id, "red.mp4", 4.0)
+    p = ops.set_clip_properties(p, main.id, muted=True)
+    p, track = ops.add_track(p, "audio")
+    p, _ = ops.add_clip(p, track.id, "music.wav", 6.0, start=1.0)
+    out = two_sources / "out.mp4"
+    render(p, two_sources, out)
+    assert probe_duration(out) == pytest.approx(7.0, abs=0.3)  # the audio track is the longest thing
+    assert _volume(out)[0] > -40  # music is audible even though the main clip is muted

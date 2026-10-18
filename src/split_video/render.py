@@ -7,6 +7,9 @@ The picture is built bottom-up on a black canvas as long as the project:
    with `concat` for cuts or `xfade`/`acrossfade` for crossfades.
 2. Every clip on any other video track is overlaid at its own start time with
    its own position, size and opacity, in track order (later tracks on top).
+3. Audio: each clip's sound (the main track's already joined) gets its gain
+   (muted clips contribute silence), is delayed to its start time, and all of
+   it is summed with `amix` at unchanged levels.
 
 Each clip is its own `-ss/-t` input, so ffmpeg only decodes the part used.
 `build_filter_graph` is pure (it only needs probed media info) so the graph can
@@ -45,6 +48,14 @@ def _main_track(project: Project) -> Track | None:
     return first if first is not None and first.magnetic and first.clips else None
 
 
+def _audio_clips(project: Project) -> list[Clip]:
+    clips: list[Clip] = []
+    for track in project.tracks:
+        if track.kind == "audio":
+            clips.extend(sorted(track.clips, key=lambda c: c.start))
+    return clips
+
+
 def _overlay_clips(project: Project, main: Track | None) -> list[Clip]:
     clips: list[Clip] = []
     for track in project.tracks:
@@ -55,6 +66,10 @@ def _overlay_clips(project: Project, main: Track | None) -> list[Clip]:
 
 def _fmt_audio() -> str:
     return f"aresample={AUDIO_RATE},aformat=sample_fmts=fltp:channel_layouts=stereo"
+
+
+def _gain(clip: Clip) -> str:
+    return "0" if clip.muted else f"{clip.gain:g}"
 
 
 def _main_chain(clips: list[Clip], first_input: int, infos: dict[str, MediaInfo], width: int, height: int):
@@ -68,7 +83,9 @@ def _main_chain(clips: list[Clip], first_input: int, infos: dict[str, MediaInfo]
             f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,setsar=1,format=yuv420p[v{n}]"
         )
         if infos[clip.source].has_audio:
-            parts.append(f"[{i}:a]asetpts=PTS-STARTPTS,{_fmt_audio()},atrim=0:{clip.duration:.3f}[a{n}]")
+            parts.append(
+                f"[{i}:a]asetpts=PTS-STARTPTS,{_fmt_audio()},atrim=0:{clip.duration:.3f},volume={_gain(clip)}[a{n}]"
+            )
         else:
             parts.append(f"anullsrc=r={AUDIO_RATE}:cl=stereo,atrim=0:{clip.duration:.3f},asetpts=PTS-STARTPTS[a{n}]")
 
@@ -94,8 +111,9 @@ def build_plan(project: Project, infos: dict[str, MediaInfo], width: int, height
     main = _main_track(project)
     main_clips = list(main.clips) if main else []
     overlays = _overlay_clips(project, main)
+    audio_clips = _audio_clips(project)
     total = project.duration
-    ordered = [*main_clips, *overlays]
+    ordered = [*main_clips, *overlays, *audio_clips]
 
     parts: list[str] = []
     if main_clips:
@@ -124,6 +142,23 @@ def build_plan(project: Project, infos: dict[str, MediaInfo], width: int, height
             f"enable='between(t,{clip.start:.3f},{clip.end:.3f})':eof_action=pass:format=auto[{nxt}]"
         )
         vlabel = nxt
+
+    # Sound from everything that isn't the (already joined) main track.
+    mix = [alabel]
+    for n, clip in enumerate([*overlays, *audio_clips]):
+        if clip.muted or not infos[clip.source].has_audio:
+            continue
+        i = len(main_clips) + n
+        delay = round(clip.start * 1000)
+        parts.append(
+            f"[{i}:a]asetpts=PTS-STARTPTS,{_fmt_audio()},atrim=0:{clip.duration:.3f},"
+            f"volume={clip.gain:g},adelay={delay}|{delay}[ax{n}]"
+        )
+        mix.append(f"ax{n}")
+    if len(mix) > 1:
+        sources = "".join(f"[{m}]" for m in mix)
+        parts.append(f"{sources}amix=inputs={len(mix)}:normalize=0:duration=longest,alimiter=limit=0.95[amixed]")
+        alabel = "amixed"
 
     return Plan(ordered, ";".join(parts), vlabel, alabel, width, height)
 
@@ -154,16 +189,17 @@ def render(
         raise TimelineError("the timeline has no clips to render")
 
     infos: dict[str, MediaInfo] = {}
-    for clip in video_clips:
-        if clip.source in infos:
-            continue
-        source = resolve_source(root, clip.source)
-        if not source.is_file():
-            raise TimelineError(f"source file not found: {clip.source}")
-        info = probe_media(source)
-        if info.width is None:
-            raise TimelineError(f"{clip.source} has no video stream")
-        infos[clip.source] = info
+    for track in project.tracks:
+        for clip in track.clips:
+            if clip.source not in infos:
+                source = resolve_source(root, clip.source)
+                if not source.is_file():
+                    raise TimelineError(f"source file not found: {clip.source}")
+                infos[clip.source] = probe_media(source)
+            if track.kind == "video" and infos[clip.source].width is None:
+                raise TimelineError(f"{clip.source} has no video stream")
+            if track.kind == "audio" and not infos[clip.source].has_audio:
+                raise TimelineError(f"{clip.source} has no audio stream")
 
     main = _main_track(project)
     first = main.clips[0] if main else video_clips[0]
