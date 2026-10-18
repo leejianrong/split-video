@@ -43,27 +43,27 @@ function projectUrl(base) {
 }
 
 export async function getSession() {
-  return requestJSON("api/session");
+  return requestJSON("api/v1/session");
 }
 
 export async function browse(path = "") {
-  return requestJSON(`api/browse?path=${encodeURIComponent(path)}`);
+  return requestJSON(`api/v1/browse?path=${encodeURIComponent(path)}`);
 }
 
 export async function openFile(path) {
   setProjectPath(path);
-  return requestJSON("api/open", {
+  return requestJSON("api/v1/open", {
     method: "POST",
     body: JSON.stringify({ path }),
   });
 }
 
 export async function getState() {
-  return requestJSON(projectUrl("api/state"));
+  return requestJSON(projectUrl("api/v1/state"));
 }
 
 export async function saveProject(segments) {
-  return requestJSON(projectUrl("api/project"), {
+  return requestJSON(projectUrl("api/v1/project"), {
     method: "POST",
     body: JSON.stringify({
       segments: segments.map((s) => ({
@@ -79,14 +79,14 @@ export async function saveProject(segments) {
 }
 
 export async function detectSilence(silenceThreshold) {
-  return requestJSON(projectUrl("api/detect"), {
+  return requestJSON(projectUrl("api/v1/detect"), {
     method: "POST",
     body: JSON.stringify({ silence_threshold: silenceThreshold }),
   });
 }
 
 export async function getWaveform() {
-  return requestJSON(projectUrl("api/waveform"));
+  return requestJSON(projectUrl("api/v1/waveform"));
 }
 
 // Only one segments recompute should ever be in flight: a new call aborts
@@ -100,7 +100,7 @@ export async function computeSegments({ silences, duration, minSilenceDuration, 
   const { signal } = segmentsAbortController;
 
   try {
-    return await requestJSON("api/segments", {
+    return await requestJSON("api/v1/segments", {
       method: "POST",
       body: JSON.stringify({
         silences,
@@ -118,7 +118,7 @@ export async function computeSegments({ silences, duration, minSilenceDuration, 
 }
 
 export async function startExport({ segments, precise, outputFormat, overwrite, manifest }) {
-  return requestJSON(projectUrl("api/export"), {
+  return requestJSON(projectUrl("api/v1/export"), {
     method: "POST",
     body: JSON.stringify({
       segments,
@@ -131,23 +131,23 @@ export async function startExport({ segments, precise, outputFormat, overwrite, 
 }
 
 export async function getExportStatus(jobId) {
-  return requestJSON(`api/export/${encodeURIComponent(jobId)}`);
+  return requestJSON(`api/v1/export/${encodeURIComponent(jobId)}`);
 }
 
 export async function startAnalysis() {
-  return requestJSON(projectUrl("api/analyze"), { method: "POST" });
+  return requestJSON(projectUrl("api/v1/analyze"), { method: "POST" });
 }
 
 export async function getAnalysisStatus(jobId) {
-  return requestJSON(`api/analyze/${encodeURIComponent(jobId)}`);
+  return requestJSON(`api/v1/analyze/${encodeURIComponent(jobId)}`);
 }
 
 export async function getClassification() {
-  return requestJSON(projectUrl("api/classification"));
+  return requestJSON(projectUrl("api/v1/classification"));
 }
 
 export async function setClassificationThresholds(thresholds) {
-  return requestJSON(projectUrl("api/classification/thresholds"), {
+  return requestJSON(projectUrl("api/v1/classification/thresholds"), {
     method: "POST",
     body: JSON.stringify({ thresholds }),
   });

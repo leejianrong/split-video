@@ -308,6 +308,16 @@ make dev
 make dev DIR=~/recordings PORT=9000
 ```
 
+### HTTP API
+
+The editor's JSON API is versioned under `/api/v1` (media at
+`/api/v1/media/source?path=...`). Its OpenAPI schema is committed as
+[`openapi.json`](openapi.json) at the repo root, and CI fails if it drifts
+from the code. After changing a route or schema, regenerate it with
+`make openapi`. The old unversioned paths (`/api/...`, `/media/source`,
+`/media/file`) still work for one release as deprecated aliases (they send a
+`Deprecation: true` header and are not in the schema).
+
 Contributing? See [CONTRIBUTING.md](CONTRIBUTING.md) for running tests,
 the pre-push hook, and cutting a release.
 

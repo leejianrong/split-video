@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import quote
 
-from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request
 from fastapi.staticfiles import StaticFiles
 from starlette.responses import FileResponse
 
@@ -18,6 +18,7 @@ from split_video.editor.browse import (
 )
 from split_video.editor.cache import ClassificationCache, SilenceCache, WaveformCache
 from split_video.editor.classify import ClassificationRegion
+from split_video.editor.compose import make_media_router as make_compose_media_router
 from split_video.editor.compose import make_router as make_compose_router
 from split_video.editor.jobs import (
     AnalysisJobStore,
@@ -60,6 +61,20 @@ from split_video.silence import SilenceInterval
 
 STATIC_DIR = Path(__file__).parent / "static"
 
+# Every JSON/media route lives under this prefix; it is the documented,
+# versioned surface (see openapi.json at the repo root).
+API_PREFIX = "/api/v1"
+
+
+_LEGACY_MEDIA_PATHS = ("/media/source", "/media/file")
+
+
+def _is_legacy_path(path: str) -> bool:
+    """A pre-versioning spelling kept as a deprecated alias for one release."""
+    if path in _LEGACY_MEDIA_PATHS:
+        return True
+    return path.startswith("/api/") and not path.startswith(f"{API_PREFIX}/")
+
 
 @dataclass
 class _ProjectState:
@@ -101,7 +116,14 @@ def create_app(root: Path, defaults: StateParams) -> FastAPI:
     """`root` is either a video file to open immediately (the historical
     `split-video edit <file>` behavior, unchanged) or a directory to pick a
     video from via the in-browser file picker."""
-    app = FastAPI(title="split-video editor")
+    # `version` is the API version, not the package version, so the committed
+    # openapi.json only changes when the API does.
+    app = FastAPI(title="split-video editor", version="1")
+    # Routes are declared once on these two routers (no /api prefix, no
+    # /media prefix) and mounted twice at the bottom: under /api/v1 (the
+    # schema) and as deprecated /api and /media aliases (hidden from it).
+    api = APIRouter()
+    media = APIRouter()
 
     # The static frontend (index.html/*.js/*.css, mounted at the bottom of
     # this function) has no cache-busting — no content hash or version
@@ -117,8 +139,12 @@ def create_app(root: Path, defaults: StateParams) -> FastAPI:
     @app.middleware("http")
     async def no_store_for_static_assets(request: Request, call_next):
         response = await call_next(request)
-        if not request.url.path.startswith(("/api/", "/media/")):
+        path = request.url.path
+        if not path.startswith(("/api/", "/media/")):
             response.headers["Cache-Control"] = "no-store"
+        if _is_legacy_path(path):
+            response.headers["Deprecation"] = "true"
+            response.headers["Link"] = f'<{API_PREFIX}>; rel="successor-version"'
         return response
 
     browse_root = root.parent if root.is_file() else root
@@ -191,14 +217,14 @@ def create_app(root: Path, defaults: StateParams) -> FastAPI:
             return StateResponse(
                 filename=project.source.name,
                 duration=project.total_duration,
-                video_url=f"/media/source?path={quote(path, safe='/')}",
+                video_url=f"{API_PREFIX}/media/source?path={quote(path, safe='/')}",
                 params=defaults,
                 silences=[],
                 segments=_segments_out(project.initial_segments),
                 resumed=project.resumed,
             )
 
-    @app.get("/api/session", response_model=SessionResponse)
+    @api.get("/session", response_model=SessionResponse)
     def get_session() -> SessionResponse:
         # No per-server "open file": this only tells the frontend which file
         # (if any) the server was started on, so it can open it directly.
@@ -208,7 +234,7 @@ def create_app(root: Path, defaults: StateParams) -> FastAPI:
             path=default_project_path,
         )
 
-    @app.get("/api/browse", response_model=BrowseResponse)
+    @api.get("/browse", response_model=BrowseResponse)
     def browse(path: str = "") -> BrowseResponse:
         try:
             listing = list_directory(browse_root, path)
@@ -222,15 +248,15 @@ def create_app(root: Path, defaults: StateParams) -> FastAPI:
             entries=[BrowseEntryOut(name=e.name, path=e.path, is_dir=e.is_dir) for e in listing.entries],
         )
 
-    @app.post("/api/open", response_model=StateResponse)
+    @api.post("/open", response_model=StateResponse)
     def open_file(request: OpenRequest) -> StateResponse:
         return _state_response(_get_project(request.path, refresh=True), request.path)
 
-    @app.get("/api/state", response_model=StateResponse)
+    @api.get("/state", response_model=StateResponse)
     def get_state(path: str = Query(..., description=PROJECT_PATH_DESCRIPTION)) -> StateResponse:
         return _state_response(_get_project(path), path)
 
-    @app.post("/api/project", response_model=StateResponse)
+    @api.post("/project", response_model=StateResponse)
     def save_current_project(
         request: ProjectSaveRequest, path: str = Query(..., description=PROJECT_PATH_DESCRIPTION)
     ) -> StateResponse:
@@ -252,16 +278,16 @@ def create_app(root: Path, defaults: StateParams) -> FastAPI:
             project.resumed = True
         return _state_response(project, path)
 
-    @app.get("/media/source")
+    @media.get("/media/source")
     def get_media(project: _ProjectState = project_dependency) -> FileResponse:
         return FileResponse(project.source)
 
-    @app.post("/api/detect", response_model=DetectResponse)
+    @api.post("/detect", response_model=DetectResponse)
     def detect(request: DetectRequest, project: _ProjectState = project_dependency) -> DetectResponse:
         silences = project.cache.get_raw_silences(request.silence_threshold)
         return DetectResponse(silences=_silences_out(silences))
 
-    @app.get("/api/waveform", response_model=WaveformResponse)
+    @api.get("/waveform", response_model=WaveformResponse)
     def waveform(project: _ProjectState = project_dependency) -> WaveformResponse:
         peaks = project.waveform_cache.get_peaks()
         return WaveformResponse(buckets=peaks.buckets)
@@ -284,7 +310,7 @@ def create_app(root: Path, defaults: StateParams) -> FastAPI:
             thresholds=cache.get_thresholds(),
         )
 
-    @app.post("/api/analyze", response_model=AnalyzeStartResponse)
+    @api.post("/analyze", response_model=AnalyzeStartResponse)
     def analyze(project: _ProjectState = project_dependency) -> AnalyzeStartResponse:
         cache = project.classification_cache
         if cache.is_analyzed:
@@ -297,7 +323,7 @@ def create_app(root: Path, defaults: StateParams) -> FastAPI:
         job_id = start_audio_analysis(analysis_job_store, project.source, cache, thresholds)
         return AnalyzeStartResponse(job_id=job_id)
 
-    @app.get("/api/analyze/{job_id}", response_model=AnalyzeStatusResponse)
+    @api.get("/analyze/{job_id}", response_model=AnalyzeStatusResponse)
     def analyze_status(job_id: str) -> AnalyzeStatusResponse:
         job = analysis_job_store.get(job_id)
         if job is None:
@@ -305,12 +331,12 @@ def create_app(root: Path, defaults: StateParams) -> FastAPI:
         with job.lock:
             return AnalyzeStatusResponse(status=job.status, completed=job.completed, total=job.total, error=job.error)
 
-    @app.get("/api/classification", response_model=ClassificationResponse)
+    @api.get("/classification", response_model=ClassificationResponse)
     def classification(project: _ProjectState = project_dependency) -> ClassificationResponse:
         cache = project.classification_cache
         return _classification_out(cache, cache.is_analyzed)
 
-    @app.post("/api/classification/thresholds", response_model=ClassificationResponse)
+    @api.post("/classification/thresholds", response_model=ClassificationResponse)
     def rethreshold_classification(
         request: RethresholdRequest, project: _ProjectState = project_dependency
     ) -> ClassificationResponse:
@@ -321,7 +347,7 @@ def create_app(root: Path, defaults: StateParams) -> FastAPI:
             raise HTTPException(status_code=409, detail=str(exc))
         return _classification_out(cache, True)
 
-    @app.post("/api/segments", response_model=SegmentsResponse)
+    @api.post("/segments", response_model=SegmentsResponse)
     def segments_endpoint(request: SegmentsRequest) -> SegmentsResponse:
         silences = [SilenceInterval(start=s.start, end=s.end) for s in request.silences]
         computed = compute_segments(
@@ -333,7 +359,7 @@ def create_app(root: Path, defaults: StateParams) -> FastAPI:
         )
         return SegmentsResponse(segments=_segments_out(_to_saved(computed)))
 
-    @app.post("/api/export", response_model=ExportStartResponse)
+    @api.post("/export", response_model=ExportStartResponse)
     def export(request: ExportRequest, project: _ProjectState = project_dependency) -> ExportStartResponse:
         try:
             plan = plan_export(
@@ -362,7 +388,7 @@ def create_app(root: Path, defaults: StateParams) -> FastAPI:
         )
         return ExportStartResponse(job_id=job_id)
 
-    @app.get("/api/export/{job_id}", response_model=ExportStatusResponse)
+    @api.get("/export/{job_id}", response_model=ExportStatusResponse)
     def export_status(job_id: str) -> ExportStatusResponse:
         job = job_store.get(job_id)
         if job is None:
@@ -379,7 +405,16 @@ def create_app(root: Path, defaults: StateParams) -> FastAPI:
                 error=job.error,
             )
 
-    app.include_router(make_compose_router(browse_root))
+    api.include_router(make_compose_router(browse_root))
+    media.include_router(make_compose_media_router(browse_root))
+
+    app.include_router(api, prefix=API_PREFIX)
+    app.include_router(media, prefix=API_PREFIX)
+    # Deprecated aliases for one release: /api/... and /media/... as they were
+    # before versioning. Not in the OpenAPI schema; responses carry a
+    # `Deprecation` header (set by the middleware above). Registered after /api/v1 so it can't shadow it.
+    app.include_router(api, prefix="/api", include_in_schema=False)
+    app.include_router(media, include_in_schema=False)
 
     # Mounted last: Starlette matches routes in registration order, and this
     # catch-all static mount must not shadow the /api/* and /media/* routes.
