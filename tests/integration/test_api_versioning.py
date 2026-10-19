@@ -11,7 +11,14 @@ from split_video.editor.schemas import StateParams
 
 DEFAULTS = StateParams(silence_threshold=-35.0, min_silence_duration=2.0, min_song_length=2.0, padding=0.15)
 # Routes added after versioning shipped never had an unversioned spelling, so they get no alias.
-NO_LEGACY_ALIAS = {"/api/v1/events", "/api/v1/whoami", "/api/v1/library/scan"}
+NO_LEGACY_ALIAS = {
+    "/api/v1/events",
+    "/api/v1/whoami",
+    "/api/v1/library/scan",
+    "/api/v1/assets/{asset_id}/proxy",
+    "/api/v1/assets/{asset_id}/thumbnails",
+    "/api/v1/assets/{asset_id}/thumbnails/info",
+}
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 

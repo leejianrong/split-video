@@ -38,6 +38,7 @@ EXPORT = "export"
 ANALYSIS = "analysis"
 RENDER = "render"
 LIBRARY_SCAN = "library_scan"
+PROXY = "proxy"
 TRANSCRIPTION = "transcription"
 
 JobState = Literal["queued", "running", "done", "error", "cancelled"]

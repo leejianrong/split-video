@@ -19,6 +19,9 @@ from split_video.store_provider import StoreProvider
 
 class LibraryScanRequest(BaseModel):
     folder: str = ""  # relative to the browse root; empty scans the whole workspace
+    # Also queue a `proxy` job (proxy + thumbnail strip) for each newly added video. Off by default: it is
+    # minutes of ffmpeg per hour of video. The scan job's result then lists them as `proxy_jobs`.
+    proxies: bool = False
 
 
 class LibraryScanStartResponse(BaseModel):
@@ -35,8 +38,10 @@ def make_router(provider: StoreProvider, jobs: JobQueue) -> APIRouter:
     ) -> LibraryScanStartResponse:
         """Queue a scan of `folder`: every new or changed media file under it is probed once and recorded
         as an asset (see `GET /assets`). Files already recorded are not probed again. The job's result is
-        `{folder, total, added, copies, unchanged, skipped}`."""
+        `{folder, total, added, copies, unchanged, skipped}`
+        (plus `proxy_jobs` with `proxies`)."""
         folder = request.folder if request else ""
+        proxies = bool(request and request.proxies)
         try:
             start = ctx.media.resolve(folder)
             ctx.media.list_dir(start)
@@ -46,7 +51,7 @@ def make_router(provider: StoreProvider, jobs: JobQueue) -> APIRouter:
             raise HTTPException(status_code=404, detail=f"folder not found: {folder}") from None
         job_id = jobs.submit(
             LIBRARY_SCAN,
-            library_scan_work(ctx.media, start),
+            library_scan_work(ctx.media, start, jobs=jobs if proxies else None, owner=ctx.principal.id),
             label=start or "workspace",
             owner=ctx.principal.id,
         )

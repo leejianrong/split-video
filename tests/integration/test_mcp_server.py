@@ -41,6 +41,7 @@ async def test_exposes_the_documented_tools(root):
         names = {t.name for t in (await client.list_tools()).tools}
     assert names == {
         "list_videos",
+        "prepare_asset",
         "list_segments",
         "propose_splits",
         "add_split",

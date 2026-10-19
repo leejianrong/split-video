@@ -87,6 +87,41 @@ def run_cancellable(
     return subprocess.CompletedProcess(cmd, proc.returncode, stdout, stderr)
 
 
+def run_with_progress(
+    cmd: list[str], on_seconds: Callable[[float], None], cancel: CancelToken | None = None
+) -> subprocess.CompletedProcess[str]:
+    """Run an ffmpeg command, calling `on_seconds(out_time)` as it writes output (parsed from
+    `-progress pipe:1`, so it is output time, not wall time). A cancelled job terminates it at
+    once and gets `JobCancelledError`. `cmd[0]` must be the ffmpeg binary. stdout carries the
+    progress, so the output must be a file; stderr is returned (its last 8 KiB)."""
+    full = [cmd[0], "-nostdin", "-nostats", "-progress", "pipe:1", *cmd[1:]]
+    proc = subprocess.Popen(full, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    tail: list[str] = []
+
+    def drain() -> None:
+        assert proc.stderr is not None
+        for line in proc.stderr:
+            tail.append(line)
+            del tail[:-200]
+
+    reader = threading.Thread(target=drain, name="ffmpeg-stderr", daemon=True)
+    reader.start()
+    detach = stop_on_cancel(proc, cancel)
+    try:
+        assert proc.stdout is not None
+        for line in proc.stdout:
+            key, _, value = line.strip().partition("=")
+            if key == "out_time_us" and value.lstrip("-").isdigit():
+                on_seconds(max(0, int(value)) / 1e6)
+        proc.wait()
+        reader.join(5)
+    finally:
+        detach()
+    if cancel is not None:
+        cancel.raise_if_cancelled()
+    return subprocess.CompletedProcess(full, proc.returncode, "", "".join(tail)[-8192:])
+
+
 def probe_duration(path: Path) -> float:
     ffprobe = _require_binary("ffprobe")
     result = subprocess.run(
