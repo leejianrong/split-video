@@ -73,7 +73,7 @@ def test_two_clients_edit_different_files_at_once(three_songs_clip, two_songs_cl
     # Analysing A leaves B's classification cache untouched.
     monkeypatch.setattr(classify_module, "get_model_and_labels", lambda: (object(), object()))
     monkeypatch.setattr(
-        classify_module, "classify_audio", lambda *args, **kwargs: ([], [dict.fromkeys(BUCKETS, 0.1)], 1.0)
+        classify_module, "classify_stream", lambda *args, **kwargs: ([], [dict.fromkeys(BUCKETS, 0.1)], 1.0)
     )
     job_id = alice.post("/api/v1/analyze", params=a).json()["job_id"]
     deadline = time.time() + 30

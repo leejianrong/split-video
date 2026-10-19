@@ -98,13 +98,13 @@ def test_waveform_returns_buckets_spanning_the_clip(three_songs_clip):
 
 def test_waveform_only_decodes_audio_once(three_songs_clip, monkeypatch):
     call_count = {"n": 0}
-    real_extract_pcm_audio = cache_module.extract_pcm_audio
+    real_iter_pcm_chunks = cache_module.iter_pcm_chunks
 
-    def counting_extract_pcm_audio(*args, **kwargs):
+    def counting_iter_pcm_chunks(*args, **kwargs):
         call_count["n"] += 1
-        return real_extract_pcm_audio(*args, **kwargs)
+        return real_iter_pcm_chunks(*args, **kwargs)
 
-    monkeypatch.setattr(cache_module, "extract_pcm_audio", counting_extract_pcm_audio)
+    monkeypatch.setattr(cache_module, "iter_pcm_chunks", counting_iter_pcm_chunks)
 
     client = _client(three_songs_clip)
     assert call_count["n"] == 0  # not computed eagerly on open
@@ -195,12 +195,12 @@ def test_analyze_runs_yamnet_and_populates_classification(three_songs_clip):
 def test_analyze_is_a_no_op_once_already_analyzed(three_songs_clip, monkeypatch):
     call_count = {"n": 0}
 
-    def fake_classify_audio(pcm, model, labels, thresholds, on_progress=None):
+    def fake_classify_stream(chunks, model, labels, thresholds, on_progress=None, expected_samples=None):
         call_count["n"] += 1
         return [], [{"music": 0.1}], 1.0
 
     monkeypatch.setattr(classify_module, "get_model_and_labels", lambda: (object(), object()))
-    monkeypatch.setattr(classify_module, "classify_audio", fake_classify_audio)
+    monkeypatch.setattr(classify_module, "classify_stream", fake_classify_stream)
 
     client = _client(three_songs_clip)
 

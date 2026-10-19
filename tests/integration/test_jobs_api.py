@@ -154,7 +154,7 @@ def test_analysis_error_when_the_model_is_missing(three_songs_clip, monkeypatch)
 
 def test_already_analyzed_is_a_job_that_is_done_on_submit(three_songs_clip, monkeypatch):
     monkeypatch.setattr(classify_module, "get_model_and_labels", lambda: (object(), object()))
-    monkeypatch.setattr(classify_module, "classify_audio", lambda *a, **k: ([], [{"music": 0.1}], 1.0))
+    monkeypatch.setattr(classify_module, "classify_stream", lambda *a, **k: ([], [{"music": 0.1}], 1.0))
     client = TestClient(create_app(three_songs_clip.parent, DEFAULTS, jobs=InProcessJobQueue(synchronous=True)))
     first = client.post("/api/v1/analyze", params=_q(three_songs_clip)).json()["job_id"]
     assert client.get(f"/api/v1/jobs/{first}").json()["state"] == "done"  # synchronous queue: finished at submit
@@ -172,7 +172,7 @@ def test_already_analyzed_is_a_job_that_is_done_on_submit(three_songs_clip, monk
 def test_cancelling_an_analysis_stops_between_frames_and_stores_nothing(three_songs_clip, monkeypatch):
     frames = []
 
-    def slow_classify(pcm, model, labels, thresholds, on_progress=None):
+    def slow_classify(chunks, model, labels, thresholds, on_progress=None, expected_samples=None):
         for i in range(100000):
             frames.append(i)
             on_progress(i + 1, 100000)
@@ -180,7 +180,7 @@ def test_cancelling_an_analysis_stops_between_frames_and_stores_nothing(three_so
         raise AssertionError("was never cancelled")
 
     monkeypatch.setattr(classify_module, "get_model_and_labels", lambda: (object(), object()))
-    monkeypatch.setattr(classify_module, "classify_audio", slow_classify)
+    monkeypatch.setattr(classify_module, "classify_stream", slow_classify)
     client = TestClient(create_app(three_songs_clip.parent, DEFAULTS))
     job_id = client.post("/api/v1/analyze", params=_q(three_songs_clip)).json()["job_id"]
     while len(frames) < 5:

@@ -26,6 +26,7 @@ import itertools
 import posixpath
 import re
 from collections.abc import Callable
+from contextlib import closing
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from typing import Any
@@ -33,7 +34,7 @@ from typing import Any
 from split_video.editor import classify
 from split_video.editor.cache import ClassificationCache, SilenceCache
 from split_video.errors import ProjectError, RevisionConflictError  # noqa: F401  (re-exported)
-from split_video.ffmpeg import extract_pcm_audio, extract_segment
+from split_video.ffmpeg import ProbeError, extract_segment, iter_pcm_chunks
 from split_video.jobs import CancelToken, JobCancelledError
 from split_video.media_store import MediaStore
 from split_video.naming import build_manifest, manifest_text, resolve_export_filename
@@ -390,12 +391,12 @@ def run_analysis(
     the sidecar cache file). Blocking and potentially slow on a long recording.
 
     With a `cancel` token (a job's `JobContext`) it stops, raising `JobCancelledError` and
-    storing nothing, while decoding the audio (ffmpeg is terminated) or between inference frames."""
+    storing nothing, while decoding the audio (ffmpeg is terminated) or between inference frames.
+    `on_progress(frames_done, frames_total)` follows the real decode position (the total is estimated from
+    the probed duration and corrected at the end)."""
     if cancel is not None:
         cancel.raise_if_cancelled()
     model, labels = classify.get_model_and_labels()
-    with media.local_path(source) as path:
-        pcm = extract_pcm_audio(path, sample_rate=classify.SAMPLE_RATE, cancel=cancel)
 
     def frame_done(completed: int, total: int) -> None:
         if cancel is not None:
@@ -403,7 +404,19 @@ def run_analysis(
         if on_progress:
             on_progress(completed, total)
 
-    regions, frame_bucket_scores, total_duration = classify.classify_audio(pcm, model, labels, thresholds, frame_done)
+    try:
+        expected_samples: int | None = int(media.probe(source).duration * classify.SAMPLE_RATE)
+    except ProbeError:
+        expected_samples = None  # only used to size the progress total
+    # Streamed: the audio is decoded a few seconds at a time while the model runs, so memory does not
+    # grow with the recording.
+    with (
+        media.local_path(source) as path,
+        closing(iter_pcm_chunks(path, classify.SAMPLE_RATE, cancel=cancel)) as chunks,
+    ):
+        regions, frame_bucket_scores, total_duration = classify.classify_stream(
+            chunks, model, labels, thresholds, frame_done, expected_samples
+        )
     cache.store_result(frame_bucket_scores, total_duration, regions)
 
 

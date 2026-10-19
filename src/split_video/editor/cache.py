@@ -8,8 +8,8 @@ reported (see `split_video.segments.compute_segments`). So a single ffmpeg
 scan per distinct threshold, using a very small `d=`, catches every
 candidate gap regardless of length — everything else is free.
 
-`WaveformCache` has no such parameter to key on — the peak envelope doesn't
-depend on anything user-tunable — so it only ever computes once per file.
+`WaveformCache` has no such parameter to key on — the peak envelope and loudness curve
+don't depend on anything user-tunable — so it only ever computes once per file.
 
 `ClassificationCache` is populated by an explicit background job (see
 `job_work.analysis_work`) rather than lazily on first
@@ -30,13 +30,14 @@ otherwise unchanged.
 from __future__ import annotations
 
 import threading
+from contextlib import closing
 
 from split_video.editor import classify
 from split_video.editor.classify import ClassificationRegion
-from split_video.ffmpeg import detect_silence, extract_pcm_audio
+from split_video.ffmpeg import WAVEFORM_SAMPLE_RATE, ProbeError, detect_silence, iter_pcm_chunks
 from split_video.media_store import MediaStore
 from split_video.silence import SilenceInterval
-from split_video.waveform import WaveformPeaks, compute_peaks
+from split_video.waveform import Loudness, WaveformPeaks, stream_waveform
 
 RAW_SCAN_MIN_SILENCE_DURATION = 0.05
 
@@ -78,32 +79,59 @@ class SilenceCache:
 
 
 class WaveformCache:
-    """Scoped to one `split-video edit` server process for one source (a media id)."""
+    """Scoped to one `split-video edit` server process for one source (a media id).
+
+    One streamed decode pass produces both the peak envelope and the loudness curve (see
+    `waveform.stream_waveform`), and both are saved in the "waveform" cache entry. Entries written
+    before the loudness curve existed load fine: the peaks are served as they are and the curve is
+    computed (and the entry rewritten) the first time `get_loudness` is asked for."""
 
     def __init__(self, media: MediaStore, source: str) -> None:
         self._media = media
         self._source = source
         self._lock = threading.Lock()
-        self._peaks: WaveformPeaks | None = self._load()
+        self._peaks: WaveformPeaks | None = None
+        self._loudness: Loudness | None = None
+        self._load()
 
-    def _load(self) -> WaveformPeaks | None:
+    def _load(self) -> None:
         payload = self._media.load_cache(self._source, "waveform")
         if payload is None:
-            return None
-        return WaveformPeaks(buckets=[(lo, hi) for lo, hi in payload["buckets"]])
+            return
+        self._peaks = WaveformPeaks(buckets=[(lo, hi) for lo, hi in payload["buckets"]])
+        loudness = payload.get("loudness")  # absent in entries from before SPL-41
+        if loudness is not None:
+            self._loudness = Loudness(window_seconds=loudness["window_seconds"], db=list(loudness["db"]))
 
     def _save(self) -> None:
         assert self._peaks is not None
-        self._media.save_cache(self._source, "waveform", {"buckets": [list(bucket) for bucket in self._peaks.buckets]})
+        payload: dict = {"buckets": [list(bucket) for bucket in self._peaks.buckets]}
+        if self._loudness is not None:
+            payload["loudness"] = {"window_seconds": self._loudness.window_seconds, "db": self._loudness.db}
+        self._media.save_cache(self._source, "waveform", payload)
+
+    def _compute(self) -> None:
+        try:
+            expected: int | None = int(self._media.probe(self._source).duration * WAVEFORM_SAMPLE_RATE)
+        except ProbeError:
+            expected = None  # unknown length: the peaks are then kept raw (see waveform.PeakAccumulator)
+        with self._media.local_path(self._source) as path, closing(iter_pcm_chunks(path)) as chunks:
+            self._peaks, self._loudness = stream_waveform(chunks, WAVEFORM_SAMPLE_RATE, expected)
+        self._save()
 
     def get_peaks(self) -> WaveformPeaks:
         with self._lock:
             if self._peaks is None:
-                with self._media.local_path(self._source) as path:
-                    pcm = extract_pcm_audio(path)
-                self._peaks = compute_peaks(pcm)
-                self._save()
+                self._compute()
+            assert self._peaks is not None
             return self._peaks
+
+    def get_loudness(self) -> Loudness:
+        with self._lock:
+            if self._loudness is None:
+                self._compute()
+            assert self._loudness is not None
+            return self._loudness
 
 
 class ClassificationCache:
