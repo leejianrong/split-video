@@ -47,7 +47,8 @@ Words are in order and never overlap by more than rounding; `end >= start`. Sile
 recording with no speech has `segments: []`. A small second entry, "transcript_info", holds
 `{version, asset, model, language, duration, segments, words}` (counts), so listings can say whether an
 asset has a transcript without reading the whole document. `words_between` and `text_between` cut a
-transcript to a time range (what highlight and caption code does with it).
+transcript to a time range (what highlight and caption code does with it); `transcript_search.py` reads it in
+pages and searches it (what agents do, without loading hours of text).
 
 Long recordings
 ---------------
@@ -67,6 +68,7 @@ from __future__ import annotations
 
 import os
 import threading
+import uuid
 from collections.abc import Callable, Iterable, Iterator
 from typing import Any, Protocol
 
@@ -343,23 +345,51 @@ def _valid(payload: Any, asset: assets.Asset) -> bool:
     return isinstance(payload, dict) and payload.get("version") == VERSION and payload.get("asset") == asset.id
 
 
+def load_stamped(media: MediaStore, asset_id: str) -> tuple[dict[str, Any], str] | None:
+    """`(transcript, stamp)` for the asset's current transcript, or None. The stamp is random and new each time a
+    transcript is stored (`save`), for readers that keep a parsed copy; it is not part of the returned document."""
+    asset = assets.get_asset(media, asset_id)
+    payload = media.load_cache(asset.path, CACHE_NAME)
+    if not _valid(payload, asset):
+        return None
+    return {k: v for k, v in payload.items() if k != "stamp"}, str(payload.get("stamp", ""))
+
+
 def load(media: MediaStore, asset_id: str) -> dict[str, Any] | None:
     """The asset's stored transcript (the document in the module docstring), or None if it has none or the file
     has changed since. `AssetNotFoundError` / `SourceNotFoundError` for a missing asset."""
-    asset = assets.get_asset(media, asset_id)
-    payload = media.load_cache(asset.path, CACHE_NAME)
-    return payload if _valid(payload, asset) else None
+    found = load_stamped(media, asset_id)
+    return found[0] if found else None
 
 
 def info(media: MediaStore, asset: assets.Asset) -> dict[str, Any] | None:
     """`{version, asset, model, language, duration, segments, words}` for a current transcript, else None. Cheap."""
     payload = media.load_cache(asset.path, INFO_NAME)
-    return payload if _valid(payload, asset) else None
+    if not _valid(payload, asset):
+        return None
+    return {k: v for k, v in payload.items() if k != "stamp"}
+
+
+def current_stamp(media: MediaStore, asset: assets.Asset) -> str | None:
+    """The stamp (see `load_stamped`) of the asset's current transcript, read from the small info entry; None
+    if it has no current transcript (or one stored before stamps existed)."""
+    payload = media.load_cache(asset.path, INFO_NAME)
+    return (payload.get("stamp") or None) if _valid(payload, asset) else None
 
 
 def has_transcript(media: MediaStore, asset: assets.Asset) -> bool:
     """What an asset summary says (`transcript`)."""
     return info(media, asset) is not None
+
+
+def save(media: MediaStore, asset: assets.Asset, document: dict[str, Any]) -> dict[str, Any]:
+    """Store `document` (the format in the module docstring) as the asset's transcript and return its info. Both
+    stored entries get a fresh `stamp`, which readers that keep a parsed copy (`transcript_search`) compare."""
+    stamp = uuid.uuid4().hex
+    summary = _info_of(document)
+    media.save_cache(asset.path, CACHE_NAME, {**document, "stamp": stamp})
+    media.save_cache(asset.path, INFO_NAME, {**summary, "stamp": stamp})
+    return summary
 
 
 def words_between(transcript: dict[str, Any], start: float, end: float) -> list[dict[str, Any]]:
@@ -459,7 +489,4 @@ def transcribe(
             "vad": True,
             "segments": body["segments"],
         }
-        media.save_cache(asset.path, CACHE_NAME, document)
-        summary = _info_of(document)
-        media.save_cache(asset.path, INFO_NAME, summary)
-        return {**summary, "made": True}
+        return {**save(media, asset, document), "made": True}

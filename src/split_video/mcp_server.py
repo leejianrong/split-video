@@ -44,6 +44,7 @@ from split_video import (
     timeline,
     timeline_service,
     transcribe,
+    transcript_search,
 )
 from split_video.editor.cache import ClassificationCache
 from split_video.editor.classify import ModelNotFoundError
@@ -65,6 +66,8 @@ _EXPECTED_ERRORS = (
     frames.FrameError,  # also the base of the contact-sheet errors
     transcribe.TranscriptionError,
     transcribe.TranscriptionUnavailableError,
+    transcript_search.TranscriptNotFoundError,
+    transcript_search.TranscriptQueryError,
 )
 
 _READ_ONLY = ToolAnnotations(read_only_hint=True, destructive_hint=False, idempotent_hint=True, open_world_hint=False)
@@ -435,7 +438,8 @@ def create_server(root: Path, store: ProjectStore | None = None, media: MediaSto
         asset: str, model: str = transcribe.DEFAULT_MODEL, language: str | None = None, force: bool = False
     ) -> dict[str, Any]:
         """Transcribe the speech of the library asset with id `asset` (from list_assets) into words with start and end
-        times, stored with the asset; read them with get_transcript. Runs locally (faster-whisper on the CPU) and
+        times, stored with the asset; read them with transcript_range and
+        transcript_search (or get_transcript for the whole of a short one). Runs locally (faster-whisper on the CPU) and
         before this returns: about 3 minutes per hour of audio with the default `model` "base.en" (English; "small.en"
         is more careful and 3 times slower; "base" or "small" handle other languages, with `language` a code like
         "fr", or unset to detect it). The first use downloads the model (140 MB) into the workspace. If a current
@@ -449,12 +453,76 @@ def create_server(root: Path, store: ProjectStore | None = None, media: MediaSto
         """The stored transcript of the library asset `asset`: `model`, `language`, `duration` and `segments`, each
         with `start`, `end`, `text` and `words` (`start`, `end`, `word`, `probability`), all in seconds from the
         start of the asset's audio. With `start` and/or `end` only the words overlapping that span (a cut segment
-        keeps only those words). Run transcribe_asset first: without a transcript this is a tool error. list_assets
+        keeps only those words). This is the whole transcript at once: for a long recording use transcript_range (paged)
+        and transcript_search. Run transcribe_asset first: without a transcript this is a tool error. list_assets
         shows `transcript` per asset."""
         found = await run(transcribe.load, media, asset)
         if found is None:
             raise ToolError(f"asset {asset} has no transcript yet: run transcribe_asset first")
         return transcribe.excerpt(found, start, end)
+
+    @server.tool(annotations=_READ_ONLY)
+    async def transcript_range(
+        asset: str,
+        start: float | None = None,
+        end: float | None = None,
+        limit: int | None = None,
+        cursor: str | None = None,
+        granularity: str = "segment",
+        max_chars: int | None = None,
+    ) -> dict[str, Any]:
+        """Read the transcript of the library asset `asset` between `start` and `end` seconds (either may be left
+        out), one page at a time, so a long recording never has to be loaded whole. Returns `items`: segments
+        (`index`, `start`, `end`, `text`), or with `granularity` "word" words (`index`, `segment`, `start`, `end`,
+        `word`, `probability`), those overlapping the range (a segment that starts before `start` but runs past it
+        is included, whole). A page holds at most `limit` items (default 50 segments or 200 words; at most 500) and,
+        with `max_chars`, stops before the item that would exceed that many characters. Also `total_in_range`,
+        `covered` (first start and last end on this page), `range` and `next_cursor`: while it is not null, call
+        again with the same arguments plus `cursor` to continue; every item appears exactly once. To find where
+        something was said use transcript_search. Without a transcript this is a tool error: run transcribe_asset."""
+        return await run(
+            transcript_search.transcript_range,
+            media,
+            asset,
+            start,
+            end,
+            limit=limit,
+            cursor=cursor,
+            granularity=granularity,
+            max_chars=max_chars,
+        )
+
+    @server.tool(name="transcript_search", annotations=_READ_ONLY)
+    async def search_transcript(
+        asset: str,
+        query: str,
+        start: float | None = None,
+        end: float | None = None,
+        limit: int | None = None,
+        cursor: str | None = None,
+        context: int | None = None,
+        case_sensitive: bool = False,
+    ) -> dict[str, Any]:
+        """Find where a word or phrase is said in the transcript of the library asset `asset`. Case-insensitive
+        match on whole words, ignoring punctuation, also across segment boundaries (no regex, no fuzzy or semantic
+        matching; at most 500 characters). Returns `hits` in time order, each with `time` (seconds, where the
+        first matched word starts), `end`, `text` (as transcribed), `context_before` and `context_after` (`context`
+        words each, default 8, at most 50), `segment` and `word` indices, plus `total_matches` and `next_cursor`
+        (pass it back as `cursor` for the next page of at most `limit` hits, default 20, at most 200). `start` and
+        `end` keep only hits whose first word overlaps that span. Read around a hit with transcript_range. Without
+        a transcript this is a tool error: run transcribe_asset."""
+        return await run(
+            transcript_search.transcript_search,
+            media,
+            asset,
+            query,
+            start=start,
+            end=end,
+            limit=limit,
+            cursor=cursor,
+            context=context,
+            case_sensitive=case_sensitive,
+        )
 
     @server.tool(annotations=_READ_ONLY)
     async def get_frame(
