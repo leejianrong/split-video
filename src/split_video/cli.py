@@ -11,7 +11,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from split_video import compose_cli, frames_cli, library_cli, project_cli, scenes_cli, transcribe_cli
+from split_video import compose_cli, contact_sheet_cli, frames_cli, library_cli, project_cli, scenes_cli, transcribe_cli
 from split_video.editor.app import create_app
 from split_video.editor.auth import TOKEN_ENV, authenticator_from_env
 from split_video.editor.schemas import StateParams
@@ -251,3 +251,4 @@ library_cli.register(app)
 transcribe_cli.register(app)
 app.command("scenes")(scenes_cli.scenes_cmd)
 app.command("frame")(frames_cli.frame_cmd)
+app.command("contact-sheet")(contact_sheet_cli.contact_sheet_cmd)

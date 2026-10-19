@@ -33,7 +33,18 @@ from mcp.server.mcpserver import Image, MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp_types import ToolAnnotations
 
-from split_video import assets, frames, library, project, proxy, scenes, timeline, timeline_service, transcribe
+from split_video import (
+    assets,
+    contact_sheet,
+    frames,
+    library,
+    project,
+    proxy,
+    scenes,
+    timeline,
+    timeline_service,
+    transcribe,
+)
 from split_video.editor.cache import ClassificationCache
 from split_video.editor.classify import ModelNotFoundError
 from split_video.errors import RevisionConflictError
@@ -51,7 +62,7 @@ _EXPECTED_ERRORS = (
     ProbeError,
     ExtractError,
     ModelNotFoundError,
-    frames.FrameError,
+    frames.FrameError,  # also the base of the contact-sheet errors
     transcribe.TranscriptionError,
     transcribe.TranscriptionUnavailableError,
 )
@@ -469,6 +480,47 @@ def create_server(root: Path, store: ProjectStore | None = None, media: MediaSto
             raise ToolError(str(exc)) from None
         info = {k: v for k, v in frame.info().items() if k != "bytes"}
         return [Image(data=frame.data, format=frame.format), json.dumps(info)]
+
+    @server.tool(annotations=_READ_ONLY)
+    async def get_contact_sheet(
+        asset: str,
+        start: float = 0.0,
+        end: float | None = None,
+        count: int = 12,
+        columns: int | None = None,
+        tile_width: int = 320,
+        format: str = "jpeg",
+        source: str = "auto",
+    ) -> list[Image | str]:
+        """Skim a stretch of the library asset `asset` (from list_assets) in one picture: `count` frames (1..64,
+        default 12) evenly spread over `start`..`end` seconds (`end` defaults to the asset's end; each tile is the
+        centre of one of `count` equal slices), in a grid, each stamped in its top-left corner with its time
+        (H:MM:SS, or M:SS.s when the tiles are under 10 s apart). Returns the image plus a compact text block:
+        JSON with `columns`, `rows`, `tile_width`, `tile_height`, `width`, `height`, `source`, `duration` and
+        `times` (tile times in seconds, row-major: tile i is column i % columns, row i // columns). Spot something
+        in a tile, then get_frame at its time (source "original") for detail, or call again with a narrower
+        start/end to zoom in. `columns` defaults to near-square (12 -> 4x3); the image is at most 2560 px wide, so
+        `columns` x `tile_width` must fit. `source` "auto" reads the proxy when there is one, "original" the file.
+        A bad range (the message says how long the asset is) or an audio-only asset is a tool error."""
+        try:
+            sheet = await run(
+                contact_sheet.make_sheet,
+                media,
+                asset,
+                start,
+                end,
+                count=count,
+                columns=columns,
+                tile_width=tile_width,
+                format=format,
+                source=source,
+            )
+        except frames.FrameError as exc:
+            raise ToolError(str(exc)) from None
+        lay = sheet.layout
+        info = {k: v for k, v in sheet.info().items() if k not in ("tiles", "bytes", "mime", "asset")}
+        info["times"] = [t.time for t in lay.tiles]
+        return [Image(data=sheet.data, format=sheet.format), json.dumps(info, separators=(",", ":"))]
 
     @server.tool(annotations=_EDITS_PROJECT)
     async def analyze_scenes(

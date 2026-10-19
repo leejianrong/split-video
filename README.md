@@ -312,6 +312,24 @@ says how long the video is; a request at the end returns the last frame; picture
 `GET /api/v1/assets/{id}/frame?time=&width=&height=&format=&source=` (the image bytes, with `X-Frame-*` headers); MCP
 has `get_frame`, which returns an image block plus a short text block with the time, size and source.
 
+### Skim a stretch in one picture (`contact-sheet`)
+
+One image of 12 frames lets an agent (or you) skim ten minutes of a stream cheaply. Each tile has its time burned
+into the top-left corner:
+
+```bash
+docker run --rm -v "$PWD":/data -w /data ghcr.io/leejianrong/split-video contact-sheet stream.mp4 --root /data --start 1:00:00 --end 1:10:00 [--count 12] [--columns 4] [--tile-width 320] [--out sheet.jpg] [--json]
+```
+
+The range is cut into `--count` equal slices (1 to 64, default 12) and each tile is the frame at the centre of its
+slice, laid out left to right, top to bottom (12 tiles make 4x3; the image is at most 2560 px wide). It costs one
+seek per tile, so it takes about as long on a 3 hour file as on a 3 minute one. `--json` (and the MCP text block)
+gives the time and pixel position of every tile. Over HTTP it is
+`GET /api/v1/assets/{id}/contact-sheet?start=&end=&count=&columns=&tile_width=&format=&source=` (the image, with
+`X-Sheet-*` headers and the tile times in `X-Sheet-Times`) and `.../contact-sheet/info` (the same map as JSON, nothing
+rendered); MCP has `get_contact_sheet`, an image block plus the tile times. Timestamps need a TrueType font (the
+Docker image has one; elsewhere set `SPLIT_VIDEO_FONT`).
+
 ### Compose: combine clips, overlays, audio and titles (`compose`)
 
 Besides splitting one recording, you can build a video from several files.
@@ -425,7 +443,7 @@ reads and writes the same project file, so a human can open the result in
 the visual editor afterward. Tools: `list_videos`, `list_segments`,
 `propose_splits`, `add_split`, `move_split`, `remove_split`, `label_segment`,
 `analyze_audio`, `export`. The `compose` commands above have matching tools:
-`list_timelines`, `scan_library`, `list_assets`, `prepare_asset`, `transcribe_asset`, `get_transcript`, `analyze_scenes`, `get_scenes`, `get_frame`, `create_timeline`, `show_timeline`, `add_clip_to_timeline`
+`list_timelines`, `scan_library`, `list_assets`, `prepare_asset`, `transcribe_asset`, `get_transcript`, `analyze_scenes`, `get_scenes`, `get_frame`, `get_contact_sheet`, `create_timeline`, `show_timeline`, `add_clip_to_timeline`
 (a path or an asset id),
 `trim_timeline_clip`, `move_timeline_clip`, `remove_timeline_clip`,
 `set_timeline_transition`, `add_timeline_track`, `remove_timeline_track`,
