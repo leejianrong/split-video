@@ -653,6 +653,64 @@
         "title": "DetectResponse",
         "type": "object"
       },
+      "EvidenceOut": {
+        "additionalProperties": true,
+        "description": "One piece of what a moment is made of: a hit of one source (the source's own fields come along: `segment` and\n`word` for the transcript; `frame` and `matched_tokens` for on-screen text).",
+        "properties": {
+          "context_after": {
+            "title": "Context After",
+            "type": "string"
+          },
+          "context_before": {
+            "title": "Context Before",
+            "type": "string"
+          },
+          "covers": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Covers",
+            "type": "array"
+          },
+          "end": {
+            "title": "End",
+            "type": "number"
+          },
+          "match": {
+            "title": "Match",
+            "type": "string"
+          },
+          "score": {
+            "title": "Score",
+            "type": "number"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "time": {
+            "title": "Time",
+            "type": "number"
+          }
+        },
+        "required": [
+          "source",
+          "time",
+          "end",
+          "score",
+          "text",
+          "context_before",
+          "context_after",
+          "match",
+          "covers"
+        ],
+        "title": "EvidenceOut",
+        "type": "object"
+      },
       "ExportRequest": {
         "properties": {
           "manifest": {
@@ -992,6 +1050,70 @@
           "job_id"
         ],
         "title": "LibraryScanStartResponse",
+        "type": "object"
+      },
+      "MomentOut": {
+        "properties": {
+          "context_after": {
+            "title": "Context After",
+            "type": "string"
+          },
+          "context_before": {
+            "title": "Context Before",
+            "type": "string"
+          },
+          "end": {
+            "title": "End",
+            "type": "number"
+          },
+          "evidence": {
+            "items": {
+              "$ref": "#/components/schemas/EvidenceOut"
+            },
+            "title": "Evidence",
+            "type": "array"
+          },
+          "found_in": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Found In",
+            "type": "array"
+          },
+          "match": {
+            "title": "Match",
+            "type": "string"
+          },
+          "score": {
+            "title": "Score",
+            "type": "number"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "time": {
+            "title": "Time",
+            "type": "number"
+          }
+        },
+        "required": [
+          "source",
+          "time",
+          "end",
+          "score",
+          "text",
+          "context_before",
+          "context_after",
+          "match",
+          "found_in",
+          "evidence"
+        ],
+        "title": "MomentOut",
         "type": "object"
       },
       "MoveRequest": {
@@ -1981,6 +2103,100 @@
         "title": "SearchHitOut",
         "type": "object"
       },
+      "SearchOut": {
+        "description": "One page of moments (`search.search_asset`).",
+        "properties": {
+          "asset": {
+            "title": "Asset",
+            "type": "string"
+          },
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "hits": {
+            "items": {
+              "$ref": "#/components/schemas/MomentOut"
+            },
+            "title": "Hits",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "query": {
+            "title": "Query",
+            "type": "string"
+          },
+          "range": {
+            "$ref": "#/components/schemas/SearchRangeOut"
+          },
+          "sources": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Sources",
+            "type": "object"
+          },
+          "tokens": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tokens",
+            "type": "array"
+          },
+          "total_matches": {
+            "title": "Total Matches",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "asset",
+          "query",
+          "tokens",
+          "range",
+          "sources",
+          "total_matches",
+          "count",
+          "hits",
+          "next_cursor"
+        ],
+        "title": "SearchOut",
+        "type": "object"
+      },
+      "SearchRangeOut": {
+        "properties": {
+          "end": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End"
+          },
+          "start": {
+            "title": "Start",
+            "type": "number"
+          }
+        },
+        "required": [
+          "start",
+          "end"
+        ],
+        "title": "SearchRangeOut",
+        "type": "object"
+      },
       "SegmentOut": {
         "properties": {
           "color": {
@@ -2748,6 +2964,75 @@
           "type"
         ],
         "title": "ValidationError",
+        "type": "object"
+      },
+      "VisualSearchOut": {
+        "description": "One page of on-screen text hits (`search.visual_search`).",
+        "properties": {
+          "asset": {
+            "title": "Asset",
+            "type": "string"
+          },
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "hits": {
+            "items": {
+              "$ref": "#/components/schemas/OcrHitOut"
+            },
+            "title": "Hits",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "query": {
+            "title": "Query",
+            "type": "string"
+          },
+          "range": {
+            "$ref": "#/components/schemas/OcrRangeBoundsOut"
+          },
+          "sources": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Sources",
+            "type": "object"
+          },
+          "tokens": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tokens",
+            "type": "array"
+          },
+          "total_matches": {
+            "title": "Total Matches",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "asset",
+          "query",
+          "tokens",
+          "range",
+          "total_matches",
+          "count",
+          "hits",
+          "next_cursor",
+          "sources"
+        ],
+        "title": "VisualSearchOut",
         "type": "object"
       },
       "WaveformResponse": {
@@ -4071,6 +4356,300 @@
           }
         },
         "summary": "Start Scene Analysis"
+      }
+    },
+    "/api/v1/assets/{asset_id}/search": {
+      "get": {
+        "description": "Find where `q` was said or shown, in the transcript and the on-screen text together. Hits are moments,\nbest first: `source`, `time` (seconds, where to seek), `end`, `score` (0..1, comparable across sources:\nphrase in one source about 0.9 to 1.0, said AND shown higher, one word of a longer query about half),\n`text`, `context_before` / `context_after` (`context` words or lines, at most 10), `found_in`, `match` and\n`evidence` (each source's own hit). Things said and shown within 15 s are one moment. `sources` (comma\nseparated: transcript, ocr; default both) limits the search; the `sources` in the answer says what was\nsearched and how to make what is missing. `start` / `end` keep hits in that span; `limit` per page (default\n20, at most 200) and a `next_cursor` to pass back until it is null. 404 when none of the requested sources\nhas data; 422 for a bad query (500 characters at most), source, span, limit or cursor.",
+        "operationId": "search_asset_api_v1_assets__asset_id__search_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "asset_id",
+            "required": true,
+            "schema": {
+              "title": "Asset Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": true,
+            "schema": {
+              "title": "Q",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sources",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Sources"
+            }
+          },
+          {
+            "in": "query",
+            "name": "start",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Start"
+            }
+          },
+          {
+            "in": "query",
+            "name": "end",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "End"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Limit"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "context",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Context"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedOut"
+                }
+              }
+            },
+            "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Search Asset"
+      }
+    },
+    "/api/v1/assets/{asset_id}/search/visual": {
+      "get": {
+        "description": "Find where `q` was on the screen: the on-screen text search (as `GET /assets/{id}/ocr/search`: fuzzy,\ntoken-based, best first, `source: \"ocr\"`, `score` 0..1, `time`, `end`, `text`, context lines) plus `sources`,\nwhich visual sources were searched. 404 without stored on-screen text (run an ocr job); 422 for a bad\nquery, span, limit or cursor.",
+        "operationId": "search_visual_api_v1_assets__asset_id__search_visual_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "asset_id",
+            "required": true,
+            "schema": {
+              "title": "Asset Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": true,
+            "schema": {
+              "title": "Q",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "start",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Start"
+            }
+          },
+          {
+            "in": "query",
+            "name": "end",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "End"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Limit"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "context",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Context"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VisualSearchOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedOut"
+                }
+              }
+            },
+            "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Search Visual"
       }
     },
     "/api/v1/assets/{asset_id}/thumbnails": {

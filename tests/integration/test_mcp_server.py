@@ -51,6 +51,8 @@ async def test_exposes_the_documented_tools(root):
         "ocr_asset",
         "get_ocr",
         "ocr_search",
+        "visual_search",
+        "search_asset",
         "get_frame",
         "get_contact_sheet",
         "list_segments",

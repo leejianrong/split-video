@@ -42,6 +42,7 @@ from split_video import (
     project,
     proxy,
     scenes,
+    search,
     timeline,
     timeline_service,
     transcribe,
@@ -73,6 +74,8 @@ _EXPECTED_ERRORS = (
     ocr.OcrUnavailableError,
     ocr.OcrNotFoundError,
     ocr.OcrArgumentError,
+    search.SearchNotFoundError,
+    search.SearchQueryError,
 )
 
 _READ_ONLY = ToolAnnotations(read_only_hint=True, destructive_hint=False, idempotent_hint=True, open_world_hint=False)
@@ -691,6 +694,61 @@ def create_server(root: Path, store: ProjectStore | None = None, media: MediaSto
         around a hit with get_ocr. Without stored text this is a tool error: run ocr_asset."""
         return await run(
             ocr.ocr_search, media, asset, query, start=start, end=end, limit=limit, cursor=cursor, context=context
+        )
+
+    @server.tool(annotations=_READ_ONLY)
+    async def visual_search(
+        asset: str,
+        query: str,
+        start: float | None = None,
+        end: float | None = None,
+        limit: int | None = None,
+        cursor: str | None = None,
+        context: int | None = None,
+    ) -> dict[str, Any]:
+        """Find what the screen of the library asset `asset` showed: the on-screen text search (same as ocr_search:
+        fuzzy, token-based, best first; hits `{source: "ocr", time, end, score (0..1), text, context_before,
+        context_after, matched_tokens, frame}`, `total_matches`, `next_cursor`) plus `sources`, which visual sources
+        were searched (today only "ocr"; picture descriptions are not available). To search what was said as well,
+        use search_asset. Without stored text this is a tool error: run ocr_asset."""
+        return await run(
+            search.visual_search, media, asset, query, start=start, end=end, limit=limit, cursor=cursor, context=context
+        )
+
+    @server.tool(annotations=_READ_ONLY)
+    async def search_asset(
+        asset: str,
+        query: str,
+        sources: str | None = None,
+        start: float | None = None,
+        end: float | None = None,
+        limit: int | None = None,
+        cursor: str | None = None,
+        context: int | None = None,
+    ) -> dict[str, Any]:
+        """Find the moments where `query` was said OR shown in the library asset `asset`: one ranked list over the
+        transcript and the on-screen text ("the part where the build fails" finds someone saying "the build
+        failed" while the terminal shows FAILED). Each hit is a moment `{source, time (seconds: where to seek), end,
+        score (0..1, comparable across sources), text, context_before, context_after (`context` words or lines, at
+        most 10), match ("phrase" or "words"), found_in, evidence}`; `evidence` lists each source's own hit
+        (`{source, time, end, score, text, covers, ...}`). Things said and shown within 15 s are one moment and rank
+        higher. Matching is by word, no stemming: `failed` does not find `fails`. `sources` is "transcript", "ocr" or
+        "transcript,ocr" (default both); the `sources` in the result says what was searched and how to make
+        what is missing. Returns `total_matches` and `next_cursor` (pass it back as `cursor` for the next page of at
+        most `limit` hits, default 20, at most 200); `start` and `end` keep hits in that span. If neither a
+        transcript nor on-screen text exists this is a tool error naming transcribe_asset and ocr_asset. Look around a
+        hit with transcript_range, get_ocr or get_frame."""
+        return await run(
+            search.search_asset,
+            media,
+            asset,
+            query,
+            sources=sources,
+            start=start,
+            end=end,
+            limit=limit,
+            cursor=cursor,
+            context=context,
         )
 
     @server.tool(annotations=_EDITS_PROJECT)

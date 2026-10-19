@@ -137,6 +137,7 @@ class _Index:
         self.word_starts = [w["start"] for w in self.words]
         self.word_tops = list(accumulate((w["end"] for w in self.words), max))
         self._tokens: dict[bool, tuple[list[str], list[int]]] = {}
+        self.stamp = ""
 
     def tokens(self, case_sensitive: bool) -> tuple[list[str], list[int]]:
         """`(tokens, the index of the word each came from)`."""
@@ -173,6 +174,7 @@ def _index(media: MediaStore, asset_id: str) -> _Index:
         raise TranscriptNotFoundError(f"asset {asset_id} has no transcript yet: {NOT_FOUND_HINT}")
     document, stored_stamp = loaded
     index = _Index(document)
+    index.stamp = stored_stamp or ""
     if stored_stamp:
         with _cache_lock:
             _cache[(asset.id, stored_stamp)] = index
@@ -271,6 +273,68 @@ def _tokens(word: str, case_sensitive: bool) -> list[str]:
     return [t for part in _BREAKS.split(text) if (t := _EDGES.sub("", part))]
 
 
+def _find(prepared: _Index, query: str, lo: float, hi: float, case_sensitive: bool) -> tuple[int, list[int]]:
+    """`(tokens in the query, token positions where the phrase starts)` for the matches whose first word overlaps
+    `[lo, hi)`."""
+    if not isinstance(query, str) or len(query) > MAX_QUERY_CHARS:
+        raise TranscriptQueryError(f"query must be text of at most {MAX_QUERY_CHARS} characters")
+    wanted = [t for word in query.split() for t in _tokens(word, case_sensitive)]
+    if not wanted:
+        raise TranscriptQueryError("query is empty: give a word or phrase to look for")
+    words = prepared.words
+    tokens, word_of = prepared.tokens(case_sensitive)
+    n = len(wanted)
+    head = wanted[0]
+    found = []
+    for p in range(len(tokens) - n + 1):
+        if tokens[p] != head or tokens[p : p + n] != wanted:
+            continue
+        w = words[word_of[p]]
+        if w["end"] > lo and w["start"] < hi:
+            found.append(p)
+    return n, found
+
+
+def _hit(prepared: _Index, p: int, n: int, around: int, case_sensitive: bool) -> dict[str, Any]:
+    words = prepared.words
+    word_of = prepared.tokens(case_sensitive)[1]
+    first, final = word_of[p], word_of[p + n - 1]
+    return {
+        "time": words[first]["start"],
+        "end": words[final]["end"],
+        "text": " ".join(w["word"] for w in words[first : final + 1]),
+        "context_before": " ".join(w["word"] for w in words[max(0, first - around) : first]),
+        "context_after": " ".join(w["word"] for w in words[final + 1 : final + 1 + around]),
+        "segment": prepared.segment_of[first],
+        "word": first,
+    }
+
+
+def transcript_hits(
+    media: MediaStore,
+    asset_id: str,
+    query: str,
+    *,
+    start: float | None = None,
+    end: float | None = None,
+    context: int | None = None,
+) -> tuple[dict[str, Any], str, list[dict[str, Any]]]:
+    """Every place `query` is said, in time order, unpaged: `(document, stamp, hits)`. Each hit is what
+    `transcript_search` returns plus `probability` (the mean of the matched words' probabilities). What a search over several sources (`search.py`) merges; `stamp` identifies this transcript."""
+    lo, hi = _span(start, end)
+    around = _bounded("context", context, DEFAULT_CONTEXT, 0, MAX_CONTEXT)
+    prepared = _index(media, asset_id)
+    n, found = _find(prepared, query, lo, hi, False)
+    word_of = prepared.tokens(False)[1]
+    hits = []
+    for p in found:
+        hit = _hit(prepared, p, n, around, False)
+        matched = prepared.words[hit["word"] : word_of[p + n - 1] + 1]
+        hit["probability"] = sum(w["probability"] for w in matched) / len(matched)
+        hits.append(hit)
+    return prepared.document, prepared.stamp, hits
+
+
 def transcript_search(
     media: MediaStore,
     asset_id: str,
@@ -287,52 +351,23 @@ def transcript_search(
 
     Returns `{asset, query, range: {start, end}, total_matches, count, hits, next_cursor}`; each hit is
     `{time, end, text, context_before, context_after, segment, word}`."""
-    if not isinstance(query, str) or len(query) > MAX_QUERY_CHARS:
-        raise TranscriptQueryError(f"query must be text of at most {MAX_QUERY_CHARS} characters")
-    wanted = [t for word in query.split() for t in _tokens(word, case_sensitive)]
-    if not wanted:
-        raise TranscriptQueryError("query is empty: give a word or phrase to look for")
     lo, hi = _span(start, end)
     size = _bounded("limit", limit, DEFAULT_SEARCH_LIMIT, 1, MAX_SEARCH_LIMIT)
     around = _bounded("context", context, DEFAULT_CONTEXT, 0, MAX_CONTEXT)
     prepared = _index(media, asset_id)
-    document, words, segment_of = prepared.document, prepared.words, prepared.segment_of
-    tokens, word_of = prepared.tokens(case_sensitive)
+    n, found = _find(prepared, query, lo, hi, case_sensitive)
+    total = len(prepared.tokens(case_sensitive)[0])
 
-    n = len(wanted)
-    head = wanted[0]
-    found = []
-    for p in range(len(tokens) - n + 1):
-        if tokens[p] != head or tokens[p : p + n] != wanted:
-            continue
-        w = words[word_of[p]]
-        if w["end"] > lo and w["start"] < hi:
-            found.append(p)
-
-    at = _decode(cursor, "hit", len(tokens)) if cursor else 0
+    at = _decode(cursor, "hit", total) if cursor else 0
     # The cursor is the token position of the first hit of the page; skip the hits before it.
     page = [p for p in found if p >= at]
     shown, rest = page[:size], page[size:]
-    hits = []
-    for p in shown:
-        first, final = word_of[p], word_of[p + n - 1]
-        hits.append(
-            {
-                "time": words[first]["start"],
-                "end": words[final]["end"],
-                "text": " ".join(w["word"] for w in words[first : final + 1]),
-                "context_before": " ".join(w["word"] for w in words[max(0, first - around) : first]),
-                "context_after": " ".join(w["word"] for w in words[final + 1 : final + 1 + around]),
-                "segment": segment_of[first],
-                "word": first,
-            }
-        )
     return {
-        "asset": document["asset"],
+        "asset": prepared.document["asset"],
         "query": query,
         "range": {"start": lo, "end": _stop(hi)},
         "total_matches": len(found),
-        "count": len(hits),
-        "hits": hits,
-        "next_cursor": _encode("hit", rest[0], len(tokens)) if rest else None,
+        "count": len(shown),
+        "hits": [_hit(prepared, p, n, around, case_sensitive) for p in shown],
+        "next_cursor": _encode("hit", rest[0], total) if rest else None,
     }

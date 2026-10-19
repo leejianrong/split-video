@@ -372,6 +372,24 @@ tesseract`). Without it the CLI exits with code 4, `POST .../ocr` answers 501 an
 all with the install hint. The choice of engine and the numbers behind it are in
 [`docs/decisions/vision-and-ocr.md`](docs/decisions/vision-and-ocr.md).
 
+#### Find a moment by what was said or shown (`search`, `visual-search`)
+
+"The part where the build fails" is usually said in one place and shown in another. `search` looks in the transcript
+and the on-screen text together and returns ranked moments: someone saying "the build failed" while the terminal
+prints `FAILED` is one result with both as evidence, and ranks above either alone. It needs a transcript, an `ocr`
+run, or both (with one it searches that one and says which was missing):
+
+```bash
+docker run --rm -v "$PWD":/data split-video:ocr search stream.mp4 "build failed" --root /data [--sources transcript,ocr] [--start 600 --end 900] [--limit 20] [--json]
+docker run --rm -v "$PWD":/data split-video:ocr visual-search stream.mp4 "test_cut_burst" --root /data   # what the screen showed only
+```
+
+Scores are in 0..1 and comparable across sources (an exact phrase or frame is about 1, one word of a two-word query
+about half), things within 15 seconds are merged, and matching is by word with no stemming (`fails` does not find
+`failed`). The rules are in `src/split_video/search.py`; picture descriptions will plug into the same list of sources
+when they exist. Over HTTP: `GET /api/v1/assets/{id}/search?q=&sources=` and `GET /api/v1/assets/{id}/search/visual?q=`
+(both paged); MCP has `search_asset` and `visual_search`.
+
 ### Compose: combine clips, overlays, audio and titles (`compose`)
 
 Besides splitting one recording, you can build a video from several files.
