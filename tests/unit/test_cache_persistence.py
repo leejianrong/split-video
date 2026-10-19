@@ -9,6 +9,8 @@ instead of recomputing.
 
 import struct
 
+import numpy as np
+
 from split_video.editor import cache as cache_module
 from split_video.editor import classify
 from split_video.editor.cache import ClassificationCache, SilenceCache, WaveformCache
@@ -63,13 +65,17 @@ def test_silence_cache_keeps_multiple_thresholds_on_disk(tmp_path, monkeypatch):
 
 def test_waveform_cache_reloads_from_disk_without_recomputing(tmp_path, monkeypatch):
     media, source = _touch(tmp_path / "video.mp4")
-    monkeypatch.setattr(cache_module, "extract_pcm_audio", lambda *a, **k: _pcm([32767, 0, -32768, 0]))
+    monkeypatch.setattr(
+        cache_module,
+        "iter_pcm_chunks",
+        lambda *a, **k: (c for c in [np.frombuffer(_pcm([32767, 0, -32768, 0]), dtype="<i2")]),
+    )
 
     first = WaveformCache(media, source)
     peaks = first.get_peaks()
     assert len(peaks.buckets) > 0
 
-    monkeypatch.setattr(cache_module, "extract_pcm_audio", _fail_if_called)
+    monkeypatch.setattr(cache_module, "iter_pcm_chunks", _fail_if_called)
     second = WaveformCache(media, source)
     assert second.get_peaks() == peaks
 
@@ -118,3 +124,33 @@ def test_cache_ignores_stale_sidecar_after_source_changes(tmp_path, monkeypatch)
     monkeypatch.setattr(cache_module, "detect_silence", lambda *a, **k: [SilenceInterval(start=9.0, end=9.5)])
     second = SilenceCache(media, source)
     assert second.get_raw_silences(-35.0) == [SilenceInterval(start=9.0, end=9.5)]
+
+
+def test_waveform_cache_saves_loudness_next_to_the_peaks_and_reloads_it(tmp_path, monkeypatch):
+    media, source = _touch(tmp_path / "video.mp4")
+    rate_samples = np.full(8000, 16384, dtype="<i2")
+    monkeypatch.setattr(cache_module, "iter_pcm_chunks", lambda *a, **k: (c for c in [rate_samples]))
+    first = WaveformCache(media, source)
+    loudness = first.get_loudness()
+    assert loudness.window_seconds == 1.0 and loudness.db == [-6.02]
+
+    monkeypatch.setattr(cache_module, "iter_pcm_chunks", _fail_if_called)
+    second = WaveformCache(media, source)
+    assert second.get_loudness() == loudness and second.get_peaks() == first.get_peaks()
+
+
+def test_waveform_cache_written_before_loudness_existed_still_loads_and_is_upgraded(tmp_path, monkeypatch):
+    media, source = _touch(tmp_path / "video.mp4")
+    media.save_cache(source, "waveform", {"buckets": [[-0.5, 0.5], [-1.0, 1.0]]})  # the SPL-1..40 format
+    monkeypatch.setattr(cache_module, "iter_pcm_chunks", _fail_if_called)
+    old = WaveformCache(media, source)
+    assert old.get_peaks().buckets == [(-0.5, 0.5), (-1.0, 1.0)]  # served without any decode
+
+    monkeypatch.setattr(
+        cache_module, "iter_pcm_chunks", lambda *a, **k: (c for c in [np.full(8000, 3277, dtype="<i2")])
+    )
+    assert old.get_loudness().db == [-20.0]  # computed the first time it is asked for
+    monkeypatch.setattr(cache_module, "iter_pcm_chunks", _fail_if_called)
+    upgraded = WaveformCache(media, source)
+    assert upgraded.get_loudness().db == [-20.0]
+    assert media.load_cache(source, "waveform")["buckets"] is not None

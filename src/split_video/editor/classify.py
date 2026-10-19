@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import csv
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -300,6 +300,60 @@ def classify_audio(
             on_progress(i + 1, len(starts))
 
     return merge_regions(frame_buckets, thresholds), frame_bucket_scores, total_duration
+
+
+def classify_stream(
+    chunks: Iterable[np.ndarray],
+    model: YamnetModel,
+    labels: ClassLabels,
+    thresholds: dict[str, float],
+    on_progress: Callable[[int, int], None] | None = None,
+    expected_samples: int | None = None,
+) -> tuple[list[ClassificationRegion], list[dict[str, float]], float]:
+    """`classify_audio` over a stream of mono 16 kHz int16 chunks (`ffmpeg.iter_pcm_chunks`), with the
+    same result: frame starts, the zero-padded partial frames at the end, regions, per-frame scores and
+    total duration are identical, because every frame sees exactly the samples `classify_audio` gives it
+    and the regions are derived from the finished score list by `rethreshold`, as a cached analysis is.
+
+    Memory is one chunk plus the unconsumed tail (under one frame) plus the per-frame score list
+    (about 7,500 frames an hour). `on_progress(frames_done, frames_total)` is called after each frame;
+    the total is estimated from `expected_samples` (the probed duration) while decoding and corrected
+    to the real count at the end, so the fraction tracks the real decode position."""
+    expected_frames = -(-expected_samples // HOP_SAMPLES) if expected_samples else 0
+    buf = np.zeros(0, dtype=np.float32)
+    buf_start = 0  # sample index of buf[0]
+    total_samples = 0
+    frame_bucket_scores: list[dict[str, float]] = []
+
+    def run_frame(frame: np.ndarray) -> None:
+        scores = model.classify_frame(frame)
+        frame_bucket_scores.append(bucket_scores_for_frame(scores, labels))
+        if on_progress:
+            on_progress(len(frame_bucket_scores), max(expected_frames, len(frame_bucket_scores)))
+
+    for chunk in chunks:
+        if chunk.size == 0:
+            continue
+        buf = np.concatenate([buf, chunk.astype(np.float32) / 32768.0])
+        total_samples += chunk.size
+        # A frame is runnable once all FRAME_SAMPLES of it have arrived.
+        while True:
+            start = len(frame_bucket_scores) * HOP_SAMPLES
+            if start + FRAME_SAMPLES > total_samples:
+                break
+            run_frame(buf[start - buf_start : start - buf_start + FRAME_SAMPLES])
+            next_start = start + HOP_SAMPLES
+            if next_start - buf_start >= HOP_SAMPLES * 4:  # drop what no later frame needs, in batches
+                buf = buf[next_start - buf_start :]
+                buf_start = next_start
+    # The tail: frames that start before the end but run past it are zero-padded, like classify_audio.
+    for start in range(len(frame_bucket_scores) * HOP_SAMPLES, total_samples, HOP_SAMPLES):
+        frame = buf[start - buf_start :]
+        run_frame(np.pad(frame, (0, FRAME_SAMPLES - frame.size)))
+    total_duration = total_samples / SAMPLE_RATE
+    if on_progress and frame_bucket_scores and expected_frames != len(frame_bucket_scores):
+        on_progress(len(frame_bucket_scores), len(frame_bucket_scores))
+    return rethreshold(frame_bucket_scores, thresholds, total_duration), frame_bucket_scores, total_duration
 
 
 def rethreshold(

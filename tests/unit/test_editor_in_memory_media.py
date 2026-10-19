@@ -1,8 +1,8 @@
 """The editor app served entirely from in-memory stores: no media on disk."""
 
-import struct
 import time
 
+import numpy as np
 import pytest
 from fastapi.testclient import TestClient
 
@@ -60,7 +60,9 @@ def test_detect_and_waveform_cache_through_the_media_store(client, media, monkey
     monkeypatch.setattr(
         cache_module, "detect_silence", lambda *a, **k: scans.append(a[1]) or [SilenceInterval(start=1.0, end=3.0)]
     )
-    monkeypatch.setattr(cache_module, "extract_pcm_audio", lambda *a, **k: struct.pack("<4h", 100, -100, 50, 0))
+    monkeypatch.setattr(
+        cache_module, "iter_pcm_chunks", lambda *a, **k: (c for c in [np.array([100, -100, 50, 0], dtype="<i2")])
+    )
     for _ in range(2):
         assert client.post("/api/v1/detect", params={"path": "gig.mp4"}, json={"silence_threshold": -35.0}).json() == {
             "silences": [{"start": 1.0, "end": 3.0}]

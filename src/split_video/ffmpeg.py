@@ -6,13 +6,15 @@ import json
 import shutil
 import subprocess
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import numpy as np
+
 from split_video.jobs import CancelToken
-from split_video.silence import SilenceInterval, parse_silencedetect_output
+from split_video.silence import SilenceInterval, SilenceParser
 
 
 class FfmpegNotFoundError(RuntimeError):
@@ -199,25 +201,42 @@ def _parse_rate(text: object) -> float | None:
     return round(value, 3) if value > 0 else None
 
 
-def detect_silence(path: Path, threshold: str, min_silence_duration: float) -> list[SilenceInterval]:
+def detect_silence(
+    path: Path, threshold: str, min_silence_duration: float, cancel: CancelToken | None = None
+) -> list[SilenceInterval]:
+    """Run ffmpeg's silencedetect over the audio. The log is read line by line as ffmpeg writes it and
+    only the parsed intervals are kept, so memory does not grow with the length of the recording. The
+    video is not decoded (`-vn`). A cancelled job terminates ffmpeg and gets `JobCancelledError`."""
     ffmpeg = _require_binary("ffmpeg")
-    total_duration = probe_duration(path)
-    result = subprocess.run(
-        [
-            ffmpeg,
-            "-i",
-            str(path),
-            "-af",
-            f"silencedetect=noise={threshold}:d={min_silence_duration}",
-            "-f",
-            "null",
-            "-",
-        ],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    return parse_silencedetect_output(result.stderr, total_duration)
+    cmd = [
+        ffmpeg,
+        "-nostdin",
+        "-nostats",
+        "-i",
+        str(path),
+        "-vn",
+        "-af",
+        f"silencedetect=noise={threshold}:d={min_silence_duration}",
+        "-f",
+        "null",
+        "-",
+    ]
+    proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True, errors="replace")
+    parser = SilenceParser()
+    detach = stop_on_cancel(proc, cancel)
+    try:
+        assert proc.stderr is not None
+        for line in proc.stderr:
+            parser.feed(line)
+        proc.wait()
+    finally:
+        detach()
+        stop_process(proc)
+    if cancel is not None:
+        cancel.raise_if_cancelled()
+    if parser.pending_start is not None:  # the file ended while still silent
+        parser.intervals.append(SilenceInterval(start=parser.pending_start, end=probe_duration(path)))
+    return parser.intervals
 
 
 def extract_pcm_audio(path: Path, sample_rate: int = WAVEFORM_SAMPLE_RATE, cancel: CancelToken | None = None) -> bytes:
@@ -235,6 +254,60 @@ def extract_pcm_audio(path: Path, sample_rate: int = WAVEFORM_SAMPLE_RATE, cance
             f"ffmpeg failed to decode audio from '{path.name}': {result.stderr.decode(errors='replace').strip()[-2000:]}"
         )
     return result.stdout
+
+
+# Seconds of audio per chunk yielded by `iter_pcm_chunks` (160 KB at 16 kHz mono s16).
+PCM_CHUNK_SECONDS = 5.0
+
+
+def iter_pcm_chunks(
+    path: Path,
+    sample_rate: int = WAVEFORM_SAMPLE_RATE,
+    chunk_seconds: float = PCM_CHUNK_SECONDS,
+    cancel: CancelToken | None = None,
+) -> Iterator[np.ndarray]:
+    """Decode a file's audio to mono 16-bit PCM and yield it as int16 arrays of `chunk_seconds` each
+    (the last one is shorter), straight off ffmpeg's stdout pipe, so memory stays at one chunk however
+    long the file is. This is the streaming `extract_pcm_audio`: same ffmpeg arguments, same
+    `ExtractError` message when ffmpeg fails.
+
+    stderr is drained on a thread (only its tail is kept), so ffmpeg can never block on a full pipe. A
+    cancelled job terminates ffmpeg at once and gets `JobCancelledError` from the generator; closing
+    the generator early (or an exception in the consumer) stops ffmpeg too."""
+    ffmpeg = _require_binary("ffmpeg")
+    cmd = [ffmpeg, "-nostdin", "-i", str(path), "-vn", "-ac", "1", "-ar", str(sample_rate), "-f", "s16le", "-"]
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    tail: list[bytes] = []
+
+    def drain() -> None:
+        assert proc.stderr is not None
+        for line in proc.stderr:
+            tail.append(line)
+            del tail[:-200]
+
+    reader = threading.Thread(target=drain, name="ffmpeg-stderr", daemon=True)
+    reader.start()
+    detach = stop_on_cancel(proc, cancel)
+    chunk_bytes = max(1, int(sample_rate * chunk_seconds)) * 2
+    try:
+        assert proc.stdout is not None
+        while True:
+            data = proc.stdout.read(chunk_bytes)  # blocks until a full chunk or EOF
+            if not data:
+                break
+            yield np.frombuffer(data[: len(data) // 2 * 2], dtype="<i2")
+        proc.wait()
+        reader.join(5)
+    finally:
+        detach()
+        stop_process(proc)
+        if proc.stdout is not None:
+            proc.stdout.close()
+    if cancel is not None:
+        cancel.raise_if_cancelled()
+    if proc.returncode != 0:
+        message = b"".join(tail).decode(errors="replace").strip()[-2000:]
+        raise ExtractError(f"ffmpeg failed to decode audio from '{path.name}': {message}")
 
 
 def extract_segment(
