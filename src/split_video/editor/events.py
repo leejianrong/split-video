@@ -53,7 +53,11 @@ client that overflows it is sent `overflow` and dropped, never waited for.
 The watcher thread polls `ProjectStore.peek_revisions` every `poll_interval` seconds (timeline
 projects and the split projects clients have opened), and the loop emits an `external` event for
 each revision above the last one emitted for that project. In-process writes set that same
-"last emitted" mark, so one write gives exactly one event.
+"last emitted" mark, so one write gives exactly one event. That is deterministic, not a matter of
+timing: a store announces that a write is about to begin (`announcing_write`) before it touches the
+project, and the bus counts such writes per project until the loop has processed their commit (or
+abort). While the count is non-zero the watcher holds back its verdict on that project, so a write
+whose commit announcement is delayed (a starved thread) is never mislabelled `external` or dropped.
 """
 
 from __future__ import annotations
@@ -203,6 +207,11 @@ class EventBus:
         self._watcher: tuple[threading.Thread, threading.Event] | None = None
         self._linger: asyncio.TimerHandle | None = None
         self._confirming: list[asyncio.TimerHandle] = []
+        # In-process writes that have begun (before the file changes) and whose commit the loop has not
+        # processed yet, per project. Written from writer threads and the loop, hence the lock. The
+        # watcher never calls a project's change external while this is non-zero (SPL-106).
+        self._writing: dict[tuple[str, str], int] = {}
+        self._writing_lock = threading.Lock()
         self._closed = False
 
     # --- introspection (tests, diagnostics) -------------------------------------------------
@@ -246,7 +255,12 @@ class EventBus:
             self._linger = None
         async with self._attach_lock:
             if not self._unsubscribers:
-                self._unsubscribers = [self._jobs.subscribe(self._job_listener), subscribe_revisions(self._on_revision)]
+                self._unsubscribers = [
+                    self._jobs.subscribe(self._job_listener),
+                    subscribe_revisions(
+                        self._on_revision, on_begin=self._on_write_begin, on_abort=self._on_write_abort
+                    ),
+                ]
             if not self.watcher_running:
                 baseline = await asyncio.to_thread(self._peek)
                 self._start_watcher()
@@ -457,13 +471,40 @@ class EventBus:
 
     # --- project revisions -----------------------------------------------------------------------
 
+    def _ours(self, origin: object) -> bool:
+        # another store instance in this process is not ours: the watcher reports it as external
+        return origin is None or origin is self._store
+
+    def _on_write_begin(self, kind: str, project_id: str, origin: object) -> None:  # the writer's thread
+        if self._ours(origin):
+            with self._writing_lock:
+                key = (kind, project_id)
+                self._writing[key] = self._writing.get(key, 0) + 1
+
+    def _on_write_abort(self, kind: str, project_id: str, origin: object) -> None:  # the writer's thread
+        if self._ours(origin):
+            self._handoff(self._write_done, (kind, project_id))
+
+    def _write_done(self, key: tuple[str, str]) -> None:
+        with self._writing_lock:
+            left = self._writing.get(key, 0) - 1
+            if left > 0:
+                self._writing[key] = left
+            else:
+                self._writing.pop(key, None)
+
+    def _is_writing(self, key: tuple[str, str]) -> bool:
+        with self._writing_lock:
+            return key in self._writing
+
     def _on_revision(self, change: RevisionChange) -> None:  # the writer's thread: hand off only
-        if change.origin is not None and change.origin is not self._store:
-            return  # another store instance in this process: the watcher reports it as external
+        if not self._ours(change.origin):
+            return
         self._handoff(self._on_local, change)
 
     def _on_local(self, change: RevisionChange) -> None:
         key = (change.kind, change.project_id)
+        self._write_done(key)  # processed on the loop, after anything the watcher queued earlier
         if self._closed or change.revision <= self._last.get(key, -1):
             return  # already reported (the watcher got there first)
         self._last[key] = change.revision
@@ -482,6 +523,8 @@ class EventBus:
         changed: list[tuple[tuple[str, str], int]] = []
         for key, revision in snapshot.items():
             previous = self._last.get(key)
+            if self._is_writing(key):
+                continue  # an in-process write is landing: its own announcement reports it, as local
             if previous is None:
                 if key[0] == "timeline" and self._baselined:
                     changed.append((key, revision))  # a timeline project created since the last look
@@ -511,6 +554,8 @@ class EventBus:
         if self._closed:
             return
         for key, revision in changed:
+            if self._is_writing(key):
+                continue  # the write began after the poll that saw this; the local event covers it
             if revision > self._last.get(key, -1):
                 self._last[key] = revision
                 self._emit_project(key[0], key[1], revision, "external")

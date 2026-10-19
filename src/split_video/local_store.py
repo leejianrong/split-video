@@ -43,6 +43,7 @@ from split_video.store import (
     SavedSegment,
     Versioned,
     announce_revision,
+    announcing_write,
     check_base_revision,
 )
 from split_video.timeline import Project, ProjectExistsError, ProjectNotFoundError
@@ -202,7 +203,7 @@ class LocalProjectStore:
 
     def save_split(self, project_id: str, segments: list[SavedSegment], base_revision: int | None = None) -> int:
         video, path = self._split_paths(project_id)
-        with _write_lock(path):
+        with announcing_write("split", project_id, self), _write_lock(path):
             current = _revision_of(_read_json(path))
             check_base_revision("split project", project_id, current, base_revision)
             self._write_split(video.name, path, segments, current + 1)
@@ -216,7 +217,7 @@ class LocalProjectStore:
         base_revision: int | None = None,
     ) -> Versioned[list[SavedSegment]]:
         video, path = self._split_paths(project_id)
-        with _write_lock(path):
+        with announcing_write("split", project_id, self), _write_lock(path):
             data = _read_json(path)
             current = _revision_of(data)
             check_base_revision("split project", project_id, current, base_revision)
@@ -261,7 +262,7 @@ class LocalProjectStore:
 
     def save_timeline(self, name: str, project: Project, base_revision: int | None = None) -> int:
         path = self.timeline_path(name)
-        with _write_lock(path):
+        with announcing_write("timeline", name, self), _write_lock(path):
             current = _revision_of(_read_json(path))
             check_base_revision("timeline project", name, current, base_revision)
             self._write_timeline(path, project, current + 1)
@@ -272,7 +273,7 @@ class LocalProjectStore:
         self, name: str, change: Callable[[Project], Project], base_revision: int | None = None
     ) -> Project:
         path = self.timeline_path(name)
-        with _write_lock(path):
+        with announcing_write("timeline", name, self), _write_lock(path):
             if not path.exists():
                 raise ProjectNotFoundError(f"no project named {name!r}")
             stored = self._read_timeline(path)
@@ -284,7 +285,7 @@ class LocalProjectStore:
 
     def create_timeline(self, name: str) -> Project:
         path = self.timeline_path(name)
-        with _write_lock(path):
+        with announcing_write("timeline", name, self), _write_lock(path):
             if path.exists():
                 raise ProjectExistsError(f"project {name!r} already exists")
             project = timeline.empty_project()

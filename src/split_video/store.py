@@ -28,7 +28,8 @@ from __future__ import annotations
 import copy
 import logging
 import threading
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
 from typing import Generic, Literal, Protocol, TypeVar, runtime_checkable
 
@@ -79,31 +80,78 @@ class RevisionChange:
 
 
 RevisionListener = Callable[[RevisionChange], None]
-_listeners: list[RevisionListener] = []
+# Called on the writer's thread BEFORE it touches the stored project (so before the new revision can
+# be seen by anyone reading the files), and again if that write fails instead of committing. Every
+# `begin` is followed by exactly one `announce_revision` (the commit) or one `abort`.
+WriteListener = Callable[[str, str, object], None]  # (kind, project_id, origin store)
+
+
+@dataclass(frozen=True)
+class _Subscription:
+    listener: RevisionListener
+    on_begin: WriteListener | None
+    on_abort: WriteListener | None
+
+
+_listeners: list[_Subscription] = []
 _listeners_lock = threading.Lock()
 
 
-def subscribe_revisions(listener: RevisionListener) -> Callable[[], None]:
-    """Call `listener` after every committed write; returns a function that unsubscribes it."""
+def subscribe_revisions(
+    listener: RevisionListener,
+    *,
+    on_begin: WriteListener | None = None,
+    on_abort: WriteListener | None = None,
+) -> Callable[[], None]:
+    """Call `listener` after every committed write; returns a function that unsubscribes it.
+
+    `on_begin`/`on_abort` additionally hear about a write before it happens and if it fails, so a
+    watcher that sees the new revision on disk can tell it is a write whose announcement is still
+    on its way (SPL-106)."""
+    sub = _Subscription(listener, on_begin, on_abort)
     with _listeners_lock:
-        _listeners.append(listener)
+        _listeners.append(sub)
 
     def unsubscribe() -> None:
         with _listeners_lock:
-            if listener in _listeners:
-                _listeners.remove(listener)
+            if sub in _listeners:
+                _listeners.remove(sub)
 
     return unsubscribe
 
 
 def announce_revision(change: RevisionChange) -> None:
     with _listeners_lock:
-        listeners = list(_listeners)
+        listeners = [sub.listener for sub in _listeners]
     for listener in listeners:
         try:
             listener(change)
         except Exception:
             log.exception("revision listener failed")
+
+
+def _announce_write(kind: str, project_id: str, origin: object, phase: str) -> None:
+    with _listeners_lock:
+        calls = [getattr(sub, phase) for sub in _listeners]
+    for call in calls:
+        if call is None:
+            continue
+        try:
+            call(kind, project_id, origin)
+        except Exception:
+            log.exception("revision listener failed")
+
+
+@contextmanager
+def announcing_write(kind: str, project_id: str, origin: object) -> Iterator[None]:
+    """Wrap a store write (lock, read, commit): subscribers hear `on_begin` before it starts and
+    `on_abort` if it raises. On success the caller must then `announce_revision` the commit."""
+    _announce_write(kind, project_id, origin, "on_begin")
+    try:
+        yield
+    except BaseException:
+        _announce_write(kind, project_id, origin, "on_abort")
+        raise
 
 
 def check_base_revision(kind: str, project_id: str, current: int, base_revision: int | None) -> None:
@@ -213,7 +261,7 @@ class InMemoryProjectStore:
         return Versioned(None, 0) if found is None else Versioned(list(found[0]), found[1])
 
     def save_split(self, project_id: str, segments: list[SavedSegment], base_revision: int | None = None) -> int:
-        with self._lock:
+        with announcing_write("split", project_id, self), self._lock:
             revision = self._commit_split(project_id, list(segments), base_revision)
         announce_revision(RevisionChange("split", project_id, revision, self))
         return revision
@@ -224,7 +272,7 @@ class InMemoryProjectStore:
         change: Callable[[list[SavedSegment] | None], list[SavedSegment]],
         base_revision: int | None = None,
     ) -> Versioned[list[SavedSegment]]:
-        with self._lock:
+        with announcing_write("split", project_id, self), self._lock:
             found = self._splits.get(project_id)
             current = 0 if found is None else found[1]
             check_base_revision("split project", project_id, current, base_revision)
@@ -266,7 +314,7 @@ class InMemoryProjectStore:
 
     def save_timeline(self, name: str, project: Project, base_revision: int | None = None) -> int:
         timeline.validate_name(name)
-        with self._lock:
+        with announcing_write("timeline", name, self), self._lock:
             revision = self._commit_timeline(name, project, base_revision)
         announce_revision(RevisionChange("timeline", name, revision, self))
         return revision
@@ -275,7 +323,7 @@ class InMemoryProjectStore:
         self, name: str, change: Callable[[Project], Project], base_revision: int | None = None
     ) -> Project:
         timeline.validate_name(name)
-        with self._lock:
+        with announcing_write("timeline", name, self), self._lock:
             found = self._timelines.get(name)
             if found is None:
                 raise ProjectNotFoundError(f"no project named {name!r}")
@@ -294,7 +342,7 @@ class InMemoryProjectStore:
 
     def create_timeline(self, name: str) -> Project:
         timeline.validate_name(name)
-        with self._lock:
+        with announcing_write("timeline", name, self), self._lock:
             if name in self._timelines:
                 raise ProjectExistsError(f"project {name!r} already exists")
             project = timeline.empty_project()

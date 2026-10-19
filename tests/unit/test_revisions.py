@@ -191,6 +191,32 @@ def test_revision_listeners_hear_each_committed_write_once(store):
     ]
 
 
+def test_write_listeners_hear_begin_before_the_commit_and_abort_on_failure(store):
+    """SPL-106: `on_begin` fires before the stored project changes, then exactly one of commit/abort."""
+    log: list[tuple[str, str, int | None]] = []
+
+    def begin(kind, project_id, origin):
+        log.append(("begin", project_id, store.load_split_versioned("v.mp4").revision))
+
+    unsubscribe = subscribe_revisions(
+        lambda c: log.append(("commit", c.project_id, c.revision)),
+        on_begin=begin,
+        on_abort=lambda kind, project_id, origin: log.append(("abort", project_id, None)),
+    )
+    try:
+        store.save_split("v.mp4", [seg(1.0)])
+        with pytest.raises(RevisionConflictError):
+            store.save_split("v.mp4", [seg(2.0)], base_revision=0)
+    finally:
+        unsubscribe()
+    assert log == [
+        ("begin", "v.mp4", 0),  # nothing stored yet when it began
+        ("commit", "v.mp4", 1),
+        ("begin", "v.mp4", 1),
+        ("abort", "v.mp4", None),
+    ]
+
+
 def test_a_failing_listener_does_not_fail_the_write(store):
     def boom(change):
         raise RuntimeError("subscriber bug")
