@@ -15,7 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from starlette.responses import Response
 
-from split_video import assets, proxy, timeline_service
+from split_video import assets, proxy, timeline_service, transcribe
 from split_video.editor.context import RequestContext, make_context_dependency
 from split_video.editor.job_routes import cancel_job, job_of_kind
 from split_video.editor.media_response import media_response
@@ -104,6 +104,7 @@ class AssetOut(BaseModel):
     present: bool  # whether the file is at `path` with this content right now
     proxy: bool = False  # a current proxy exists (see /assets/{id}/proxy)
     thumbnails: bool = False  # a current thumbnail strip exists (see /assets/{id}/thumbnails)
+    transcript: bool = False  # a current transcript exists (see /assets/{id}/transcript)
 
 
 class AssetListOut(BaseModel):
@@ -243,7 +244,11 @@ def make_router(provider: StoreProvider, jobs: JobQueue) -> APIRouter:
         )
 
     def asset_out(book: assets.AssetBook, a: assets.Asset) -> AssetOut:
-        return AssetOut(**a.summary(book.present(a)), **proxy.flags(book.media, a))
+        return AssetOut(
+            **a.summary(book.present(a)),
+            **proxy.flags(book.media, a),
+            transcript=transcribe.has_transcript(book.media, a),
+        )
 
     def project_out(media: MediaStore, name: str, project: Project) -> ProjectOut:
         # One table load for the whole project; each clip's file is found by asset id.

@@ -242,6 +242,43 @@ has `proxy_jobs` (`[{asset, job_id}]`), which you follow through `/jobs/{id}` or
 with `skipped: "audio-only asset"`, while the API answers `POST .../proxy` with
 422 and the `GET`s with 404 saying so.
 
+### Transcription (optional)
+
+Speech to text with a word-level timestamp for every word, run locally (CPU,
+[faster-whisper](https://github.com/SYSTRAN/faster-whisper), MIT). It is not in
+the default image because it adds about 340 MB. Build the image with it:
+
+```bash
+docker build --build-arg WITH_TRANSCRIPTION=1 -t split-video:transcribe .
+# optional: also bake the 139 MB base.en model in, so the first run needs no internet
+docker build --build-arg WITH_TRANSCRIPTION=1 --build-arg TRANSCRIPTION_MODEL=base.en -t split-video:transcribe .
+
+docker run --rm -v "$PWD":/data split-video:transcribe transcribe liveshow.mp4
+docker run --rm -v "$PWD":/data split-video:transcribe transcript liveshow.mp4 --start 60 --end 90
+```
+
+Outside Docker: `uv sync --extra transcribe` in a checkout, or `pip install
+'split-video[transcribe]'`. Without it, `transcribe` (and the API and MCP
+equivalents) say how to install it: the CLI exits with code 4, `POST
+/api/v1/assets/{id}/transcribe` answers 501 with that text as its `detail`, and
+the MCP tool returns a tool error.
+
+`transcribe` takes a file under `--root` or an asset id, and `--model` (default
+`base.en`; `small.en` is slower and a little more careful, `base` or `small`
+handle other languages) and `--language`. The model downloads on first use into
+`.split-video-models/` in the folder you mounted, not into the image or
+`~/.cache`, so it is fetched once per folder, and with the model there it works
+offline. The transcript is stored next to the video (`.split-video-cache/`) and
+goes stale if the file changes: segments of words, each with `start`, `end`,
+`word` and `probability`, in seconds from the start of the audio (format in
+`src/split_video/transcribe.py`). A multi-hour file is read in 5-minute windows,
+so memory stays flat. Over HTTP it is a `transcription` job
+(`POST /api/v1/assets/{id}/transcribe`, with progress and cancel), read back with
+`GET /api/v1/assets/{id}/transcript` (optionally `?start=&end=`); MCP has
+`transcribe_asset` and `get_transcript`, and `list_assets` shows `transcript`.
+Speaker labels and translation are not included. The numbers behind the
+defaults are in [`docs/decisions/transcription.md`](docs/decisions/transcription.md).
+
 ### Compose: combine clips, overlays, audio and titles (`compose`)
 
 Besides splitting one recording, you can build a video from several files.
@@ -355,7 +392,7 @@ reads and writes the same project file, so a human can open the result in
 the visual editor afterward. Tools: `list_videos`, `list_segments`,
 `propose_splits`, `add_split`, `move_split`, `remove_split`, `label_segment`,
 `analyze_audio`, `export`. The `compose` commands above have matching tools:
-`list_timelines`, `scan_library`, `list_assets`, `prepare_asset`, `create_timeline`, `show_timeline`, `add_clip_to_timeline`
+`list_timelines`, `scan_library`, `list_assets`, `prepare_asset`, `transcribe_asset`, `get_transcript`, `create_timeline`, `show_timeline`, `add_clip_to_timeline`
 (a path or an asset id),
 `trim_timeline_clip`, `move_timeline_clip`, `remove_timeline_clip`,
 `set_timeline_transition`, `add_timeline_track`, `remove_timeline_track`,

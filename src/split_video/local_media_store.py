@@ -53,6 +53,9 @@ CACHE_DIR_NAME = ".split-video-cache"
 # cache, since clips refer to its asset ids. In the root for the same
 # bind-mount reason as the caches above.
 ASSET_TABLE_NAME = ".split-video-assets.json"
+# Where optional ML models (the transcription model) are downloaded to: one directory in the root, so a
+# model is fetched once per workspace and survives a `--rm`'d container exactly as the media does.
+MODELS_DIR_NAME = ".split-video-models"
 
 
 class LocalMediaStore:
@@ -165,6 +168,12 @@ class LocalMediaStore:
     @contextmanager
     def local_path(self, media_id: str) -> Iterator[Path]:
         yield self._path(media_id)
+
+    @contextmanager
+    def models_dir(self) -> Iterator[Path]:
+        path = self.root / MODELS_DIR_NAME
+        path.mkdir(parents=True, exist_ok=True)
+        yield path
 
     def derived_id(self, media_id: str, name: str) -> str:
         return self.join(posixpath.dirname(media_id), f"{CACHE_DIR_NAME}/{posixpath.basename(media_id)}.{name}")

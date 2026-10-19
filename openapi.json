@@ -270,6 +270,11 @@
             "title": "Thumbnails",
             "type": "boolean"
           },
+          "transcript": {
+            "default": false,
+            "title": "Transcript",
+            "type": "boolean"
+          },
           "width": {
             "anyOf": [
               {
@@ -1795,6 +1800,157 @@
         "title": "TrackOut",
         "type": "object"
       },
+      "TranscribeRequest": {
+        "properties": {
+          "force": {
+            "default": false,
+            "title": "Force",
+            "type": "boolean"
+          },
+          "language": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Language"
+          },
+          "model": {
+            "default": "base.en",
+            "title": "Model",
+            "type": "string"
+          }
+        },
+        "title": "TranscribeRequest",
+        "type": "object"
+      },
+      "TranscribeStartResponse": {
+        "properties": {
+          "job_id": {
+            "title": "Job Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "job_id"
+        ],
+        "title": "TranscribeStartResponse",
+        "type": "object"
+      },
+      "TranscriptOut": {
+        "description": "The stored transcript (the document described in `transcribe.py`).",
+        "properties": {
+          "asset": {
+            "title": "Asset",
+            "type": "string"
+          },
+          "duration": {
+            "title": "Duration",
+            "type": "number"
+          },
+          "language": {
+            "title": "Language",
+            "type": "string"
+          },
+          "language_probability": {
+            "title": "Language Probability",
+            "type": "number"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "segments": {
+            "items": {
+              "$ref": "#/components/schemas/TranscriptSegmentOut"
+            },
+            "title": "Segments",
+            "type": "array"
+          },
+          "vad": {
+            "title": "Vad",
+            "type": "boolean"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "version",
+          "asset",
+          "model",
+          "language",
+          "language_probability",
+          "duration",
+          "vad",
+          "segments"
+        ],
+        "title": "TranscriptOut",
+        "type": "object"
+      },
+      "TranscriptSegmentOut": {
+        "properties": {
+          "end": {
+            "title": "End",
+            "type": "number"
+          },
+          "start": {
+            "title": "Start",
+            "type": "number"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "words": {
+            "items": {
+              "$ref": "#/components/schemas/TranscriptWordOut"
+            },
+            "title": "Words",
+            "type": "array"
+          }
+        },
+        "required": [
+          "start",
+          "end",
+          "text",
+          "words"
+        ],
+        "title": "TranscriptSegmentOut",
+        "type": "object"
+      },
+      "TranscriptWordOut": {
+        "properties": {
+          "end": {
+            "title": "End",
+            "type": "number"
+          },
+          "probability": {
+            "title": "Probability",
+            "type": "number"
+          },
+          "start": {
+            "title": "Start",
+            "type": "number"
+          },
+          "word": {
+            "title": "Word",
+            "type": "string"
+          }
+        },
+        "required": [
+          "start",
+          "end",
+          "word",
+          "probability"
+        ],
+        "title": "TranscriptWordOut",
+        "type": "object"
+      },
       "TransitionRequest": {
         "properties": {
           "duration": {
@@ -2462,6 +2618,155 @@
           }
         },
         "summary": "Get Thumbnails Info"
+      }
+    },
+    "/api/v1/assets/{asset_id}/transcribe": {
+      "post": {
+        "description": "Queue transcribing the asset's audio with word timestamps. The job's result is `{asset, model, language,\nduration, segments, words, made}`; read the words with `GET /assets/{id}/transcript`. 501 (detail: the\ninstall hint) when the optional faster-whisper package is not installed; 422 for an asset with no audio.",
+        "operationId": "start_transcription_api_v1_assets__asset_id__transcribe_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "asset_id",
+            "required": true,
+            "schema": {
+              "title": "Asset Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/TranscribeRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Request"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TranscribeStartResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedOut"
+                }
+              }
+            },
+            "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Start Transcription"
+      }
+    },
+    "/api/v1/assets/{asset_id}/transcript": {
+      "get": {
+        "description": "The stored transcript, or with `start` and/or `end` (seconds) only the words overlapping that span. 404\nuntil a transcription job has run, or after the file changed.",
+        "operationId": "get_transcript_api_v1_assets__asset_id__transcript_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "asset_id",
+            "required": true,
+            "schema": {
+              "title": "Asset Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "start",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Start"
+            }
+          },
+          {
+            "in": "query",
+            "name": "end",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "End"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TranscriptOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedOut"
+                }
+              }
+            },
+            "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Transcript"
       }
     },
     "/api/v1/browse": {

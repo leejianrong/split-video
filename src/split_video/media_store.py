@@ -148,6 +148,12 @@ class MediaStore(Protocol):
         `list_dir`. Nothing here ties it to the media's content: pair it with `save_cache`."""
         ...
 
+    def models_dir(self) -> AbstractContextManager[Path]:
+        """A real directory, kept between calls, that an optional ML model may be downloaded into and read from
+        (the transcription model): with the workspace, never in a per-user cache (locally `<root>/.split-video-models/`,
+        created on demand). Valid inside the `with` block only. It is not listed by `list_dir`."""
+        ...
+
     def write_local(self, media_id: str) -> AbstractContextManager[Path]:
         """A real path for ffmpeg to write `media_id` to (parent directories are
         created). The store commits it when the block exits without an error, so a
@@ -217,6 +223,7 @@ class InMemoryMediaStore:
         self._caches: dict[tuple[str, str], tuple[dict[str, float], Any]] = {}
         self._asset_table: Any | None = None
         self._materialise = materialise
+        self._models: tempfile.TemporaryDirectory[str] | None = None
 
     # --- setup ---------------------------------------------------------------------
 
@@ -335,6 +342,12 @@ class InMemoryMediaStore:
 
     def derived_id(self, media_id: str, name: str) -> str:
         return self.join(posixpath.dirname(media_id), f".derived/{posixpath.basename(media_id)}.{name}")
+
+    @contextmanager
+    def models_dir(self) -> Iterator[Path]:
+        if self._models is None:  # one scratch directory for the store's life, removed with it
+            self._models = tempfile.TemporaryDirectory(prefix="split-video-models-")
+        yield Path(self._models.name)
 
     @contextmanager
     def write_local(self, media_id: str) -> Iterator[Path]:

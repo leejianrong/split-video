@@ -1,4 +1,4 @@
-"""The work functions the job queue runs: export, audio analysis and timeline render.
+"""The work functions the job queue runs: export, audio analysis, timeline render, proxies, scans and transcription.
 
 Each `*_work` builds a `Callable[[JobContext], Any]` for `JobQueue.submit`. They are thin: the
 actual operations are `project.run_export`, `project.run_analysis` and
@@ -12,7 +12,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from split_video import library, project, proxy, timeline_service
+from split_video import library, project, proxy, timeline_service, transcribe
 from split_video.editor import classify
 from split_video.editor.cache import ClassificationCache
 from split_video.jobs import PROXY, JobContext, JobQueue
@@ -21,6 +21,8 @@ from split_video.timeline import Project
 
 # A render reports a 0..1 fraction; as a job it counts thousandths of the output.
 RENDER_STEPS = 1000
+# A transcription reports seconds of audio done; as a job it counts thousandths of the audio.
+TRANSCRIBE_STEPS = 1000
 
 
 def export_work(
@@ -107,6 +109,30 @@ def proxy_work(media: MediaStore, asset_id: str, *, force: bool = False) -> Call
 
         ctx.progress(0, proxy.STEPS)
         return proxy.prepare(media, asset_id, force=force, on_progress=on_progress, cancel=ctx)
+
+    return work
+
+
+def transcribe_work(
+    media: MediaStore,
+    asset_id: str,
+    *,
+    model: str = transcribe.DEFAULT_MODEL,
+    language: str | None = None,
+    force: bool = False,
+) -> Callable[[JobContext], dict[str, Any]]:
+    """Transcribe the asset (`transcribe.transcribe`). Progress counts thousandths of the audio; the result is the
+    transcript's info `{asset, model, language, duration, segments, words, made}` (the transcript itself is
+    `GET /assets/{id}/transcript`)."""
+
+    def work(ctx: JobContext) -> dict[str, Any]:
+        def on_progress(done: float, total: float) -> None:
+            ctx.progress(round(done / max(total, 1e-9) * TRANSCRIBE_STEPS), TRANSCRIBE_STEPS)
+
+        ctx.progress(0, TRANSCRIBE_STEPS)
+        return transcribe.transcribe(
+            media, asset_id, model=model, language=language, force=force, on_progress=on_progress, cancel=ctx
+        )
 
     return work
 

@@ -27,6 +27,9 @@ wheels/
 # written as sidecars next to whatever video was opened for editing
 .split-video-cache/
 
+# Optional ML models (the transcription model), downloaded into the workspace on first use
+.split-video-models/
+
 # Saved split points, written as a sidecar next to whatever video was
 # opened for editing — see editor/project_store.py
 *.split-video-project.json
