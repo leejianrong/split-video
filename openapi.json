@@ -1718,6 +1718,10 @@
             "title": "Interval",
             "type": "number"
           },
+          "method": {
+            "title": "Method",
+            "type": "string"
+          },
           "rows": {
             "title": "Rows",
             "type": "integer"
@@ -1734,6 +1738,10 @@
             "title": "Tile Width",
             "type": "integer"
           },
+          "tolerance": {
+            "title": "Tolerance",
+            "type": "number"
+          },
           "width": {
             "title": "Width",
             "type": "integer"
@@ -1749,7 +1757,9 @@
           "width",
           "height",
           "duration",
-          "source"
+          "source",
+          "method",
+          "tolerance"
         ],
         "title": "ThumbnailsInfo",
         "type": "object"
@@ -2245,7 +2255,7 @@
     },
     "/api/v1/assets/{asset_id}/proxy": {
       "get": {
-        "description": "The proxy video (H.264 MP4, Range requests answered with 206). 404 until the proxy job has run.",
+        "description": "The proxy video (H.264 MP4, Range requests answered with 206). 404 until the proxy job has run, and\nfor ever for an audio-only asset (the message says so).",
         "operationId": "get_proxy_api_v1_assets__asset_id__proxy_get",
         "parameters": [
           {
@@ -2291,7 +2301,7 @@
         "summary": "Get Proxy"
       },
       "post": {
-        "description": "Queue making the asset's proxy and thumbnail strip (whichever is missing; both with `force`). The job's\nresult is `{asset, proxy, thumbnails, made}`. An audio-only asset has neither: 422.",
+        "description": "Queue making the asset's proxy and thumbnail strip (whichever is missing; both with `force`). The job's\nresult is `{asset, proxy, thumbnails, made}`. An audio-only asset has neither: 422 (the CLI and\nMCP report it as `skipped` instead).",
         "operationId": "make_proxy_api_v1_assets__asset_id__proxy_post",
         "parameters": [
           {
@@ -2358,7 +2368,7 @@
     },
     "/api/v1/assets/{asset_id}/thumbnails": {
       "get": {
-        "description": "The thumbnail strip: one JPEG sprite of evenly spaced frames (see `/thumbnails/info`).",
+        "description": "The thumbnail strip: one JPEG sprite of evenly spaced frames (see `/thumbnails/info`). 404 until the\nproxy job has run, and for an audio-only asset (the message says so).",
         "operationId": "get_thumbnails_api_v1_assets__asset_id__thumbnails_get",
         "parameters": [
           {
@@ -2406,7 +2416,7 @@
     },
     "/api/v1/assets/{asset_id}/thumbnails/info": {
       "get": {
-        "description": "The sprite's layout: tile size, columns, rows, tile count and seconds per tile.",
+        "description": "The sprite's layout: tile size, columns, rows, tile count and seconds per tile (and `tolerance`, how\nfar a tile's frame may be from its nominal time). 404 as `GET .../thumbnails`.",
         "operationId": "get_thumbnails_info_api_v1_assets__asset_id__thumbnails_info_get",
         "parameters": [
           {
@@ -4521,7 +4531,7 @@
     },
     "/api/v1/library/scan": {
       "post": {
-        "description": "Queue a scan of `folder`: every new or changed media file under it is probed once and recorded\nas an asset (see `GET /assets`). Files already recorded are not probed again. The job's result is\n`{folder, total, added, copies, unchanged, skipped}`\n(plus `proxy_jobs` with `proxies`).",
+        "description": "Queue a scan of `folder`: every new or changed media file under it is probed once and recorded\nas an asset (see `GET /assets`). Files already recorded are not probed again. The job's result is\n`{folder, total, added, copies, unchanged, skipped}`. With `proxies` it also has `proxy_jobs` (the ids of\nthe `proxy` jobs queued for the new videos); the scan job finishes without waiting for them.",
         "operationId": "scan_library_api_v1_library_scan_post",
         "requestBody": {
           "content": {

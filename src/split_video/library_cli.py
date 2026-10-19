@@ -54,7 +54,9 @@ def scan_cmd(
     directory: Path = _Dir,
     folder: str = typer.Option("", "--folder", help="Only scan this sub-folder of the directory."),
     proxies: bool = typer.Option(
-        False, "--proxies", help="Also make a proxy and thumbnail strip for each newly added video (slow)."
+        False,
+        "--proxies",
+        help="Also make a proxy and thumbnail strip for each newly added video, before exiting (slow).",
     ),
     as_json: bool = _Json,
 ) -> None:

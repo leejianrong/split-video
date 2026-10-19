@@ -106,6 +106,22 @@ def test_api_errors(workspace):
     assert client.get(f"/api/v1/assets/{audio.id}/thumbnails").status_code == 404
 
 
+def test_audio_only_asset_rule_is_the_same_on_every_surface(workspace):
+    """API: POST is an impossible request (422), GET says audio-only assets have none (404, not "POST to make
+    one"). CLI and MCP are not HTTP requests: they return a result with `skipped`."""
+    media, _ = _gig(workspace)
+    audio = assets.register_path(media, "song.mp3")
+    client = TestClient(create_app(workspace, DEFAULTS))
+    base = f"/api/v1/assets/{audio.id}"
+    assert client.post(f"{base}/proxy").status_code == 422
+    for path in ("proxy", "thumbnails", "thumbnails/info"):
+        got = client.get(f"{base}/{path}")
+        assert got.status_code == 404 and "audio-only" in got.json()["detail"] and "POST" not in got.json()["detail"]
+    cli = json.loads(runner.invoke(app, ["library", "proxies", str(workspace), "--asset", audio.id, "--json"]).stdout)
+    assert cli["assets"][0]["skipped"] == "audio-only asset" and cli["assets"][0]["proxy"] is None
+    assert proxy.prepare(media, audio.id)["skipped"] == "audio-only asset"  # what MCP prepare_asset returns
+
+
 def test_api_scan_with_proxies_queues_a_job_per_new_video(workspace):
     client = TestClient(create_app(workspace, DEFAULTS))
     plain = _wait(client, client.post("/api/v1/library/scan", json={}).json()["job_id"])
@@ -114,7 +130,9 @@ def test_api_scan_with_proxies_queues_a_job_per_new_video(workspace):
     shutil.rmtree(workspace / ".split-video-cache", ignore_errors=True)
     (workspace / ".split-video-assets.json").unlink()
     job = _wait(client, client.post("/api/v1/library/scan", json={"proxies": True}).json()["job_id"])
+    assert job["state"] == "done"  # the scan job does not wait for the proxy jobs it queued
     (queued,) = job["result"]["proxy_jobs"]  # the mp3 gets none
+    assert set(queued) == {"asset", "job_id"} and "proxies" not in job["result"]
     assert _wait(client, queued["job_id"])["state"] == "done"
     (video,) = [a for a in client.get("/api/v1/assets").json()["assets"] if a["has_video"]]
     assert video["id"] == queued["asset"] and video["proxy"] and video["thumbnails"]
@@ -194,4 +212,9 @@ async def test_mcp_prepare_asset(workspace, anyio_backend):
 async def test_mcp_scan_with_proxies(workspace, anyio_backend):
     async with Client(create_server(workspace)) as client:
         scan = (await client.call_tool("scan_library", {"proxies": True})).structured_content
-        assert [p["made"] for p in scan["proxies"]] == [["proxy", "thumbnails"]]
+        assert [p["made"] for p in scan["proxies"]] == [["proxy", "thumbnails"]]  # the mp3 gets none
+        assert "proxy_jobs" not in scan  # MCP runs inline: finished results, not job ids
+        (video,) = [
+            a for a in (await client.call_tool("list_assets", {})).structured_content["assets"] if a["has_video"]
+        ]
+        assert scan["proxies"][0]["asset"] == video["id"] and video["proxy"] and video["thumbnails"]
