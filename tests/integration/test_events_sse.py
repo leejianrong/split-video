@@ -8,6 +8,7 @@ a deadline; nothing waits on a live stream without one.
 import asyncio
 import contextlib
 import json
+import queue
 import socket
 import subprocess
 import sys
@@ -81,28 +82,59 @@ class Live:
 
 
 class Stream:
-    """One SSE connection; `next` parses one frame, honoring a deadline."""
+    """One SSE connection; `next` parses one frame, honoring a deadline.
+
+    A reader thread feeds lines into a queue, so waiting is bounded by our own deadline and a
+    client-side read timeout can never break the underlying iterator (httpx's would, and a slow
+    runner made it fire mid-wait)."""
+
+    _END = object()
 
     def __init__(self, base, params=None, headers=None):
+        # No read timeout: the reader thread blocks on the socket, and `close` ends it.
         self._cm = httpx.stream(
-            "GET", f"{base}/api/v1/events", params=params, headers=headers, timeout=httpx.Timeout(5.0)
+            "GET",
+            f"{base}/api/v1/events",
+            params=params,
+            headers=headers,
+            timeout=httpx.Timeout(5.0, read=None),
         )
         self.response = self._cm.__enter__()
-        self._lines = self.response.iter_lines()
+        self._queue: queue.Queue = queue.Queue()
+        self._reader = threading.Thread(target=self._read, daemon=True, name="test-sse-reader")
+        self._reader.start()
         self.ended = False
+
+    def _read(self):
+        try:
+            for line in self.response.iter_lines():
+                self._queue.put(line)
+        except (httpx.HTTPError, OSError, RuntimeError):
+            pass
+        self._queue.put(self._END)
+
+    def _line(self, timeout):
+        """The next line, `_END` when the stream is over, or None if nothing arrived in `timeout`."""
+        try:
+            line = self._queue.get(timeout=max(0.0, timeout))
+        except queue.Empty:
+            return None
+        if line is self._END:
+            self._queue.put(self._END)  # stay ended for any later call
+        return line
 
     def next(self, timeout=5.0, keepalives=False):
         """The next frame as a dict (`event`, `id`, `data` parsed, `retry`), or None when the stream ends.
         Keepalive comments are skipped unless `keepalives`, in which case they come as {"comment": ...}."""
         deadline = time.monotonic() + timeout
         frame: dict = {}
-        while time.monotonic() < deadline:
-            try:
-                line = next(self._lines)
-            except StopIteration:
-                self.ended = True
-                return None
-            except (httpx.ReadError, httpx.RemoteProtocolError):
+        while True:
+            line = self._line(deadline - time.monotonic())
+            if line is None:
+                if time.monotonic() >= deadline:
+                    break
+                continue
+            if line is self._END:
                 self.ended = True
                 return None
             if line == "":
@@ -145,6 +177,11 @@ class Stream:
         return got
 
     def close(self):
+        # The reader is blocked in a socket read; shutting the socket down wakes it and drops the connection.
+        with contextlib.suppress(Exception):
+            sock = self.response.extensions["network_stream"].get_extra_info("socket")
+            sock.shutdown(socket.SHUT_RDWR)
+        self._reader.join(5)
         with contextlib.suppress(httpx.HTTPError, OSError, RuntimeError):
             self._cm.__exit__(None, None, None)
 
