@@ -53,6 +53,8 @@ async def test_exposes_the_documented_tools(root):
         "ocr_search",
         "visual_search",
         "search_asset",
+        "what_is_happening",
+        "timeline_index",
         "get_frame",
         "get_contact_sheet",
         "list_segments",

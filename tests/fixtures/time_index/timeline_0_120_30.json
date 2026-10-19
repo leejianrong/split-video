@@ -1,0 +1,69 @@
+{
+  "version": 1,
+  "asset": "a_e37c5eab78c34f0f",
+  "duration": 300.0,
+  "start": 0.0,
+  "end": 120.0,
+  "step": 30.0,
+  "count": 4,
+  "points": [
+    {
+      "start": 0.0,
+      "end": 30.0,
+      "audio": "music",
+      "loudness_db": -40.0,
+      "loudness_max_db": -40.0,
+      "word_count": 0,
+      "words_per_minute": 0.0,
+      "scene_changes": 1,
+      "activity": 0.127,
+      "text": "intro slide"
+    },
+    {
+      "start": 30.0,
+      "end": 60.0,
+      "audio": "music",
+      "loudness_db": -40.0,
+      "loudness_max_db": -40.0,
+      "word_count": 0,
+      "words_per_minute": 0.0,
+      "scene_changes": 0,
+      "activity": 0.1,
+      "text": "intro slide"
+    },
+    {
+      "start": 60.0,
+      "end": 90.0,
+      "audio": "music",
+      "loudness_db": -40.0,
+      "loudness_max_db": -40.0,
+      "word_count": 0,
+      "words_per_minute": 0.0,
+      "scene_changes": 0,
+      "activity": 0.1,
+      "text": "intro slide"
+    },
+    {
+      "start": 90.0,
+      "end": 120.0,
+      "audio": "speech",
+      "loudness_db": -36.4,
+      "loudness_max_db": -22.0,
+      "word_count": 10,
+      "words_per_minute": 20.0,
+      "scene_changes": 0,
+      "activity": 0.1,
+      "text": "intro slide"
+    }
+  ],
+  "available": {
+    "audio": true,
+    "loudness": true,
+    "silence": true,
+    "speech": true,
+    "scenes": true,
+    "ocr": true,
+    "description": false
+  },
+  "missing": []
+}

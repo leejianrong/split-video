@@ -462,6 +462,12 @@ def _public(state: dict[str, Any]) -> dict[str, Any]:
     return {k: state[k] for k in ("time", "until", "text", "lines", "source_scene")}
 
 
+def states(document: dict[str, Any]) -> list[dict[str, Any]]:
+    """Every text state of a loaded document, in time order, as `ocr_between` returns them (`{time, until, text,
+    lines, source_scene}`): for readers that keep the document and slice it many times (`time_index.py`)."""
+    return [_public(s) for s in _states(document)]
+
+
 def ocr_between(
     media: MediaStore, asset_id: str, start: float | None = None, end: float | None = None
 ) -> list[dict[str, Any]]:

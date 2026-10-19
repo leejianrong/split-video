@@ -69,6 +69,7 @@ from split_video.editor.schemas import (
     WhoAmIOut,
 )
 from split_video.editor.search import make_router as make_search_router
+from split_video.editor.time_index import make_router as make_time_index_router
 from split_video.editor.transcripts import make_router as make_transcripts_router
 from split_video.errors import RevisionConflictError
 from split_video.identity import LOCAL_PRINCIPAL, Principal
@@ -551,6 +552,7 @@ def create_app(
     app.include_router(make_scenes_router(provider, jobs), prefix=API_PREFIX, **guard)
     app.include_router(make_ocr_router(provider, jobs), prefix=API_PREFIX, **guard)
     app.include_router(make_search_router(provider), prefix=API_PREFIX, **guard)
+    app.include_router(make_time_index_router(provider), prefix=API_PREFIX, **guard)
     app.include_router(make_frames_router(provider), prefix=API_PREFIX, **guard)
     app.include_router(make_contact_sheet_router(provider), prefix=API_PREFIX, **guard)
     # Deprecated aliases for one release: /api/... and /media/... as they were

@@ -67,6 +67,11 @@ class SilenceCache:
         }
         self._media.save_cache(self._source, "silence", payload)
 
+    def stored(self) -> dict[float, list[SilenceInterval]]:
+        """The raw scans already stored, by threshold (dB). Never scans: empty if nothing was stored."""
+        with self._lock:
+            return {threshold: list(intervals) for threshold, intervals in self._raw.items()}
+
     def get_raw_silences(self, threshold: float) -> list[SilenceInterval]:
         with self._lock:
             if threshold in self._raw:
@@ -118,6 +123,11 @@ class WaveformCache:
         with self._media.local_path(self._source) as path, closing(iter_pcm_chunks(path)) as chunks:
             self._peaks, self._loudness = stream_waveform(chunks, WAVEFORM_SAMPLE_RATE, expected)
         self._save()
+
+    def stored_loudness(self) -> Loudness | None:
+        """The loudness curve if one is stored, else None. Never decodes audio (unlike `get_loudness`)."""
+        with self._lock:
+            return self._loudness
 
     def get_peaks(self) -> WaveformPeaks:
         with self._lock:

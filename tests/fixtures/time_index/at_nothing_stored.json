@@ -1,0 +1,58 @@
+{
+  "version": 1,
+  "asset": "a_e37c5eab78c34f0f",
+  "time": 100.0,
+  "window": {
+    "start": 95.0,
+    "end": 105.0
+  },
+  "duration": 300.0,
+  "audio": null,
+  "loudness": null,
+  "silence": null,
+  "speech": null,
+  "visual": {
+    "scene_change": null,
+    "scene_changes": null,
+    "scene_index": null,
+    "shot_start": null,
+    "activity": null,
+    "description": null,
+    "text": null
+  },
+  "available": {
+    "audio": false,
+    "loudness": false,
+    "silence": false,
+    "speech": false,
+    "scenes": false,
+    "ocr": false,
+    "description": false
+  },
+  "missing": [
+    {
+      "signal": "audio",
+      "how": "run `split-video analyze <video>` (CLI), the analyze_audio tool (MCP) or POST /api/v1/analyze in the editor (HTTP)"
+    },
+    {
+      "signal": "loudness",
+      "how": "open the video in the editor (`split-video edit`): GET /api/v1/waveform stores the loudness curve"
+    },
+    {
+      "signal": "silence",
+      "how": "run `split-video propose <video>` (CLI), the propose_splits tool (MCP) or POST /api/v1/detect (HTTP)"
+    },
+    {
+      "signal": "speech",
+      "how": "run `split-video transcribe <target>` (CLI), the transcribe_asset tool (MCP) or POST /api/v1/assets/{id}/transcribe (HTTP)"
+    },
+    {
+      "signal": "scenes",
+      "how": "run `split-video scenes <target>` (CLI), the analyze_scenes tool (MCP) or POST /api/v1/assets/{id}/scenes (HTTP)"
+    },
+    {
+      "signal": "ocr",
+      "how": "run `split-video ocr <target>` (CLI), the ocr_asset tool (MCP) or POST /api/v1/assets/{id}/ocr (HTTP)"
+    }
+  ]
+}

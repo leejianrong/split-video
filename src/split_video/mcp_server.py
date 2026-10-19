@@ -43,6 +43,7 @@ from split_video import (
     proxy,
     scenes,
     search,
+    time_index,
     timeline,
     timeline_service,
     transcribe,
@@ -76,6 +77,7 @@ _EXPECTED_ERRORS = (
     ocr.OcrArgumentError,
     search.SearchNotFoundError,
     search.SearchQueryError,
+    time_index.TimeIndexError,
 )
 
 _READ_ONLY = ToolAnnotations(read_only_hint=True, destructive_hint=False, idempotent_hint=True, open_world_hint=False)
@@ -750,6 +752,33 @@ def create_server(root: Path, store: ProjectStore | None = None, media: MediaSto
             cursor=cursor,
             context=context,
         )
+
+    @server.tool(annotations=_READ_ONLY)
+    async def what_is_happening(asset: str, time: float, window: float | None = None) -> dict[str, Any]:
+        """Everything known about the library asset `asset` around `time` (seconds from the start), in one call:
+        `audio` (dominant `class`: music, singing, speech, applause_crowd, laughter or silence_other, plus `share`,
+        `secondary` and the `regions` in the window), `loudness` (`mean_db`, `max_db`, `min_db`, a `curve`),
+        `silence` (`inside` a silence or not, `intervals`), `speech` (the `words` spoken, `text`, `word_count`,
+        `words_per_minute`), and `visual` (the nearest `scene_change`, `scene_index`, `shot_start`, screen `activity`,
+        the on-screen `text` with its `lines`, and `description`, which is always null for now). The window is
+        `window` seconds (default 10, at most 600) centred on `time`, clamped to the asset. It only reads what other
+        tools stored and never decodes or runs a model: a signal that was never computed is null, and `available` and
+        `missing` say which and how to make it (analyze_audio, propose_splits, transcribe_asset, analyze_scenes,
+        ocr_asset). A tool error for an unknown asset, a negative time, a time beyond the duration or a bad window.
+        For a whole recording use timeline_index."""
+        return await run(time_index.what_is_happening, media, asset, time, window)
+
+    @server.tool(annotations=_READ_ONLY)
+    async def timeline_index(
+        asset: str, start: float | None = None, end: float | None = None, step: float | None = None
+    ) -> dict[str, Any]:
+        """Compact points over the library asset `asset`, one per `step` seconds (default 60, raised so there are at
+        most 500 points) from `start` to `end` (default the whole asset): `audio` class, `loudness_db` (mean) and
+        `loudness_max_db`, `word_count`, `words_per_minute`, `scene_changes` in the window, `activity` (mean) and the
+        first line of on-screen `text`; null where a signal was never computed (`available` / `missing` say how to make
+        it). Pick a point, then ask what_is_happening for the detail. A tool error for a bad span, step or more than
+        500 points."""
+        return await run(time_index.timeline_index, media, asset, start, end, step)
 
     @server.tool(annotations=_EDITS_PROJECT)
     async def add_clip_to_timeline(
