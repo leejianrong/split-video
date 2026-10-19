@@ -12,10 +12,10 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from split_video import library, project, timeline_service
+from split_video import library, project, proxy, timeline_service
 from split_video.editor import classify
 from split_video.editor.cache import ClassificationCache
-from split_video.jobs import JobContext
+from split_video.jobs import PROXY, JobContext, JobQueue
 from split_video.media_store import MediaStore
 from split_video.timeline import Project
 
@@ -97,14 +97,39 @@ def render_work(
     return work
 
 
-def library_scan_work(media: MediaStore, folder: str) -> Callable[[JobContext], dict[str, Any]]:
+def proxy_work(media: MediaStore, asset_id: str, *, force: bool = False) -> Callable[[JobContext], dict[str, Any]]:
+    """Make the asset's proxy and thumbnail strip (`proxy.prepare`). Progress is `proxy.STEPS` steps; the
+    result is `prepare`'s `{asset, proxy, thumbnails, made}`."""
+
+    def work(ctx: JobContext) -> dict[str, Any]:
+        def on_progress(done: float, total: int) -> None:
+            ctx.progress(done, total)
+
+        ctx.progress(0, proxy.STEPS)
+        return proxy.prepare(media, asset_id, force=force, on_progress=on_progress, cancel=ctx)
+
+    return work
+
+
+def library_scan_work(
+    media: MediaStore, folder: str, *, jobs: JobQueue | None = None, owner: str | None = None
+) -> Callable[[JobContext], dict[str, Any]]:
     """Scan `folder` into the asset table. Progress counts files, the message is the file just handled;
-    the result is `ScanReport.to_dict()`."""
+    the result is `ScanReport.to_dict()`. With `jobs`, a `proxy` job is queued for each newly added video
+    asset once the scan is done, and the result gains `proxy_jobs`: `[{asset, job_id}]`."""
 
     def work(ctx: JobContext) -> dict[str, Any]:
         def on_progress(done: int, total: int, path: str) -> None:
             ctx.progress(done, total, message=path)
 
-        return library.scan(media, folder, on_progress=on_progress, cancel=ctx).to_dict()
+        report = library.scan(media, folder, on_progress=on_progress, cancel=ctx)
+        result = report.to_dict()
+        if jobs is not None:
+            result["proxy_jobs"] = [
+                {"asset": a.id, "job_id": jobs.submit(PROXY, proxy_work(media, a.id), label=a.path, owner=owner)}
+                for a in report.added
+                if a.has_video
+            ]
+        return result
 
     return work

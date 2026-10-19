@@ -141,6 +141,13 @@ class MediaStore(Protocol):
         hosted one would download it to scratch space and clean up on exit."""
         ...
 
+    def derived_id(self, media_id: str, name: str) -> str:
+        """The id of a derived file `name` (e.g. "proxy.mp4") for the media `media_id`: stored with
+        the media, never apart from it (locally in the video's cache sidecar). It is an ordinary
+        id, so `write_local`, `open_read`, `stat` and `delete` work on it; it is not listed by
+        `list_dir`. Nothing here ties it to the media's content: pair it with `save_cache`."""
+        ...
+
     def write_local(self, media_id: str) -> AbstractContextManager[Path]:
         """A real path for ffmpeg to write `media_id` to (parent directories are
         created). The store commits it when the block exits without an error, so a
@@ -325,6 +332,9 @@ class InMemoryMediaStore:
             path = Path(scratch) / posixpath.basename(media_id)
             path.write_bytes(entry.data)
             yield path
+
+    def derived_id(self, media_id: str, name: str) -> str:
+        return self.join(posixpath.dirname(media_id), f".derived/{posixpath.basename(media_id)}.{name}")
 
     @contextmanager
     def write_local(self, media_id: str) -> Iterator[Path]:

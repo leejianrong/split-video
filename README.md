@@ -212,6 +212,26 @@ are listed as skipped with a reason. `library list` never probes. The editor
 queues the same scan as a `library_scan` job (`POST /api/v1/library/scan`), and
 MCP has `scan_library`.
 
+For long recordings, make a small stand-in to scrub and analyse visually:
+
+```bash
+docker run --rm -v "$PWD":/data ghcr.io/leejianrong/split-video library scan /data --proxies
+docker run --rm -v "$PWD":/data ghcr.io/leejianrong/split-video library proxies /data [--asset a_0123456789abcdef]
+```
+
+Each video asset gets a proxy (H.264, at most 640 px wide and 15 fps, a keyframe
+every 2 s and the index up front, so a browser seeks in it at once) and a
+thumbnail strip (one JPEG sprite with a frame every 10 s, at most 240 tiles),
+both in `.split-video-cache/` next to the video. The original is never touched;
+export and render always read it, and so does audio analysis. Scans make no
+proxies unless you ask (`--proxies`, `"proxies": true` on `POST
+/api/v1/library/scan`, `proxies` on the MCP `scan_library`): it is minutes of
+ffmpeg per hour of video. The editor queues one with `POST
+/api/v1/assets/{id}/proxy` (a `proxy` job with progress and cancel), serves it
+at `GET /api/v1/assets/{id}/proxy` (Range requests), and the strip at
+`GET /api/v1/assets/{id}/thumbnails` with its layout at `.../thumbnails/info`.
+MCP has `prepare_asset`, and `list_assets` says which assets have a proxy.
+
 ### Compose: combine clips, overlays, audio and titles (`compose`)
 
 Besides splitting one recording, you can build a video from several files.
@@ -325,7 +345,7 @@ reads and writes the same project file, so a human can open the result in
 the visual editor afterward. Tools: `list_videos`, `list_segments`,
 `propose_splits`, `add_split`, `move_split`, `remove_split`, `label_segment`,
 `analyze_audio`, `export`. The `compose` commands above have matching tools:
-`list_timelines`, `scan_library`, `list_assets`, `create_timeline`, `show_timeline`, `add_clip_to_timeline`
+`list_timelines`, `scan_library`, `list_assets`, `prepare_asset`, `create_timeline`, `show_timeline`, `add_clip_to_timeline`
 (a path or an asset id),
 `trim_timeline_clip`, `move_timeline_clip`, `remove_timeline_clip`,
 `set_timeline_transition`, `add_timeline_track`, `remove_timeline_track`,

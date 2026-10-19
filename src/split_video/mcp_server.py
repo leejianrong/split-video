@@ -33,7 +33,7 @@ from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp_types import ToolAnnotations
 
-from split_video import library, project, timeline, timeline_service
+from split_video import assets, library, project, proxy, timeline, timeline_service
 from split_video.editor.cache import ClassificationCache
 from split_video.editor.classify import ModelNotFoundError
 from split_video.errors import RevisionConflictError
@@ -384,18 +384,36 @@ def create_server(root: Path, store: ProjectStore | None = None, media: MediaSto
         return {"assets": await run(library.listing, media)}
 
     @server.tool(annotations=_EDITS_PROJECT)
-    async def scan_library(folder: str = "") -> dict[str, Any]:
+    async def scan_library(folder: str = "", proxies: bool = False) -> dict[str, Any]:
         """Scan `folder` (default: the whole workspace, recursively) and record every media file as
         an asset, so list_assets shows it with duration, size and stream info. Incremental: files
         already recorded and unchanged are not probed again. Returns the counts, the newly `added`
         assets (id and path), `copies` (paths whose bytes are already in the library) and `skipped`
-        files that could not be read as media, each with a reason."""
+        files that could not be read as media, each with a reason. With `proxies` true, each newly added
+        video also gets its proxy and thumbnail strip made before this returns (slow: minutes per hour of
+        video; see prepare_asset), listed under `proxies`."""
         try:
-            return (await run(library.scan, media, folder)).to_dict()
+            report = (await run(library.scan, media, folder)).to_dict()
         except MediaOutsideRootError:
             raise ToolError(f"{folder} is outside the allowed root directory") from None
         except MediaNotFoundError:
             raise ToolError(f"folder not found: {folder}") from None
+        if proxies:
+            ids = [a["id"] for a in report["added"] if (await run(assets.get_asset, media, a["id"])).has_video]
+            report["proxies"] = [await run(proxy.prepare, media, asset_id) for asset_id in ids]
+        return report
+
+    @server.tool(annotations=_EDITS_PROJECT)
+    async def prepare_asset(asset: str, force: bool = False) -> dict[str, Any]:
+        """Make the proxy and thumbnail strip of the library asset with id `asset` (from list_assets), if they
+        are missing or stale (`force` rebuilds). The proxy is a small H.264 copy (640 px wide, 15 fps) that
+        seeks instantly and stands in for the original in visual work; the strip is one JPEG of evenly
+        spaced frames. Slow for a long recording (minutes per hour of video) and runs before this returns;
+        the original is never changed and audio analysis still reads it. Returns `proxy` and `thumbnails`
+        metadata (tile size, columns, rows, count and seconds per tile for the strip) and `made`, what this
+        call produced (empty when everything was current). An audio-only asset has neither (`skipped`).
+        list_assets shows `proxy` and `thumbnails` per asset."""
+        return await run(proxy.prepare, media, asset, force=force)
 
     @server.tool(annotations=_EDITS_PROJECT)
     async def add_clip_to_timeline(

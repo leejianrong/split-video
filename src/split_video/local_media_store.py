@@ -166,6 +166,9 @@ class LocalMediaStore:
     def local_path(self, media_id: str) -> Iterator[Path]:
         yield self._path(media_id)
 
+    def derived_id(self, media_id: str, name: str) -> str:
+        return self.join(posixpath.dirname(media_id), f"{CACHE_DIR_NAME}/{posixpath.basename(media_id)}.{name}")
+
     @contextmanager
     def write_local(self, media_id: str) -> Iterator[Path]:
         path = self._path(media_id)

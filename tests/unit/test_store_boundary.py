@@ -20,6 +20,7 @@ GUARDED = [
     "editor/app.py",
     "editor/compose.py",
     "editor/library.py",
+    "editor/proxies.py",
 ]
 FORBIDDEN = re.compile(
     r"_project_path|project_path|FILE_SUFFIX|\.split-video-project\.json|\.split-video-timeline\.json"
@@ -40,6 +41,7 @@ ENGINE = [
     "timeline_ops.py",
     "assets.py",
     "library.py",
+    "proxy.py",
     "render.py",
     "editor/cache.py",
     "jobs.py",
@@ -55,6 +57,7 @@ ADAPTERS = [
     "editor/app.py",
     "editor/media_response.py",
     "editor/library.py",
+    "editor/proxies.py",
     "project_cli.py",
     "compose_cli.py",
     "library_cli.py",
