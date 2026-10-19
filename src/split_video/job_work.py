@@ -1,4 +1,4 @@
-"""The work functions the job queue runs: export, audio analysis, timeline render, proxies, scans and transcription.
+"""The work functions the job queue runs: export, audio analysis, timeline render, proxies, scans, transcription and scene analysis.
 
 Each `*_work` builds a `Callable[[JobContext], Any]` for `JobQueue.submit`. They are thin: the
 actual operations are `project.run_export`, `project.run_analysis` and
@@ -12,7 +12,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from split_video import library, project, proxy, timeline_service, transcribe
+from split_video import library, project, proxy, scenes, timeline_service, transcribe
 from split_video.editor import classify
 from split_video.editor.cache import ClassificationCache
 from split_video.jobs import PROXY, JobContext, JobQueue
@@ -23,6 +23,8 @@ from split_video.timeline import Project
 RENDER_STEPS = 1000
 # A transcription reports seconds of audio done; as a job it counts thousandths of the audio.
 TRANSCRIBE_STEPS = 1000
+# A scene analysis reports seconds of video done; as a job it counts thousandths of the video.
+SCENE_STEPS = 1000
 
 
 def export_work(
@@ -132,6 +134,30 @@ def transcribe_work(
         ctx.progress(0, TRANSCRIBE_STEPS)
         return transcribe.transcribe(
             media, asset_id, model=model, language=language, force=force, on_progress=on_progress, cancel=ctx
+        )
+
+    return work
+
+
+def scene_work(
+    media: MediaStore,
+    asset_id: str,
+    *,
+    threshold: float = scenes.DEFAULT_THRESHOLD,
+    min_gap: float = scenes.DEFAULT_MIN_GAP,
+    force: bool = False,
+) -> Callable[[JobContext], dict[str, Any]]:
+    """Find the asset's scene changes and activity curve (`scenes.analyze`). Progress counts thousandths of the
+    video; the result is the stored document's info `{asset, source, duration, threshold, min_gap, scenes,
+    activity_buckets, made}` (the signals themselves are `GET /assets/{id}/scenes`)."""
+
+    def work(ctx: JobContext) -> dict[str, Any]:
+        def on_progress(done: float, total: float) -> None:
+            ctx.progress(round(done / max(total, 1e-9) * SCENE_STEPS), SCENE_STEPS)
+
+        ctx.progress(0, SCENE_STEPS)
+        return scenes.analyze(
+            media, asset_id, threshold=threshold, min_gap=min_gap, force=force, on_progress=on_progress, cancel=ctx
         )
 
     return work

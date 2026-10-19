@@ -33,7 +33,7 @@ from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp_types import ToolAnnotations
 
-from split_video import assets, library, project, proxy, timeline, timeline_service, transcribe
+from split_video import assets, library, project, proxy, scenes, timeline, timeline_service, transcribe
 from split_video.editor.cache import ClassificationCache
 from split_video.editor.classify import ModelNotFoundError
 from split_video.errors import RevisionConflictError
@@ -443,6 +443,39 @@ def create_server(root: Path, store: ProjectStore | None = None, media: MediaSto
         if found is None:
             raise ToolError(f"asset {asset} has no transcript yet: run transcribe_asset first")
         return transcribe.excerpt(found, start, end)
+
+    @server.tool(annotations=_EDITS_PROJECT)
+    async def analyze_scenes(
+        asset: str,
+        threshold: float = scenes.DEFAULT_THRESHOLD,
+        min_gap: float = scenes.DEFAULT_MIN_GAP,
+        force: bool = False,
+    ) -> dict[str, Any]:
+        """Find the scene changes and the screen-activity curve of the library asset with id `asset` (from
+        list_assets), stored with the asset; read them with get_scenes. One cheap ffmpeg pass over the asset's proxy
+        if it has a current one (else the original), at 5 frames per second and 160 px wide: minutes for a
+        multi-hour file, before this returns. A cut is a frame whose change score (0..1) reaches `threshold`
+        (default 0.15; lower finds subtler switches, higher only hard cuts); cuts closer than `min_gap` seconds
+        (default 1) count as one. Activity is one 0..1 value per second: how much the picture changed (typing in a
+        still editor reads low, a window switch spikes). Returns `source` ("proxy" or "original"), `duration`,
+        counts of `scenes` and `activity_buckets`, and `made` (false when current signals existed unless `force`).
+        An audio-only asset returns `skipped`. list_assets shows `scenes` per asset."""
+        try:
+            return await run(scenes.analyze, media, asset, threshold=threshold, min_gap=min_gap, force=force)
+        except ValueError as exc:
+            raise ToolError(str(exc)) from None
+
+    @server.tool(annotations=_READ_ONLY)
+    async def get_scenes(asset: str, start: float | None = None, end: float | None = None) -> dict[str, Any]:
+        """The stored scene changes and activity curve of the library asset `asset`: `scenes` (`time` in seconds from
+        the start, `score` 0..1), `activity` (one 0..1 value per `activity_interval` seconds; `activity[k]` covers
+        `[k * interval, (k + 1) * interval)`), plus `source`, `duration`, `threshold` and `min_gap`. With `start`
+        and/or `end` (seconds) only the cuts in that span and the activity values overlapping it (`activity_start` is
+        the second the first value covers). Run analyze_scenes first: without signals this is a tool error."""
+        found = await run(scenes.load, media, asset)
+        if found is None:
+            raise ToolError(f"asset {asset} has no scene signals yet: run analyze_scenes first")
+        return scenes.excerpt(found, start, end)
 
     @server.tool(annotations=_EDITS_PROJECT)
     async def add_clip_to_timeline(

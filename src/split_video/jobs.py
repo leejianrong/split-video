@@ -1,12 +1,12 @@
 """The job queue seam: submit long work, poll or subscribe to it, cancel it, fetch its result.
 
-Export, audio analysis, timeline renders, proxies, scans and transcription are all "a function
+Export, audio analysis, timeline renders, proxies, scans, transcription and scene analysis are all "a function
 that takes a while". They run through one `JobQueue` interface instead of ad hoc threads, so
 the editor's HTTP API, a future event stream (SPL-37) and a hosted worker pool (SPL-38 added
 who owns a job) all talk to the same thing. `InProcessJobQueue` is the local implementation:
 a bounded pool of daemon threads inside the server process. It is not a distributed queue.
 
-Job kinds are plain strings: `export`, `analysis`, `render`, `library_scan`, `proxy` and `transcription`.
+Job kinds are plain strings: `export`, `analysis`, `render`, `library_scan`, `proxy`, `transcription` and `scene_analysis`.
 
 Cancellation is cooperative. `cancel` flags the job and runs the callbacks its work registered
 with `JobContext.on_cancel` (that is how a running ffmpeg is terminated at once); the work
@@ -39,6 +39,7 @@ RENDER = "render"
 LIBRARY_SCAN = "library_scan"
 PROXY = "proxy"
 TRANSCRIPTION = "transcription"
+SCENE_ANALYSIS = "scene_analysis"
 
 JobState = Literal["queued", "running", "done", "error", "cancelled"]
 FINISHED_STATES: frozenset[str] = frozenset({"done", "error", "cancelled"})
