@@ -46,6 +46,7 @@ async def test_exposes_the_documented_tools(root):
         "get_transcript",
         "analyze_scenes",
         "get_scenes",
+        "get_frame",
         "list_segments",
         "propose_splits",
         "add_split",

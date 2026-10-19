@@ -297,6 +297,21 @@ video, record whether the proxy or the original was read, and go stale if the fi
 (`POST /api/v1/assets/{id}/scenes`, with progress and cancel), read with `GET /api/v1/assets/{id}/scenes`
 (optionally `?start=&end=`); MCP has `analyze_scenes` and `get_scenes`, and `list_assets` shows `scenes`.
 
+### A picture at a time (`frame`)
+
+Agents cannot judge an edit they cannot see. This returns one JPEG or PNG of a video at a time, optionally scaled:
+
+```bash
+docker run --rm -v "$PWD":/data -w /data ghcr.io/leejianrong/split-video frame stream.mp4 1:02:03 --root /data [--out shot.jpg] [--width 640] [--format png] [--source original]
+```
+
+Without `--out` the file is `<name>-<time>s.jpg` in the current directory (never in the workspace's cache). By
+default the frame comes from the proxy when there is one (at most 640 px wide and 15 fps, so within 1/15 s of the
+time you asked for); `--source original` reads the file itself for full detail. A time past the end is an error that
+says how long the video is; a request at the end returns the last frame; pictures are never scaled up. Over HTTP it is
+`GET /api/v1/assets/{id}/frame?time=&width=&height=&format=&source=` (the image bytes, with `X-Frame-*` headers); MCP
+has `get_frame`, which returns an image block plus a short text block with the time, size and source.
+
 ### Compose: combine clips, overlays, audio and titles (`compose`)
 
 Besides splitting one recording, you can build a video from several files.
@@ -410,7 +425,7 @@ reads and writes the same project file, so a human can open the result in
 the visual editor afterward. Tools: `list_videos`, `list_segments`,
 `propose_splits`, `add_split`, `move_split`, `remove_split`, `label_segment`,
 `analyze_audio`, `export`. The `compose` commands above have matching tools:
-`list_timelines`, `scan_library`, `list_assets`, `prepare_asset`, `transcribe_asset`, `get_transcript`, `analyze_scenes`, `get_scenes`, `create_timeline`, `show_timeline`, `add_clip_to_timeline`
+`list_timelines`, `scan_library`, `list_assets`, `prepare_asset`, `transcribe_asset`, `get_transcript`, `analyze_scenes`, `get_scenes`, `get_frame`, `create_timeline`, `show_timeline`, `add_clip_to_timeline`
 (a path or an asset id),
 `trim_timeline_clip`, `move_timeline_clip`, `remove_timeline_clip`,
 `set_timeline_transition`, `add_timeline_track`, `remove_timeline_track`,

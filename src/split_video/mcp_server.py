@@ -29,11 +29,11 @@ from pathlib import Path
 from typing import Any
 
 import anyio.to_thread
-from mcp.server.mcpserver import MCPServer
+from mcp.server.mcpserver import Image, MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp_types import ToolAnnotations
 
-from split_video import assets, library, project, proxy, scenes, timeline, timeline_service, transcribe
+from split_video import assets, frames, library, project, proxy, scenes, timeline, timeline_service, transcribe
 from split_video.editor.cache import ClassificationCache
 from split_video.editor.classify import ModelNotFoundError
 from split_video.errors import RevisionConflictError
@@ -51,6 +51,7 @@ _EXPECTED_ERRORS = (
     ProbeError,
     ExtractError,
     ModelNotFoundError,
+    frames.FrameError,
     transcribe.TranscriptionError,
     transcribe.TranscriptionUnavailableError,
 )
@@ -443,6 +444,31 @@ def create_server(root: Path, store: ProjectStore | None = None, media: MediaSto
         if found is None:
             raise ToolError(f"asset {asset} has no transcript yet: run transcribe_asset first")
         return transcribe.excerpt(found, start, end)
+
+    @server.tool(annotations=_READ_ONLY)
+    async def get_frame(
+        asset: str,
+        time: float,
+        width: int | None = None,
+        height: int | None = None,
+        format: str = "jpeg",
+        source: str = "auto",
+    ) -> list[Image | str]:
+        """Look at the library asset `asset` (from list_assets) at `time` seconds: returns the picture as an image
+        plus a short text block with `time` (the frame actually shown), `width`, `height`, `source` and `duration`.
+        `width` and/or `height` (pixels, at most 4096) scale it keeping the aspect ratio, never beyond the source's
+        size: a small image is cheaper to look at (try width 640). `format` is "jpeg" (default) or "png". `source`
+        "auto" reads the asset's proxy when it has one (at most 640 px wide and 15 frames per second, so the frame is
+        within 1/15 s of `time`); "original" reads the file itself, for fine detail such as small text. A time past
+        the end of the asset, or an audio-only asset, is a tool error that says so."""
+        try:
+            frame = await run(
+                frames.extract_frame, media, asset, time, width=width, height=height, format=format, source=source
+            )
+        except frames.FrameError as exc:
+            raise ToolError(str(exc)) from None
+        info = {k: v for k, v in frame.info().items() if k != "bytes"}
+        return [Image(data=frame.data, format=frame.format), json.dumps(info)]
 
     @server.tool(annotations=_EDITS_PROJECT)
     async def analyze_scenes(
