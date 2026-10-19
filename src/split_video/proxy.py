@@ -13,8 +13,9 @@ H.264 in MP4, built for scrubbing in a browser and for cheap visual work:
   ratio; a smaller video is never upscaled;
 - at most 15 fps (a source at or below that keeps its own rate);
 - `-preset veryfast -crf 28`, yuv420p;
-- a keyframe every 30 frames (2 s at 15 fps) with scene-cut keyframes off (`-g 30 -keyint_min 30
-  -sc_threshold 0`), so a seek decodes at most 2 s of 640 px video;
+- a keyframe every 2 s of video whatever the frame rate (`-force_key_frames expr:gte(t,n_forced*2)
+  -sc_threshold 0`; a frame count like `-g 30` would be 30 s apart on a 1 fps recording), so a seek
+  decodes at most 2 s of 640 px video;
 - `-movflags +faststart`, so the index is at the front and a `<video>` seeks by Range request
   without downloading the file first;
 - audio kept as AAC mono 64 kbit/s, so a browser can play it. Audio analysis (silence, waveform,
@@ -30,11 +31,20 @@ One JPEG sprite of `count` evenly spaced frames in a grid of `columns` x `rows` 
 and the tile's top-left corner is `(column * tile_width, row * tile_height)`. There is one tile
 per `MIN_INTERVAL` (10 s) of video, at most `MAX_TILES` (240), so a long file's interval grows
 instead of its sprite (10 columns, so at most 24 rows: 1600 x 2160 at 160 px per tile). Tile k
-shows a frame within the source's keyframe spacing of `k * interval` (`fps=...:round=up`, which
-also keeps a video shorter than one interval from producing nothing): only
-keyframes are decoded (`-skip_frame nokey`), which is what lets a 3-hour file finish in a
-fraction of the time it would take to decode every frame. It is read from the proxy when one is
-current (keyframes every 2 s), else from the original.
+shows the frame nearest `k * interval` that the method below can reach (the stated `tolerance`, in
+seconds, is stored with the strip). Two ways to get the frames:
+
+- `keyframes`: only keyframes are decoded (`-skip_frame nokey`), which is what lets a 3-hour file finish
+  in about a second. It is used when the source's keyframes are at most `KEYFRAME_TOLERANCE` (2 s)
+  apart, which is always true of the proxy, so a tile is within 1 s (half the spacing) of its time;
+- `seek`: one `ffmpeg -ss <time> -i` per tile (at most `MAX_TILES`, so the cost is bounded), each landing
+  on the exact frame, then the tiles are joined. Used only when the source is the original and its
+  keyframes are further apart than that (sampled with ffprobe at a few places), because `nokey` on a
+  recording with a 25 s GOP puts tile k up to a GOP away from `k * interval`. It costs time that grows
+  with the GOP and the resolution: 25 s for a 3 h 640x360 file with a 25 s GOP.
+
+The strip is read from the proxy, which `prepare` makes first, so `seek` only matters when `_make_strip`
+is called without a current proxy.
 
 Currency
 --------
@@ -53,18 +63,22 @@ original. Export and render never call it: they read the original. Audio analysi
 
 from __future__ import annotations
 
+import itertools
 import math
+import os
+import shutil
+import tempfile
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
 from split_video import assets
-from split_video.ffmpeg import ExtractError, _require_binary, run_with_progress
+from split_video.ffmpeg import ExtractError, _require_binary, run_cancellable, run_with_progress
 from split_video.jobs import CancelToken
 from split_video.media_store import MediaError, MediaStore
 
-VERSION = 1
+VERSION = 2  # 2: keyframes every 2 s of video, not every 30 frames
 
 PROXY_NAME = "proxy"  # cache name of the proxy's entry
 THUMBS_NAME = "thumbnails"
@@ -74,12 +88,16 @@ THUMBS_SUFFIX = "thumbs.jpg"
 PROXY_MAX_WIDTH = 640
 PROXY_MAX_FPS = 15
 PROXY_CRF = 28
-PROXY_KEYFRAME_FRAMES = 30
+PROXY_KEYFRAME_SECONDS = 2
 
 TILE_WIDTH = 160
 COLUMNS = 10
 MIN_INTERVAL = 10.0  # seconds of video per tile, at least
 MAX_TILES = 240
+KEYFRAME_TOLERANCE = 2.0  # seconds: a source with keyframes at least this dense can use `-skip_frame nokey`
+PROBE_WINDOWS = (0.1, 0.3, 0.5, 0.7, 0.9)  # where in a long file keyframe spacing is sampled
+PROBE_SECONDS = 120.0
+PROBE_WHOLE_BELOW = 600.0  # a file this short is scanned whole
 
 # A job's progress is this many steps: the proxy takes the first part, the thumbnails the rest.
 STEPS = 1000
@@ -188,7 +206,8 @@ def _proxy_command(ffmpeg: str, source: str, out: str, fps: float | None, has_au
     if has_audio:
         cmd += ["-map", "0:a:0"]
     cmd += ["-vf", vf, "-c:v", "libx264", "-preset", "veryfast", "-crf", str(PROXY_CRF), "-pix_fmt", "yuv420p"]
-    cmd += ["-g", str(PROXY_KEYFRAME_FRAMES), "-keyint_min", str(PROXY_KEYFRAME_FRAMES), "-sc_threshold", "0"]
+    # -g is only the ceiling (30 frames is 2 s at the 15 fps cap); the forced keyframes set the spacing.
+    cmd += ["-force_key_frames", f"expr:gte(t,n_forced*{PROXY_KEYFRAME_SECONDS})", "-g", "30", "-sc_threshold", "0"]
     cmd += ["-c:a", "aac", "-ac", "1", "-b:a", "64k"] if has_audio else ["-an"]
     return [*cmd, "-movflags", "+faststart", "-f", "mp4", out]
 
@@ -199,6 +218,69 @@ def _strip_command(ffmpeg: str, source: str, out: str, strip: Strip) -> list[str
         ffmpeg, "-hide_banner", "-loglevel", "error", "-y", "-skip_frame", "nokey", "-i", source,
         "-an", "-vf", vf, "-frames:v", "1", "-q:v", "5", "-update", "1", out,
     ]  # fmt: skip
+
+
+def keyframe_gap(source: str, duration: float, cancel: CancelToken | None = None) -> float:
+    """The largest gap, in seconds, between keyframes of `source`'s video: over the whole file if it is short,
+    else over a few `PROBE_SECONDS` windows spread through it (a window with fewer than two keyframes counts
+    as a gap of its whole length). Reads a fraction of the file, so it is cheap on a 3-hour original."""
+    ffprobe = _require_binary("ffprobe")
+    if duration <= PROBE_WHOLE_BELOW:
+        windows: list[tuple[str, float]] = [("", max(duration, 1.0))]
+    else:
+        windows = [(f"{duration * f:.3f}", PROBE_SECONDS) for f in PROBE_WINDOWS]
+    widest = 0.0
+    for start, length in windows:
+        cmd = [ffprobe, "-v", "error", "-select_streams", "v:0", "-show_entries", "packet=pts_time,flags"]
+        cmd += ["-of", "csv=p=0"] + (["-read_intervals", f"{start}%+{PROBE_SECONDS:g}"] if start else []) + [source]
+        result = run_cancellable(cmd, cancel)
+        if result.returncode != 0:
+            raise ExtractError(f"ffprobe failed to read the keyframes: {result.stderr.strip()[-2000:]}")
+        keys = sorted(
+            float(row[0])
+            for row in (line.split(",") for line in result.stdout.splitlines())
+            if len(row) > 1 and row[0] not in ("", "N/A") and "K" in row[1]
+        )
+        widest = max(widest, max((b - a for a, b in itertools.pairwise(keys)), default=length))
+        if len(keys) < 2:
+            widest = max(widest, length)
+    return widest
+
+
+def _seek_strip(
+    ffmpeg: str, source: str, out: str, strip: Strip, report: Callable[[float], None], cancel: CancelToken | None
+) -> None:
+    """Make the sprite one exact frame per tile: seek to `k * interval` (input-side `-ss`, which decodes from
+    the keyframe before it to that frame), scale, then join the tiles. Progress is `report(fraction)`."""
+    with tempfile.TemporaryDirectory(prefix="strip-") as tmp:
+        for k in range(strip.count):
+            tile = os.path.join(tmp, f"{k:04d}.png")
+            cmd = [ffmpeg, "-hide_banner", "-loglevel", "error", "-y", "-ss", f"{k * strip.interval:.3f}", "-i", source]
+            cmd += ["-an", "-frames:v", "1", "-vf", f"scale={strip.tile_width}:{strip.tile_height}", tile]
+            result = run_cancellable(cmd, cancel)
+            if result.returncode != 0:
+                raise ExtractError(f"ffmpeg failed to make the thumbnail strip: {result.stderr.strip()[-2000:]}")
+            if not os.path.exists(tile):  # seeked past the last video frame: repeat the one before
+                if k == 0:
+                    raise ExtractError("ffmpeg found no video frame to make the thumbnail strip from")
+                shutil.copyfile(os.path.join(tmp, f"{k - 1:04d}.png"), tile)
+            report((k + 1) / (strip.count + 1))
+        join = [
+            ffmpeg,
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-y",
+            "-framerate",
+            "1",
+            "-i",
+            os.path.join(tmp, "%04d.png"),
+        ]
+        join += ["-vf", f"tile={strip.columns}x{strip.rows}", "-frames:v", "1", "-q:v", "5", "-update", "1", out]
+        result = run_cancellable(join, cancel)
+        if result.returncode != 0:
+            raise ExtractError(f"ffmpeg failed to make the thumbnail strip: {result.stderr.strip()[-2000:]}")
+    report(1.0)
 
 
 def _run(cmd: list[str], on_seconds: Callable[[float], None], cancel: CancelToken | None, what: str) -> None:
@@ -289,15 +371,23 @@ def _make_strip(
     strip = plan_strip(asset.duration, asset.width or 1, asset.height or 1)
     total = max(asset.duration, 0.001)
 
+    def fraction(f: float) -> None:
+        report(PROXY_STEPS + min(1.0, f) * (STEPS - PROXY_STEPS), STEPS)
+
+    gap = PROXY_KEYFRAME_SECONDS  # the proxy's keyframes are this far apart by construction
+    method = "keyframes"
+
     def build(out: str, _: str) -> None:
+        nonlocal gap, method
         with media.local_path(source_id) as source:
-            cmd = _strip_command(ffmpeg, str(source), out, strip)
-            _run(
-                cmd,
-                lambda s: report(PROXY_STEPS + min(1.0, s / total) * (STEPS - PROXY_STEPS), STEPS),
-                cancel,
-                "thumbnail strip",
-            )
+            if proxy_meta is None:
+                gap = keyframe_gap(str(source), asset.duration, cancel)
+                method = "keyframes" if gap <= KEYFRAME_TOLERANCE else "seek"
+            if method == "seek":
+                _seek_strip(ffmpeg, str(source), out, strip, fraction, cancel)
+            else:
+                cmd = _strip_command(ffmpeg, str(source), out, strip)
+                _run(cmd, lambda s: fraction(s / total), cancel, "thumbnail strip")
 
     size = _make(media, derived, build)
     meta = {
@@ -314,6 +404,10 @@ def _make_strip(
         "width": strip.tile_width * strip.columns,
         "height": strip.tile_height * strip.rows,
         "source": "proxy" if proxy_meta is not None else "original",
+        "method": method,
+        # How far, in seconds, a tile's frame may be from k * interval: half the keyframe spacing when only
+        # keyframes are decoded, one frame period when each tile is sought to.
+        "tolerance": round(gap / 2, 3) if method == "keyframes" else round(1 / asset.fps, 3) if asset.fps else 1.0,
     }
     media.save_cache(asset.path, THUMBS_NAME, meta)
     return meta

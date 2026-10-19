@@ -1,6 +1,7 @@
 """Proxies and thumbnail strips: the planning maths, currency rules and cleanup, with real ffmpeg on a tiny clip."""
 
 import hashlib
+import itertools
 import subprocess
 
 import pytest
@@ -202,3 +203,119 @@ def test_in_memory_store_round_trip(tmp_path):
     assert proxy.visual_source(media, asset.id) == "shows/.derived/gig.mp4.proxy.mp4"
     assert media.read("shows/.derived/gig.mp4.thumbs.jpg")[:2] == b"\xff\xd8"
     assert "shows/.derived/gig.mp4.proxy.mp4" not in [e.path for e in media.list_dir("shows").entries]
+
+
+# --- keyframes by time, strip tile times (SPL-104) ---------------------------------------------
+
+
+def _keyframe_times(path):
+    out = subprocess.run(
+        ["ffprobe", "-v", "error", "-select_streams", "v", "-show_entries", "packet=pts_time,flags", "-of", "csv=p=0"]
+        + [str(path)],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    return sorted(float(row[0]) for row in (line.split(",") for line in out.splitlines()) if "K" in row[1])
+
+
+def _clock_clip(path, seconds, fps, gop):
+    """160x90 video whose frame at second S shows S as ten 16 px bars (white = bit set), so a tile can be
+    read back numerically. `gop` is the source's keyframe interval in frames."""
+    bars = "255*mod(floor(floor(T)/pow(2,floor(X/16))),2)"
+    vf = f"format=yuv420p,geq=lum='{bars}':cb=128:cr=128"
+    cmd = ["ffmpeg", "-y", "-f", "lavfi", "-i", f"color=c=black:size=160x90:rate={fps}:duration={seconds}"]
+    cmd += ["-vf", vf, "-c:v", "libx264", "-crf", "14", "-g", str(gop), "-keyint_min", str(gop), "-sc_threshold", "0"]
+    cmd += ["-pix_fmt", "yuv420p", str(path)]
+    assert subprocess.run(cmd, capture_output=True, check=False).returncode == 0
+
+
+def _tile_seconds(sprite, meta):
+    """The second shown in each tile of the sprite, read from its bars."""
+    import numpy as np
+
+    raw = subprocess.run(
+        ["ffmpeg", "-v", "error", "-i", str(sprite), "-vf", "format=gray", "-f", "rawvideo", "-"],
+        capture_output=True,
+        check=True,
+    ).stdout
+    pixels = np.frombuffer(raw, dtype=np.uint8).reshape(meta["height"], meta["width"])
+    seconds = []
+    for k in range(meta["count"]):
+        row, col = divmod(k, meta["columns"])
+        y, x0 = row * meta["tile_height"] + meta["tile_height"] // 2, col * meta["tile_width"]
+        seconds.append(sum(1 << b for b in range(10) if pixels[y, x0 + 16 * b + 8] > 128))
+    return seconds
+
+
+@pytest.mark.parametrize("fps", [1, 10, 25])
+def test_proxy_keyframes_are_two_seconds_apart_at_any_frame_rate(tmp_path, fps):
+    _clock_clip(tmp_path / "v.mp4", seconds=61, fps=fps, gop=250)
+    media = LocalMediaStore(tmp_path.resolve())
+    asset = assets.register_path(media, "v.mp4")
+    proxy.prepare(media, asset.id)
+    keys = _keyframe_times(tmp_path / ".split-video-cache" / "v.mp4.proxy.mp4")
+    gaps = [b - a for a, b in itertools.pairwise(keys)]
+    assert len(keys) >= 30 and all(gap == pytest.approx(2.0, abs=0.01) for gap in gaps)
+
+
+def test_a_version_1_proxy_is_stale_and_rebuilt(local):
+    media, asset, root = local
+    proxy.prepare(media, asset.id)
+    entry = media.load_cache(asset.path, proxy.PROXY_NAME)
+    media.save_cache(asset.path, proxy.PROXY_NAME, {**entry, "version": 1})
+    media.save_cache(asset.path, proxy.THUMBS_NAME, {**media.load_cache(asset.path, proxy.THUMBS_NAME), "version": 1})
+    assert proxy.VERSION > 1
+    assert proxy.flags(media, asset) == {"proxy": False, "thumbnails": False}
+    assert proxy.pending(media) == [asset.id]
+    assert proxy.prepare(media, asset.id)["made"] == ["proxy", "thumbnails"]
+
+
+def test_strip_tiles_from_the_proxy_of_a_1_fps_file_are_within_a_second(tmp_path):
+    _clock_clip(tmp_path / "slow.mp4", seconds=900, fps=1, gop=30)  # 30 s between source keyframes
+    media = LocalMediaStore(tmp_path.resolve())
+    asset = assets.register_path(media, "slow.mp4")
+    meta = proxy.prepare(media, asset.id)["thumbnails"]
+    assert (meta["source"], meta["method"], meta["interval"], meta["count"]) == ("proxy", "keyframes", 10.0, 90)
+    assert meta["tolerance"] == 1.0
+    seconds = _tile_seconds(tmp_path / ".split-video-cache" / "slow.mp4.thumbs.jpg", meta)
+    assert max(abs(s - k * meta["interval"]) for k, s in enumerate(seconds)) <= meta["tolerance"]
+
+
+def test_strip_from_a_sparse_original_seeks_to_each_tile(tmp_path):
+    _clock_clip(tmp_path / "slow.mp4", seconds=900, fps=1, gop=30)
+    media = LocalMediaStore(tmp_path.resolve())
+    asset = assets.register_path(media, "slow.mp4")
+    assert proxy.keyframe_gap(str(tmp_path / "slow.mp4"), asset.duration) == pytest.approx(30.0)
+    assert proxy.proxy_info(media, asset) is None
+    reported = []
+    meta = proxy._make_strip(media, asset, "ffmpeg", lambda done, total: reported.append(done), None)
+    assert (meta["source"], meta["method"], meta["count"]) == ("original", "seek", 90)
+    seconds = _tile_seconds(tmp_path / ".split-video-cache" / "slow.mp4.thumbs.jpg", meta)
+    assert seconds == [k * 10 for k in range(90)]  # exact: one frame per second at 1 fps
+    assert reported == sorted(reported) and reported[-1] == proxy.STEPS
+
+
+def test_strip_from_a_dense_original_decodes_keyframes_only(tmp_path):
+    _clock_clip(tmp_path / "dense.mp4", seconds=900, fps=2, gop=2)  # a keyframe every second
+    media = LocalMediaStore(tmp_path.resolve())
+    asset = assets.register_path(media, "dense.mp4")
+    assert proxy.keyframe_gap(str(tmp_path / "dense.mp4"), asset.duration) == pytest.approx(1.0)
+    meta = proxy._make_strip(media, asset, "ffmpeg", lambda done, total: None, None)
+    assert (meta["source"], meta["method"], meta["tolerance"]) == ("original", "keyframes", 0.5)
+    seconds = _tile_seconds(tmp_path / ".split-video-cache" / "dense.mp4.thumbs.jpg", meta)
+    assert max(abs(s - k * meta["interval"]) for k, s in enumerate(seconds)) <= meta["tolerance"]
+
+
+def test_keyframe_gap_samples_a_long_file_in_windows(tmp_path):
+    _clock_clip(tmp_path / "long.mp4", seconds=1500, fps=1, gop=60)
+    assert proxy.keyframe_gap(str(tmp_path / "long.mp4"), 1500.0) == pytest.approx(60.0)
+
+
+def test_seek_strip_honours_cancel(tmp_path):
+    _clock_clip(tmp_path / "slow.mp4", seconds=300, fps=1, gop=30)
+    media = LocalMediaStore(tmp_path.resolve())
+    asset = assets.register_path(media, "slow.mp4")
+    with pytest.raises(JobCancelledError):
+        proxy._make_strip(media, asset, "ffmpeg", lambda done, total: None, Cancelled())
+    assert proxy.thumbnails_info(media, asset) is None

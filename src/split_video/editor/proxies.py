@@ -3,6 +3,11 @@
 `POST /assets/{id}/proxy` queues a `proxy` job (poll `/jobs/{job_id}`; progress is thousandths);
 `GET /assets/{id}/proxy` serves the proxy MP4 with Range support, so a `<video>` seeks in it;
 `GET /assets/{id}/thumbnails` serves the sprite JPEG and `.../thumbnails/info` says how to cut it.
+
+An audio-only asset has neither. Asking the API to make one (`POST`) is an impossible request: 422. Asking for
+one (`GET`) is a 404 whose message says audio-only assets have none (rather than "POST to make one", which
+would only get a 422). The CLI (`library proxies`) and MCP (`prepare_asset`) are not HTTP requests: they
+report such an asset as a result with `skipped: "audio-only asset"` and a null `proxy` and `thumbnails`.
 """
 
 from __future__ import annotations
@@ -43,6 +48,11 @@ class ThumbnailsInfo(BaseModel):
     height: int
     duration: float
     source: str  # "proxy" or "original": what the frames were taken from
+    method: str  # "keyframes" (keyframes only, fast) or "seek" (one exact frame per tile)
+    tolerance: float  # seconds a tile's frame may be from `index * interval`
+
+
+AUDIO_ONLY = "audio-only asset: no proxy or thumbnails"
 
 
 def make_router(provider: StoreProvider, jobs: JobQueue) -> APIRouter:
@@ -60,10 +70,11 @@ def make_router(provider: StoreProvider, jobs: JobQueue) -> APIRouter:
         asset_id: str, request: ProxyRequest | None = None, ctx: RequestContext = ctx_dep
     ) -> ProxyStartResponse:
         """Queue making the asset's proxy and thumbnail strip (whichever is missing; both with `force`). The job's
-        result is `{asset, proxy, thumbnails, made}`. An audio-only asset has neither: 422."""
+        result is `{asset, proxy, thumbnails, made}`. An audio-only asset has neither: 422 (the CLI and
+        MCP report it as `skipped` instead)."""
         asset = asset_of(ctx, asset_id)
         if not asset.has_video:
-            raise HTTPException(status_code=422, detail="audio-only asset: no proxy or thumbnails")
+            raise HTTPException(status_code=422, detail=AUDIO_ONLY)
         job_id = jobs.submit(
             PROXY,
             proxy_work(ctx.media, asset.id, force=bool(request and request.force)),
@@ -75,24 +86,34 @@ def make_router(provider: StoreProvider, jobs: JobQueue) -> APIRouter:
 
     @router.get("/assets/{asset_id}/proxy")
     def get_proxy(asset_id: str, request: Request, ctx: RequestContext = ctx_dep) -> Response:
-        """The proxy video (H.264 MP4, Range requests answered with 206). 404 until the proxy job has run."""
+        """The proxy video (H.264 MP4, Range requests answered with 206). 404 until the proxy job has run, and
+        for ever for an audio-only asset (the message says so)."""
         asset = asset_of(ctx, asset_id)
+        if not asset.has_video:
+            raise HTTPException(status_code=404, detail=AUDIO_ONLY)
         if proxy.proxy_info(ctx.media, asset) is None:
             raise HTTPException(status_code=404, detail="no proxy yet: POST this path to make one")
         return media_response(ctx.media, proxy.proxy_id(ctx.media, asset.path), request)
 
     @router.get("/assets/{asset_id}/thumbnails")
     def get_thumbnails(asset_id: str, request: Request, ctx: RequestContext = ctx_dep) -> Response:
-        """The thumbnail strip: one JPEG sprite of evenly spaced frames (see `/thumbnails/info`)."""
+        """The thumbnail strip: one JPEG sprite of evenly spaced frames (see `/thumbnails/info`). 404 until the
+        proxy job has run, and for an audio-only asset (the message says so)."""
         asset = asset_of(ctx, asset_id)
+        if not asset.has_video:
+            raise HTTPException(status_code=404, detail=AUDIO_ONLY)
         if proxy.thumbnails_info(ctx.media, asset) is None:
             raise HTTPException(status_code=404, detail="no thumbnails yet: POST /assets/{id}/proxy to make them")
         return media_response(ctx.media, proxy.thumbnails_id(ctx.media, asset.path), request)
 
     @router.get("/assets/{asset_id}/thumbnails/info", response_model=ThumbnailsInfo)
     def get_thumbnails_info(asset_id: str, ctx: RequestContext = ctx_dep) -> ThumbnailsInfo:
-        """The sprite's layout: tile size, columns, rows, tile count and seconds per tile."""
-        info = proxy.thumbnails_info(ctx.media, asset_of(ctx, asset_id))
+        """The sprite's layout: tile size, columns, rows, tile count and seconds per tile (and `tolerance`, how
+        far a tile's frame may be from its nominal time). 404 as `GET .../thumbnails`."""
+        asset = asset_of(ctx, asset_id)
+        if not asset.has_video:
+            raise HTTPException(status_code=404, detail=AUDIO_ONLY)
+        info = proxy.thumbnails_info(ctx.media, asset)
         if info is None:
             raise HTTPException(status_code=404, detail="no thumbnails yet: POST /assets/{id}/proxy to make them")
         return ThumbnailsInfo(**info)

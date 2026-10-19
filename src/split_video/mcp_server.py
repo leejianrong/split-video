@@ -391,7 +391,8 @@ def create_server(root: Path, store: ProjectStore | None = None, media: MediaSto
         assets (id and path), `copies` (paths whose bytes are already in the library) and `skipped`
         files that could not be read as media, each with a reason. With `proxies` true, each newly added
         video also gets its proxy and thumbnail strip made before this returns (slow: minutes per hour of
-        video; see prepare_asset), listed under `proxies`."""
+        video; see prepare_asset), listed under `proxies` (one prepare_asset result per video; the HTTP API
+        queues these as jobs instead and returns their ids)."""
         try:
             report = (await run(library.scan, media, folder)).to_dict()
         except MediaOutsideRootError:

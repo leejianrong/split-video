@@ -220,9 +220,10 @@ docker run --rm -v "$PWD":/data ghcr.io/leejianrong/split-video library proxies 
 ```
 
 Each video asset gets a proxy (H.264, at most 640 px wide and 15 fps, a keyframe
-every 2 s and the index up front, so a browser seeks in it at once) and a
-thumbnail strip (one JPEG sprite with a frame every 10 s, at most 240 tiles),
-both in `.split-video-cache/` next to the video. The original is never touched;
+every 2 s of video whatever the source frame rate, and the index up front, so a
+browser seeks in it at once) and a thumbnail strip (one JPEG sprite with a frame
+every 10 s, at most 240 tiles; each tile is within 1 s of its time, which
+`thumbnails/info` states as `tolerance`), both in `.split-video-cache/` next to the video. The original is never touched;
 export and render always read it, and so does audio analysis. Scans make no
 proxies unless you ask (`--proxies`, `"proxies": true` on `POST
 /api/v1/library/scan`, `proxies` on the MCP `scan_library`): it is minutes of
@@ -231,6 +232,15 @@ ffmpeg per hour of video. The editor queues one with `POST
 at `GET /api/v1/assets/{id}/proxy` (Range requests), and the strip at
 `GET /api/v1/assets/{id}/thumbnails` with its layout at `.../thumbnails/info`.
 MCP has `prepare_asset`, and `list_assets` says which assets have a proxy.
+
+Two things differ by surface. `library scan --proxies` and the MCP `scan_library`
+run inline: they make the proxies before returning and report the finished
+per-asset results under `proxies`. The API's scan is a job that queues one
+`proxy` job per new video and then finishes without waiting for them: its result
+has `proxy_jobs` (`[{asset, job_id}]`), which you follow through `/jobs/{id}` or
+`/events`. And an audio-only asset has no proxy: the CLI and MCP return a result
+with `skipped: "audio-only asset"`, while the API answers `POST .../proxy` with
+422 and the `GET`s with 404 saying so.
 
 ### Compose: combine clips, overlays, audio and titles (`compose`)
 

@@ -3,6 +3,11 @@
 The scan is slow on a large folder, so the route only validates the folder and queues the job;
 poll it (or follow `/events`) through `/jobs/{job_id}`, whose `completed` and `total` count files
 and whose result is the scan report. The library itself is listed by `GET /assets`.
+
+With `proxies`, the scan job queues one `proxy` job per newly added video and then finishes: it does NOT wait for
+them. Its result lists them as `proxy_jobs`, `[{asset, job_id}]` (follow each through `/jobs/{id}` or `/events`). The CLI
+(`library scan --proxies`) and MCP (`scan_library` with `proxies`) are not jobs, so they make the proxies
+before returning and put the finished per-asset results under `proxies`.
 """
 
 from __future__ import annotations
@@ -20,7 +25,8 @@ from split_video.store_provider import StoreProvider
 class LibraryScanRequest(BaseModel):
     folder: str = ""  # relative to the browse root; empty scans the whole workspace
     # Also queue a `proxy` job (proxy + thumbnail strip) for each newly added video. Off by default: it is
-    # minutes of ffmpeg per hour of video. The scan job's result then lists them as `proxy_jobs`.
+    # minutes of ffmpeg per hour of video. The scan job's result then lists their ids as `proxy_jobs`, and the scan
+    # job is done before they are (the CLI and MCP make the proxies inline instead and return the results).
     proxies: bool = False
 
 
@@ -38,8 +44,8 @@ def make_router(provider: StoreProvider, jobs: JobQueue) -> APIRouter:
     ) -> LibraryScanStartResponse:
         """Queue a scan of `folder`: every new or changed media file under it is probed once and recorded
         as an asset (see `GET /assets`). Files already recorded are not probed again. The job's result is
-        `{folder, total, added, copies, unchanged, skipped}`
-        (plus `proxy_jobs` with `proxies`)."""
+        `{folder, total, added, copies, unchanged, skipped}`. With `proxies` it also has `proxy_jobs` (the ids of
+        the `proxy` jobs queued for the new videos); the scan job finishes without waiting for them."""
         folder = request.folder if request else ""
         proxies = bool(request and request.proxies)
         try:
