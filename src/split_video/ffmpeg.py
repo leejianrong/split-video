@@ -72,14 +72,14 @@ def stop_on_cancel(proc: subprocess.Popen[Any], cancel: CancelToken | None) -> C
 
 
 def run_cancellable(
-    cmd: list[str], cancel: CancelToken | None = None, *, text: bool = True
+    cmd: list[str], cancel: CancelToken | None = None, *, text: bool = True, env: dict[str, str] | None = None
 ) -> subprocess.CompletedProcess[Any]:
     """`subprocess.run(cmd, capture_output=True)` that a cancelled job can interrupt: the process
     is terminated at once and `JobCancelledError` is raised in place of a result. Without a token
-    this is a plain `subprocess.run`."""
+    this is a plain `subprocess.run`. `env` replaces the child's environment when given."""
     if cancel is None:
-        return subprocess.run(cmd, capture_output=True, text=text, check=False)
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=text)
+        return subprocess.run(cmd, capture_output=True, text=text, check=False, env=env)
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=text, env=env)
     detach = stop_on_cancel(proc, cancel)
     try:
         stdout, stderr = proc.communicate()

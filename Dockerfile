@@ -12,6 +12,16 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends ffmpeg fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
 
+# Optional on-screen text (see docs/decisions/vision-and-ocr.md): `--build-arg WITH_OCR=1` adds the Tesseract
+# program and its English data (about 65 MB more image). No Python package and no model download: the
+# `ocr` / `ocr-search` commands (and the API and MCP equivalents) just call `tesseract`.
+ARG WITH_OCR=0
+RUN if [ "$WITH_OCR" = "1" ]; then \
+        apt-get update \
+        && apt-get install -y --no-install-recommends tesseract-ocr tesseract-ocr-eng \
+        && rm -rf /var/lib/apt/lists/*; \
+    fi
+
 RUN pip install --no-cache-dir uv
 
 WORKDIR /app

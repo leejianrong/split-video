@@ -38,6 +38,7 @@ from split_video import (
     contact_sheet,
     frames,
     library,
+    ocr,
     project,
     proxy,
     scenes,
@@ -68,6 +69,10 @@ _EXPECTED_ERRORS = (
     transcribe.TranscriptionUnavailableError,
     transcript_search.TranscriptNotFoundError,
     transcript_search.TranscriptQueryError,
+    ocr.OcrError,
+    ocr.OcrUnavailableError,
+    ocr.OcrNotFoundError,
+    ocr.OcrArgumentError,
 )
 
 _READ_ONLY = ToolAnnotations(read_only_hint=True, destructive_hint=False, idempotent_hint=True, open_world_hint=False)
@@ -622,6 +627,71 @@ def create_server(root: Path, store: ProjectStore | None = None, media: MediaSto
         if found is None:
             raise ToolError(f"asset {asset} has no scene signals yet: run analyze_scenes first")
         return scenes.excerpt(found, start, end)
+
+    @server.tool(annotations=_EDITS_PROJECT)
+    async def ocr_asset(
+        asset: str,
+        interval: float = ocr.DEFAULT_INTERVAL,
+        max_frames: int = ocr.DEFAULT_MAX_FRAMES,
+        force: bool = False,
+    ) -> dict[str, Any]:
+        """Read the text on the screen of the library asset with id `asset` (a screen recording, from list_assets) and
+        store it with the asset: file names, error messages, terminal output. Search it with ocr_search and read it
+        with get_ocr. Frames are read from the ORIGINAL (the proxy is too small to read code) with Tesseract, at each
+        scene change (run analyze_scenes first for these; without scene data only the regular frames are read) and
+        every `interval` seconds (default 30, at least 1), at most `max_frames` (default 2000); a frame that looks
+        like the last one read is skipped. Slow and before this returns: about 1 to 2 seconds per frame read, 4 at a
+        time. If current text made with these settings exists nothing is redone unless `force`. Returns `engine`,
+        `duration`, `frames`, `scene_frames`, `ocr_frames`, `skipped_unchanged`, `capped`, `note` (a remark when the
+        schedule was capped or there were no scenes) and `made`. An audio-only asset returns `skipped`. Without the
+        tesseract program this is a tool error saying how to install it. list_assets shows `ocr` per asset."""
+        try:
+            ocr.require_available()  # before any frame is decoded
+            return await run(ocr.recognize, media, asset, interval=interval, max_frames=max_frames, force=force)
+        except ValueError as exc:
+            raise ToolError(str(exc)) from None
+        except ocr.OcrUnavailableError as exc:
+            raise ToolError(str(exc)) from None
+
+    @server.tool(annotations=_READ_ONLY)
+    async def get_ocr(
+        asset: str,
+        start: float | None = None,
+        end: float | None = None,
+        limit: int | None = None,
+        cursor: str | None = None,
+    ) -> dict[str, Any]:
+        """Read the stored on-screen text of the library asset `asset` between `start` and `end` seconds (either may
+        be left out), one page at a time. Returns `items`, each `{time, until, text, lines, source_scene}`: the text
+        read at `time` that stayed up until `until` (when other text replaced it); a state that began before `start`
+        but is still up is included. A page holds at most `limit` states (default 20, at most 200). Also
+        `total_in_range`, `range` and `next_cursor`: while it is not null, call again with the same arguments plus
+        `cursor` to continue; every state appears exactly once. To find where some text was on screen use
+        ocr_search. Without stored text this is a tool error: run ocr_asset."""
+        return await run(ocr.ocr_range, media, asset, start, end, limit=limit, cursor=cursor)
+
+    @server.tool(name="ocr_search", annotations=_READ_ONLY)
+    async def search_ocr(
+        asset: str,
+        query: str,
+        start: float | None = None,
+        end: float | None = None,
+        limit: int | None = None,
+        cursor: str | None = None,
+        context: int | None = None,
+    ) -> dict[str, Any]:
+        """Find where some text was on the screen of the library asset `asset`. Fuzzy and token-based, because OCR is
+        imperfect: case-insensitive, split on anything that is not a letter or digit (`test_cut_burst` also finds
+        `test cut burst`), and every word of the query must be in the same frame, allowing a glued or slightly
+        misread word (at most 500 characters). Returns `hits` best first, each `{source: "ocr", time, end, score
+        (0..1), text (the line that matched best), context_before, context_after (`context` lines, default 1, at most
+        10), matched_tokens, frame}`: `time` is when the text first showed (seconds), `end` when it was replaced.
+        Also `total_matches` and `next_cursor` (pass it back as `cursor` for the next page of at most `limit` hits,
+        default 20, at most 200). `start` and `end` keep only text that was up in that span. Read the whole screen
+        around a hit with get_ocr. Without stored text this is a tool error: run ocr_asset."""
+        return await run(
+            ocr.ocr_search, media, asset, query, start=start, end=end, limit=limit, cursor=cursor, context=context
+        )
 
     @server.tool(annotations=_EDITS_PROJECT)
     async def add_clip_to_timeline(

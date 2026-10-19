@@ -15,7 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from starlette.responses import Response
 
-from split_video import assets, proxy, scenes, timeline_service, transcribe
+from split_video import assets, ocr, proxy, scenes, timeline_service, transcribe
 from split_video.editor.context import RequestContext, make_context_dependency
 from split_video.editor.job_routes import cancel_job, job_of_kind
 from split_video.editor.media_response import media_response
@@ -106,6 +106,7 @@ class AssetOut(BaseModel):
     thumbnails: bool = False  # a current thumbnail strip exists (see /assets/{id}/thumbnails)
     transcript: bool = False  # a current transcript exists (see /assets/{id}/transcript)
     scenes: bool = False  # current scene-change and activity signals exist (see /assets/{id}/scenes)
+    ocr: bool = False  # current on-screen text exists (see /assets/{id}/ocr)
 
 
 class AssetListOut(BaseModel):
@@ -250,6 +251,7 @@ def make_router(provider: StoreProvider, jobs: JobQueue) -> APIRouter:
             **proxy.flags(book.media, a),
             transcript=transcribe.has_transcript(book.media, a),
             scenes=scenes.has_scenes(book.media, a),
+            ocr=ocr.has_ocr(book.media, a),
         )
 
     def project_out(media: MediaStore, name: str, project: Project) -> ProjectOut:
