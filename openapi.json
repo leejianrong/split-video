@@ -261,6 +261,11 @@
             "title": "Proxy",
             "type": "boolean"
           },
+          "scenes": {
+            "default": false,
+            "title": "Scenes",
+            "type": "boolean"
+          },
           "size": {
             "title": "Size",
             "type": "integer"
@@ -1415,6 +1420,137 @@
         "title": "RevisionConflictOut",
         "type": "object"
       },
+      "SceneOut": {
+        "properties": {
+          "score": {
+            "title": "Score",
+            "type": "number"
+          },
+          "time": {
+            "title": "Time",
+            "type": "number"
+          }
+        },
+        "required": [
+          "time",
+          "score"
+        ],
+        "title": "SceneOut",
+        "type": "object"
+      },
+      "ScenesOut": {
+        "description": "The stored signals (the document described in `scenes.py`).",
+        "properties": {
+          "activity": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Activity",
+            "type": "array"
+          },
+          "activity_interval": {
+            "title": "Activity Interval",
+            "type": "number"
+          },
+          "activity_start": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Activity Start"
+          },
+          "asset": {
+            "title": "Asset",
+            "type": "string"
+          },
+          "duration": {
+            "title": "Duration",
+            "type": "number"
+          },
+          "min_gap": {
+            "title": "Min Gap",
+            "type": "number"
+          },
+          "sample_fps": {
+            "title": "Sample Fps",
+            "type": "number"
+          },
+          "scenes": {
+            "items": {
+              "$ref": "#/components/schemas/SceneOut"
+            },
+            "title": "Scenes",
+            "type": "array"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "threshold": {
+            "title": "Threshold",
+            "type": "number"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "version",
+          "asset",
+          "source",
+          "duration",
+          "threshold",
+          "min_gap",
+          "sample_fps",
+          "activity_interval",
+          "scenes",
+          "activity"
+        ],
+        "title": "ScenesOut",
+        "type": "object"
+      },
+      "ScenesRequest": {
+        "properties": {
+          "force": {
+            "default": false,
+            "title": "Force",
+            "type": "boolean"
+          },
+          "min_gap": {
+            "default": 1.0,
+            "minimum": 0.0,
+            "title": "Min Gap",
+            "type": "number"
+          },
+          "threshold": {
+            "default": 0.15,
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Threshold",
+            "type": "number"
+          }
+        },
+        "title": "ScenesRequest",
+        "type": "object"
+      },
+      "ScenesStartResponse": {
+        "properties": {
+          "job_id": {
+            "title": "Job Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "job_id"
+        ],
+        "title": "ScenesStartResponse",
+        "type": "object"
+      },
       "SegmentOut": {
         "properties": {
           "color": {
@@ -2520,6 +2656,153 @@
           }
         },
         "summary": "Make Proxy"
+      }
+    },
+    "/api/v1/assets/{asset_id}/scenes": {
+      "get": {
+        "description": "The stored signals, or with `start` and/or `end` (seconds) only the cuts in that span and the activity\nvalues overlapping it (`activity_start` says which second the first one covers). 404 until a\nscene_analysis job has run, or after the file changed.",
+        "operationId": "get_scenes_api_v1_assets__asset_id__scenes_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "asset_id",
+            "required": true,
+            "schema": {
+              "title": "Asset Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "start",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Start"
+            }
+          },
+          {
+            "in": "query",
+            "name": "end",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "End"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScenesOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedOut"
+                }
+              }
+            },
+            "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Scenes"
+      },
+      "post": {
+        "description": "Queue finding the asset's scene changes and screen-activity curve, from its proxy if it has a current one\n(else the original). The job's result is `{asset, source, duration, threshold, min_gap, scenes,\nactivity_buckets, made}`; read the signals with `GET /assets/{id}/scenes`. 422 for an audio-only asset.",
+        "operationId": "start_scene_analysis_api_v1_assets__asset_id__scenes_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "asset_id",
+            "required": true,
+            "schema": {
+              "title": "Asset Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/ScenesRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Request"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScenesStartResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedOut"
+                }
+              }
+            },
+            "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Start Scene Analysis"
       }
     },
     "/api/v1/assets/{asset_id}/thumbnails": {

@@ -124,6 +124,46 @@ def run_with_progress(
     return subprocess.CompletedProcess(full, proc.returncode, "", "".join(tail)[-8192:])
 
 
+def iter_stdout_lines(cmd: list[str], cancel: CancelToken | None = None, what: str = "ffmpeg") -> Iterator[str]:
+    """Run an ffmpeg command and yield its stdout line by line as it is written (a filter that prints to `-`, such
+    as `metadata=print:file=-`, with the output going to `-f null -`), so nothing is held beyond one line. `cmd[0]`
+    must be the ffmpeg binary. stderr is drained on a thread (its last lines are kept for the error). A cancelled
+    job terminates ffmpeg at once and gets `JobCancelledError`; closing the generator early stops ffmpeg too; a
+    failing ffmpeg raises `ExtractError` saying `what` failed, with the tail of stderr."""
+    proc = subprocess.Popen(
+        [cmd[0], "-nostdin", "-nostats", *cmd[1:]],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        errors="replace",
+    )
+    tail: list[str] = []
+
+    def drain() -> None:
+        assert proc.stderr is not None
+        for line in proc.stderr:
+            tail.append(line)
+            del tail[:-200]
+
+    reader = threading.Thread(target=drain, name="ffmpeg-stderr", daemon=True)
+    reader.start()
+    detach = stop_on_cancel(proc, cancel)
+    try:
+        assert proc.stdout is not None
+        yield from proc.stdout
+        proc.wait()
+        reader.join(5)
+    finally:
+        detach()
+        stop_process(proc)
+        if proc.stdout is not None:
+            proc.stdout.close()
+    if cancel is not None:
+        cancel.raise_if_cancelled()
+    if proc.returncode != 0:
+        raise ExtractError(f"ffmpeg failed to {what}: {''.join(tail).strip()[-2000:]}")
+
+
 def probe_duration(path: Path) -> float:
     ffprobe = _require_binary("ffprobe")
     result = subprocess.run(

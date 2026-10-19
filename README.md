@@ -279,6 +279,24 @@ so memory stays flat. Over HTTP it is a `transcription` job
 Speaker labels and translation are not included. The numbers behind the
 defaults are in [`docs/decisions/transcription.md`](docs/decisions/transcription.md).
 
+### Scene changes and screen activity (`scenes`)
+
+For a coding stream or a lecture the interesting moments are on screen, not in the audio. One cheap ffmpeg
+pass over the proxy (the original if there is none; 5 frames per second, 160 px wide, nothing re-encoded)
+finds the cuts and measures how much the picture changes:
+
+```bash
+docker run --rm -v "$PWD":/data ghcr.io/leejianrong/split-video scenes stream.mp4 --root /data [--threshold 0.15] [--min-gap 1] [--json]
+```
+
+You get each cut's `time` and `score` (0..1; the default threshold 0.15 catches a window switch or slide
+change but not typing or scrolling, and cuts under `--min-gap` seconds apart count as one) and one 0..1
+`activity` value per second (still screen 0, typing low, a switch near 1). Results are stored next to the
+video, record whether the proxy or the original was read, and go stale if the file changes (format in
+`src/split_video/scenes.py`). Slow fades are not cuts. Over HTTP it is a `scene_analysis` job
+(`POST /api/v1/assets/{id}/scenes`, with progress and cancel), read with `GET /api/v1/assets/{id}/scenes`
+(optionally `?start=&end=`); MCP has `analyze_scenes` and `get_scenes`, and `list_assets` shows `scenes`.
+
 ### Compose: combine clips, overlays, audio and titles (`compose`)
 
 Besides splitting one recording, you can build a video from several files.
@@ -392,7 +410,7 @@ reads and writes the same project file, so a human can open the result in
 the visual editor afterward. Tools: `list_videos`, `list_segments`,
 `propose_splits`, `add_split`, `move_split`, `remove_split`, `label_segment`,
 `analyze_audio`, `export`. The `compose` commands above have matching tools:
-`list_timelines`, `scan_library`, `list_assets`, `prepare_asset`, `transcribe_asset`, `get_transcript`, `create_timeline`, `show_timeline`, `add_clip_to_timeline`
+`list_timelines`, `scan_library`, `list_assets`, `prepare_asset`, `transcribe_asset`, `get_transcript`, `analyze_scenes`, `get_scenes`, `create_timeline`, `show_timeline`, `add_clip_to_timeline`
 (a path or an asset id),
 `trim_timeline_clip`, `move_timeline_clip`, `remove_timeline_clip`,
 `set_timeline_transition`, `add_timeline_track`, `remove_timeline_track`,
