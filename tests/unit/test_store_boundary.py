@@ -19,6 +19,7 @@ GUARDED = [
     "transcribe_cli.py",
     "scenes_cli.py",
     "frames_cli.py",
+    "contact_sheet_cli.py",
     "mcp_server.py",
     "editor/app.py",
     "editor/compose.py",
@@ -27,6 +28,7 @@ GUARDED = [
     "editor/transcripts.py",
     "editor/scenes.py",
     "editor/frames.py",
+    "editor/contact_sheet.py",
 ]
 FORBIDDEN = re.compile(
     r"_project_path|project_path|FILE_SUFFIX|\.split-video-project\.json|\.split-video-timeline\.json"
@@ -51,6 +53,7 @@ ENGINE = [
     "transcribe.py",
     "scenes.py",
     "frames.py",
+    "contact_sheet.py",
     "render.py",
     "editor/cache.py",
     "jobs.py",
@@ -70,12 +73,14 @@ ADAPTERS = [
     "editor/transcripts.py",
     "editor/scenes.py",
     "editor/frames.py",
+    "editor/contact_sheet.py",
     "project_cli.py",
     "compose_cli.py",
     "library_cli.py",
     "transcribe_cli.py",
     "scenes_cli.py",
     "frames_cli.py",
+    "contact_sheet_cli.py",
 ]
 MEDIA_FORBIDDEN = re.compile(
     r"\.split-video-cache|CACHE_DIR_NAME|cache_store|resolve_within_root|resolve_source|relative_source"

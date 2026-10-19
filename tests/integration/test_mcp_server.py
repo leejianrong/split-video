@@ -47,6 +47,7 @@ async def test_exposes_the_documented_tools(root):
         "analyze_scenes",
         "get_scenes",
         "get_frame",
+        "get_contact_sheet",
         "list_segments",
         "propose_splits",
         "add_split",

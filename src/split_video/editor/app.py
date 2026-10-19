@@ -29,6 +29,7 @@ from split_video.editor.cache import ClassificationCache, SilenceCache, Waveform
 from split_video.editor.classify import ClassificationRegion
 from split_video.editor.compose import make_media_router as make_compose_media_router
 from split_video.editor.compose import make_router as make_compose_router
+from split_video.editor.contact_sheet import make_router as make_contact_sheet_router
 from split_video.editor.context import RequestContext, make_context_dependency
 from split_video.editor.events import EventBus, EventsConfig
 from split_video.editor.events import make_router as make_events_router
@@ -547,6 +548,7 @@ def create_app(
     app.include_router(make_transcripts_router(provider, jobs), prefix=API_PREFIX, **guard)
     app.include_router(make_scenes_router(provider, jobs), prefix=API_PREFIX, **guard)
     app.include_router(make_frames_router(provider), prefix=API_PREFIX, **guard)
+    app.include_router(make_contact_sheet_router(provider), prefix=API_PREFIX, **guard)
     # Deprecated aliases for one release: /api/... and /media/... as they were
     # before versioning. Not in the OpenAPI schema; responses carry a
     # `Deprecation` header (set by the middleware above). Registered after /api/v1 so it can't shadow it.
