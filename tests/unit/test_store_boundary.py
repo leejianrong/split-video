@@ -16,11 +16,13 @@ GUARDED = [
     "project_cli.py",
     "compose_cli.py",
     "library_cli.py",
+    "transcribe_cli.py",
     "mcp_server.py",
     "editor/app.py",
     "editor/compose.py",
     "editor/library.py",
     "editor/proxies.py",
+    "editor/transcripts.py",
 ]
 FORBIDDEN = re.compile(
     r"_project_path|project_path|FILE_SUFFIX|\.split-video-project\.json|\.split-video-timeline\.json"
@@ -42,6 +44,7 @@ ENGINE = [
     "assets.py",
     "library.py",
     "proxy.py",
+    "transcribe.py",
     "render.py",
     "editor/cache.py",
     "jobs.py",
@@ -58,9 +61,11 @@ ADAPTERS = [
     "editor/media_response.py",
     "editor/library.py",
     "editor/proxies.py",
+    "editor/transcripts.py",
     "project_cli.py",
     "compose_cli.py",
     "library_cli.py",
+    "transcribe_cli.py",
 ]
 MEDIA_FORBIDDEN = re.compile(
     r"\.split-video-cache|CACHE_DIR_NAME|cache_store|resolve_within_root|resolve_source|relative_source"
@@ -117,6 +122,17 @@ def test_the_local_media_store_is_the_one_place_with_the_cache_dir_and_containme
     assert ".split-video-cache" in text and "is outside" not in text and "MediaOutsideRootError" in text
     others = [p for p in SRC.rglob("*.py") if p.name != "local_media_store.py"]
     assert not [p.name for p in others if ".split-video-cache" in _code(str(p.relative_to(SRC)))]
+
+
+def test_the_local_media_store_is_the_one_place_with_the_models_dir_name():
+    assert ".split-video-models" in (SRC / "local_media_store.py").read_text()
+    others = [p for p in SRC.rglob("*.py") if p.name != "local_media_store.py"]
+    assert not [p.name for p in others if ".split-video-models" in _code(str(p.relative_to(SRC)))]
+
+
+def test_the_transcribe_engine_imports_faster_whisper_only_lazily():
+    # The optional extra: a top-level import would break every other command when it is not installed.
+    assert not re.search(r"^(from|import) faster_whisper", (SRC / "transcribe.py").read_text(), re.MULTILINE)
 
 
 def test_the_local_store_is_the_one_place_with_the_file_names():

@@ -18,6 +18,8 @@ NO_LEGACY_ALIAS = {
     "/api/v1/assets/{asset_id}/proxy",
     "/api/v1/assets/{asset_id}/thumbnails",
     "/api/v1/assets/{asset_id}/thumbnails/info",
+    "/api/v1/assets/{asset_id}/transcribe",
+    "/api/v1/assets/{asset_id}/transcript",
 }
 REPO_ROOT = Path(__file__).resolve().parents[2]
 

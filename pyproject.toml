@@ -17,6 +17,13 @@ dependencies = [
     "uvicorn>=0.52.4",
 ]
 
+[project.optional-dependencies]
+# Local speech-to-text with word timestamps (see docs/decisions/transcription.md). Heavy (about 340 MB
+# installed), so not part of the default install or the default Docker image.
+transcribe = [
+    "faster-whisper>=1.1",
+]
+
 [project.scripts]
 split-video = "split_video.cli:app"
 
@@ -29,6 +36,11 @@ dev = [
     "httpx>=0.28.1",
     "pytest>=8.0",
     "ruff>=0.16.5",
+]
+
+[tool.pytest.ini_options]
+markers = [
+    "real_model: runs the real faster-whisper model; skipped without the `transcribe` extra and a downloaded model",
 ]
 
 [tool.ruff]

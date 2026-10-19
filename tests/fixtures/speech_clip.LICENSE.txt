@@ -1,0 +1,12 @@
+speech_clip.ogg (about 11.3 s, 16 kHz mono Opus at 20 kbit/s)
+
+Two sentences read aloud, joined by 0.6 s of digital silence (so a test knows where the pause is):
+
+  0.000 - 5.855  "Mister Quilter is the apostle of the middle classes and we are glad to welcome his gospel."
+  5.855 - 6.455  silence
+  6.455 - 11.27  "Nor is Mister Quilter's manner less interesting than his matter."
+
+Source: LibriSpeech dev-clean utterances 1272-128104-0000 and 1272-128104-0001 (via the
+hf-internal-testing/librispeech_asr_dummy dataset). LibriSpeech is licensed CC BY 4.0
+(Panayotov, Chen, Povey, Khudanpur, "LibriSpeech: an ASR corpus based on public domain audio books", ICASSP 2015);
+the recordings are LibriVox audiobooks, which are dedicated to the public domain. Re-encoded to Opus here.

@@ -22,7 +22,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
-from split_video import assets, proxy
+from split_video import assets, proxy, transcribe
 from split_video.ffmpeg import ProbeError
 from split_video.jobs import CancelToken
 from split_video.media_store import MediaError, MediaStore
@@ -99,7 +99,10 @@ def _scan_one(media: MediaStore, book: assets.AssetBook, path: str, report: Scan
 
 def listing(media: MediaStore) -> list[dict[str, Any]]:
     """The library as the CLI, API and MCP show it: every asset's summary (see `Asset.summary`, plus `proxy` and
-    `thumbnails`: whether current ones exist, see `proxy.py`).
+    `thumbnails`: whether current ones exist, see `proxy.py`, and `transcript`, see `transcribe.py`).
     Reads the table only; nothing is probed."""
     with assets.open_book(media) as book:
-        return [{**a.summary(book.present(a)), **proxy.flags(media, a)} for a in book.list()]
+        return [
+            {**a.summary(book.present(a)), **proxy.flags(media, a), "transcript": transcribe.has_transcript(media, a)}
+            for a in book.list()
+        ]

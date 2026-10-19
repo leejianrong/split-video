@@ -33,7 +33,7 @@ from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp_types import ToolAnnotations
 
-from split_video import assets, library, project, proxy, timeline, timeline_service
+from split_video import assets, library, project, proxy, timeline, timeline_service, transcribe
 from split_video.editor.cache import ClassificationCache
 from split_video.editor.classify import ModelNotFoundError
 from split_video.errors import RevisionConflictError
@@ -51,6 +51,8 @@ _EXPECTED_ERRORS = (
     ProbeError,
     ExtractError,
     ModelNotFoundError,
+    transcribe.TranscriptionError,
+    transcribe.TranscriptionUnavailableError,
 )
 
 _READ_ONLY = ToolAnnotations(read_only_hint=True, destructive_hint=False, idempotent_hint=True, open_world_hint=False)
@@ -415,6 +417,32 @@ def create_server(root: Path, store: ProjectStore | None = None, media: MediaSto
         call produced (empty when everything was current). An audio-only asset has neither (`skipped`).
         list_assets shows `proxy` and `thumbnails` per asset."""
         return await run(proxy.prepare, media, asset, force=force)
+
+    @server.tool(annotations=_EDITS_PROJECT)
+    async def transcribe_asset(
+        asset: str, model: str = transcribe.DEFAULT_MODEL, language: str | None = None, force: bool = False
+    ) -> dict[str, Any]:
+        """Transcribe the speech of the library asset with id `asset` (from list_assets) into words with start and end
+        times, stored with the asset; read them with get_transcript. Runs locally (faster-whisper on the CPU) and
+        before this returns: about 3 minutes per hour of audio with the default `model` "base.en" (English; "small.en"
+        is more careful and 3 times slower; "base" or "small" handle other languages, with `language` a code like
+        "fr", or unset to detect it). The first use downloads the model (140 MB) into the workspace. If a current
+        transcript from this model exists nothing is redone unless `force`. Returns `model`, `language`,
+        `duration`, `segments` and `words` (counts) and `made` (false when the stored one was current). Without the
+        optional faster-whisper package this is a tool error saying how to install it."""
+        return await run(transcribe.transcribe, media, asset, model=model, language=language, force=force)
+
+    @server.tool(annotations=_READ_ONLY)
+    async def get_transcript(asset: str, start: float | None = None, end: float | None = None) -> dict[str, Any]:
+        """The stored transcript of the library asset `asset`: `model`, `language`, `duration` and `segments`, each
+        with `start`, `end`, `text` and `words` (`start`, `end`, `word`, `probability`), all in seconds from the
+        start of the asset's audio. With `start` and/or `end` only the words overlapping that span (a cut segment
+        keeps only those words). Run transcribe_asset first: without a transcript this is a tool error. list_assets
+        shows `transcript` per asset."""
+        found = await run(transcribe.load, media, asset)
+        if found is None:
+            raise ToolError(f"asset {asset} has no transcript yet: run transcribe_asset first")
+        return transcribe.excerpt(found, start, end)
 
     @server.tool(annotations=_EDITS_PROJECT)
     async def add_clip_to_timeline(

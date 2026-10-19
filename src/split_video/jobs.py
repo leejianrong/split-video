@@ -1,13 +1,12 @@
 """The job queue seam: submit long work, poll or subscribe to it, cancel it, fetch its result.
 
-Export, audio analysis and timeline renders (and, later, transcription) are all "a function
+Export, audio analysis, timeline renders, proxies, scans and transcription are all "a function
 that takes a while". They run through one `JobQueue` interface instead of ad hoc threads, so
 the editor's HTTP API, a future event stream (SPL-37) and a hosted worker pool (SPL-38 added
 who owns a job) all talk to the same thing. `InProcessJobQueue` is the local implementation:
 a bounded pool of daemon threads inside the server process. It is not a distributed queue.
 
-Job kinds are plain strings: `export`, `analysis`, `render`, `library_scan`, and `transcription` (reserved,
-nothing implements it yet).
+Job kinds are plain strings: `export`, `analysis`, `render`, `library_scan`, `proxy` and `transcription`.
 
 Cancellation is cooperative. `cancel` flags the job and runs the callbacks its work registered
 with `JobContext.on_cancel` (that is how a running ffmpeg is terminated at once); the work
@@ -33,7 +32,7 @@ from typing import Any, Literal, Protocol, runtime_checkable
 
 log = logging.getLogger(__name__)
 
-# Job kinds. `TRANSCRIPTION` is reserved for a later card; no work function exists for it yet.
+# Job kinds.
 EXPORT = "export"
 ANALYSIS = "analysis"
 RENDER = "render"

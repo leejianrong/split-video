@@ -64,6 +64,7 @@ from split_video.editor.schemas import (
     WaveformResponse,
     WhoAmIOut,
 )
+from split_video.editor.transcripts import make_router as make_transcripts_router
 from split_video.errors import RevisionConflictError
 from split_video.identity import LOCAL_PRINCIPAL, Principal
 from split_video.job_work import analysis_work, export_work
@@ -541,6 +542,7 @@ def create_app(
     app.include_router(make_events_router(bus), prefix=API_PREFIX, **guard)
     app.include_router(make_library_router(provider, jobs), prefix=API_PREFIX, **guard)
     app.include_router(make_proxies_router(provider, jobs), prefix=API_PREFIX, **guard)
+    app.include_router(make_transcripts_router(provider, jobs), prefix=API_PREFIX, **guard)
     # Deprecated aliases for one release: /api/... and /media/... as they were
     # before versioning. Not in the OpenAPI schema; responses carry a
     # `Deprecation` header (set by the middleware above). Registered after /api/v1 so it can't shadow it.

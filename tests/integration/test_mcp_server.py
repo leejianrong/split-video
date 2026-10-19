@@ -42,6 +42,8 @@ async def test_exposes_the_documented_tools(root):
     assert names == {
         "list_videos",
         "prepare_asset",
+        "transcribe_asset",
+        "get_transcript",
         "list_segments",
         "propose_splits",
         "add_split",
