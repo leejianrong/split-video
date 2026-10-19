@@ -51,6 +51,7 @@ ENGINE = [
     "library.py",
     "proxy.py",
     "transcribe.py",
+    "transcript_search.py",
     "scenes.py",
     "frames.py",
     "contact_sheet.py",

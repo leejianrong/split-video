@@ -276,6 +276,19 @@ so memory stays flat. Over HTTP it is a `transcription` job
 (`POST /api/v1/assets/{id}/transcribe`, with progress and cancel), read back with
 `GET /api/v1/assets/{id}/transcript` (optionally `?start=&end=`); MCP has
 `transcribe_asset` and `get_transcript`, and `list_assets` shows `transcript`.
+
+Reading a long transcript without loading it whole: `split-video transcript
+<target> --start 600 --end 900 --limit 50` prints one page of segments (`--words`
+for words, `--max-chars` for a text budget) and the `--cursor` for the next;
+`split-video transcript-search <target> "magic word" --context 8` lists where a
+phrase is said, with the time and the words around it (case and punctuation
+ignored, whole words, across segment boundaries; no regex or semantic search).
+Over HTTP the same pages come from `GET /api/v1/assets/{id}/transcript?limit=&cursor=&granularity=`
+(without those parameters it still returns the whole document) and
+`GET /api/v1/assets/{id}/transcript/search?q=&start=&end=&limit=&cursor=&context=`;
+MCP has `transcript_range` and `transcript_search`. All three return the same JSON.
+A page holds at most 500 items (searches 200); a segment overlapping the start of
+the range is included whole. Searching three hours of speech takes milliseconds.
 Speaker labels and translation are not included. The numbers behind the
 defaults are in [`docs/decisions/transcription.md`](docs/decisions/transcription.md).
 
@@ -443,7 +456,7 @@ reads and writes the same project file, so a human can open the result in
 the visual editor afterward. Tools: `list_videos`, `list_segments`,
 `propose_splits`, `add_split`, `move_split`, `remove_split`, `label_segment`,
 `analyze_audio`, `export`. The `compose` commands above have matching tools:
-`list_timelines`, `scan_library`, `list_assets`, `prepare_asset`, `transcribe_asset`, `get_transcript`, `analyze_scenes`, `get_scenes`, `get_frame`, `get_contact_sheet`, `create_timeline`, `show_timeline`, `add_clip_to_timeline`
+`list_timelines`, `scan_library`, `list_assets`, `prepare_asset`, `transcribe_asset`, `get_transcript`, `transcript_range`, `transcript_search`, `analyze_scenes`, `get_scenes`, `get_frame`, `get_contact_sheet`, `create_timeline`, `show_timeline`, `add_clip_to_timeline`
 (a path or an asset id),
 `trim_timeline_clip`, `move_timeline_clip`, `remove_timeline_clip`,
 `set_timeline_transition`, `add_timeline_track`, `remove_timeline_track`,

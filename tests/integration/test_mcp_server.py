@@ -44,6 +44,8 @@ async def test_exposes_the_documented_tools(root):
         "prepare_asset",
         "transcribe_asset",
         "get_transcript",
+        "transcript_range",
+        "transcript_search",
         "analyze_scenes",
         "get_scenes",
         "get_frame",

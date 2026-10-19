@@ -18,7 +18,7 @@ from pathlib import Path
 
 import pytest
 
-from split_video import assets, transcribe
+from split_video import assets, transcribe, transcript_search
 from split_video.local_media_store import LocalMediaStore
 
 CLIP = Path(__file__).resolve().parents[1] / "fixtures" / "speech_clip.ogg"
@@ -105,6 +105,26 @@ def test_a_short_clip_transcribes_with_word_times_that_line_up(workspace, monkey
     assert words[heard.index("matter")]["end"] > doc["duration"] - 1.0  # the last word is at the end
     assert doc["duration"] == pytest.approx(11.28, abs=0.1)
     assert transcribe.text_between(doc, 0, GAP_AT).split()[-1].lower().startswith("gospel")
+
+
+def test_search_finds_a_real_word_at_its_real_time(workspace):
+    media = LocalMediaStore(workspace)
+    asset = assets.register_path(media, "clip.ogg")
+    transcribe.transcribe(media, asset.id)
+    found = transcript_search.transcript_search(media, asset.id, "gospel", context=4)
+    (hit,) = found["hits"]
+    assert 4.0 < hit["time"] < GAP_AT and hit["end"] <= GAP_AT + 0.3  # "gospel" ends the first sentence
+    assert hit["context_before"].lower().endswith("his") and hit["context_after"].lower().startswith("nor")
+    doc = transcribe.load(media, asset.id)
+    assert hit["time"] == _words(doc)[hit["word"]]["start"]
+    # a phrase over the join of the two sentences, and the paged range around the hit
+    both = transcript_search.transcript_search(media, asset.id, "gospel nor is")
+    assert both["total_matches"] == 1 and both["hits"][0]["time"] == pytest.approx(hit["time"], abs=0.01)
+    page = transcript_search.transcript_range(media, asset.id, hit["time"], hit["end"])
+    assert page["total_in_range"] >= 1 and "gospel" in page["items"][0]["text"].lower()
+    first = transcript_search.transcript_search(media, asset.id, "quilter")["hits"]
+    second = transcript_search.transcript_search(media, asset.id, "quilter's")["hits"]
+    assert [h["time"] < GAP_AT for h in first + second] == [True, False]  # one in each sentence
 
 
 def test_a_long_file_is_cut_into_windows_and_stitched_without_repeats(workspace, monkeypatch):

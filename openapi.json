@@ -588,6 +588,24 @@
         "title": "ClipOut",
         "type": "object"
       },
+      "CoveredOut": {
+        "properties": {
+          "end": {
+            "title": "End",
+            "type": "number"
+          },
+          "start": {
+            "title": "Start",
+            "type": "number"
+          }
+        },
+        "required": [
+          "start",
+          "end"
+        ],
+        "title": "CoveredOut",
+        "type": "object"
+      },
       "CreateProjectRequest": {
         "properties": {
           "name": {
@@ -1281,6 +1299,97 @@
         "title": "ProxyStartResponse",
         "type": "object"
       },
+      "RangeBoundsOut": {
+        "properties": {
+          "end": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End"
+          },
+          "start": {
+            "title": "Start",
+            "type": "number"
+          }
+        },
+        "required": [
+          "start",
+          "end"
+        ],
+        "title": "RangeBoundsOut",
+        "type": "object"
+      },
+      "RangeSegmentOut": {
+        "properties": {
+          "end": {
+            "title": "End",
+            "type": "number"
+          },
+          "index": {
+            "title": "Index",
+            "type": "integer"
+          },
+          "start": {
+            "title": "Start",
+            "type": "number"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "index",
+          "start",
+          "end",
+          "text"
+        ],
+        "title": "RangeSegmentOut",
+        "type": "object"
+      },
+      "RangeWordOut": {
+        "properties": {
+          "end": {
+            "title": "End",
+            "type": "number"
+          },
+          "index": {
+            "title": "Index",
+            "type": "integer"
+          },
+          "probability": {
+            "title": "Probability",
+            "type": "number"
+          },
+          "segment": {
+            "title": "Segment",
+            "type": "integer"
+          },
+          "start": {
+            "title": "Start",
+            "type": "number"
+          },
+          "word": {
+            "title": "Word",
+            "type": "string"
+          }
+        },
+        "required": [
+          "index",
+          "segment",
+          "start",
+          "end",
+          "word",
+          "probability"
+        ],
+        "title": "RangeWordOut",
+        "type": "object"
+      },
       "RegisterAssetRequest": {
         "properties": {
           "path": {
@@ -1549,6 +1658,49 @@
           "job_id"
         ],
         "title": "ScenesStartResponse",
+        "type": "object"
+      },
+      "SearchHitOut": {
+        "properties": {
+          "context_after": {
+            "title": "Context After",
+            "type": "string"
+          },
+          "context_before": {
+            "title": "Context Before",
+            "type": "string"
+          },
+          "end": {
+            "title": "End",
+            "type": "number"
+          },
+          "segment": {
+            "title": "Segment",
+            "type": "integer"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "time": {
+            "title": "Time",
+            "type": "number"
+          },
+          "word": {
+            "title": "Word",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "time",
+          "end",
+          "text",
+          "context_before",
+          "context_after",
+          "segment",
+          "word"
+        ],
+        "title": "SearchHitOut",
         "type": "object"
       },
       "SegmentOut": {
@@ -2026,6 +2178,135 @@
           "segments"
         ],
         "title": "TranscriptOut",
+        "type": "object"
+      },
+      "TranscriptPageOut": {
+        "description": "One page of the transcript (`transcript_search.transcript_range`).",
+        "properties": {
+          "asset": {
+            "title": "Asset",
+            "type": "string"
+          },
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "covered": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CoveredOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "duration": {
+            "title": "Duration",
+            "type": "number"
+          },
+          "granularity": {
+            "title": "Granularity",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/RangeSegmentOut"
+                },
+                {
+                  "$ref": "#/components/schemas/RangeWordOut"
+                }
+              ]
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "range": {
+            "$ref": "#/components/schemas/RangeBoundsOut"
+          },
+          "total_in_range": {
+            "title": "Total In Range",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "asset",
+          "granularity",
+          "duration",
+          "range",
+          "total_in_range",
+          "count",
+          "covered",
+          "items",
+          "next_cursor"
+        ],
+        "title": "TranscriptPageOut",
+        "type": "object"
+      },
+      "TranscriptSearchOut": {
+        "description": "One page of hits for a phrase (`transcript_search.transcript_search`).",
+        "properties": {
+          "asset": {
+            "title": "Asset",
+            "type": "string"
+          },
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "hits": {
+            "items": {
+              "$ref": "#/components/schemas/SearchHitOut"
+            },
+            "title": "Hits",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "query": {
+            "title": "Query",
+            "type": "string"
+          },
+          "range": {
+            "$ref": "#/components/schemas/RangeBoundsOut"
+          },
+          "total_matches": {
+            "title": "Total Matches",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "asset",
+          "query",
+          "range",
+          "total_matches",
+          "count",
+          "hits",
+          "next_cursor"
+        ],
+        "title": "TranscriptSearchOut",
         "type": "object"
       },
       "TranscriptSegmentOut": {
@@ -3363,7 +3644,7 @@
     },
     "/api/v1/assets/{asset_id}/transcript": {
       "get": {
-        "description": "The stored transcript, or with `start` and/or `end` (seconds) only the words overlapping that span. 404\nuntil a transcription job has run, or after the file changed.",
+        "description": "The stored transcript, or with `start` and/or `end` (seconds) only the words overlapping that span. With\nany of `limit`, `cursor`, `granularity` (`segment` or `word`) or `max_chars` it is one page of the segments\n(or words) overlapping the span instead, with `total_in_range` and a `next_cursor` to pass back until it is\nnull; a page never holds more than 500 items. 404 until a transcription job has run, or after the file\nchanged; 422 for a bad span, limit or cursor.",
         "operationId": "get_transcript_api_v1_assets__asset_id__transcript_get",
         "parameters": [
           {
@@ -3406,6 +3687,70 @@
               ],
               "title": "End"
             }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Limit"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "granularity",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Granularity"
+            }
+          },
+          {
+            "in": "query",
+            "name": "max_chars",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Max Chars"
+            }
           }
         ],
         "responses": {
@@ -3413,7 +3758,15 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/TranscriptOut"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/TranscriptOut"
+                    },
+                    {
+                      "$ref": "#/components/schemas/TranscriptPageOut"
+                    }
+                  ],
+                  "title": "Response Get Transcript Api V1 Assets  Asset Id  Transcript Get"
                 }
               }
             },
@@ -3441,6 +3794,155 @@
           }
         },
         "summary": "Get Transcript"
+      }
+    },
+    "/api/v1/assets/{asset_id}/transcript/search": {
+      "get": {
+        "description": "Where the phrase `q` is said: case-insensitive whole-word match, punctuation ignored, across segment\nboundaries. Hits in time order with `time`, `end`, `text`, `context_before` / `context_after` (`context`\nwords each, default 8, at most 50), `segment` and `word` indices; `limit` per page (default 20, at most\n200) and a `next_cursor`. `start` / `end` keep hits whose first word overlaps that span. 404 without a\ntranscript; 422 for an empty or over-long query (500 characters), a bad span, limit or cursor.",
+        "operationId": "search_transcript_api_v1_assets__asset_id__transcript_search_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "asset_id",
+            "required": true,
+            "schema": {
+              "title": "Asset Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": true,
+            "schema": {
+              "title": "Q",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "start",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Start"
+            }
+          },
+          {
+            "in": "query",
+            "name": "end",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "End"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Limit"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "context",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Context"
+            }
+          },
+          {
+            "in": "query",
+            "name": "case_sensitive",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Case Sensitive",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TranscriptSearchOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedOut"
+                }
+              }
+            },
+            "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Search Transcript"
       }
     },
     "/api/v1/browse": {
