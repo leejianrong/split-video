@@ -20,6 +20,7 @@ from split_video import (
     project_cli,
     scenes_cli,
     search_cli,
+    time_index_cli,
     transcribe_cli,
 )
 from split_video.editor.app import create_app
@@ -262,5 +263,6 @@ transcribe_cli.register(app)
 app.command("scenes")(scenes_cli.scenes_cmd)
 ocr_cli.register(app)
 search_cli.register(app)
+time_index_cli.register(app)
 app.command("frame")(frames_cli.frame_cmd)
 app.command("contact-sheet")(contact_sheet_cli.contact_sheet_cmd)

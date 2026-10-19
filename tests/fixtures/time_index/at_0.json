@@ -1,0 +1,118 @@
+{
+  "version": 1,
+  "asset": "a_e37c5eab78c34f0f",
+  "time": 0.0,
+  "window": {
+    "start": 0.0,
+    "end": 5.0
+  },
+  "duration": 300.0,
+  "audio": {
+    "class": "music",
+    "share": 1.0,
+    "secondary": null,
+    "regions": [
+      {
+        "start": 0.0,
+        "end": 5.0,
+        "class": "music",
+        "score": 0.9
+      }
+    ],
+    "regions_truncated": false
+  },
+  "loudness": {
+    "mean_db": -40.0,
+    "max_db": -40.0,
+    "min_db": -40.0,
+    "window_seconds": 1.0,
+    "curve": [
+      {
+        "t": 0.0,
+        "db": -40.0
+      },
+      {
+        "t": 1.0,
+        "db": -40.0
+      },
+      {
+        "t": 2.0,
+        "db": -40.0
+      },
+      {
+        "t": 3.0,
+        "db": -40.0
+      },
+      {
+        "t": 4.0,
+        "db": -40.0
+      }
+    ]
+  },
+  "silence": {
+    "threshold_db": -35.0,
+    "inside": false,
+    "intervals": [],
+    "truncated": false
+  },
+  "speech": {
+    "words": [],
+    "text": "",
+    "word_count": 0,
+    "words_per_minute": 0.0,
+    "truncated": false
+  },
+  "visual": {
+    "scene_change": null,
+    "scene_changes": 0,
+    "scene_index": 0,
+    "shot_start": 0.0,
+    "activity": {
+      "mean": 0.1,
+      "max": 0.1,
+      "curve": [
+        {
+          "t": 0.0,
+          "value": 0.1
+        },
+        {
+          "t": 1.0,
+          "value": 0.1
+        },
+        {
+          "t": 2.0,
+          "value": 0.1
+        },
+        {
+          "t": 3.0,
+          "value": 0.1
+        },
+        {
+          "t": 4.0,
+          "value": 0.1
+        }
+      ]
+    },
+    "description": null,
+    "text": {
+      "time": 0.0,
+      "until": 140.0,
+      "text": "intro slide",
+      "lines": [
+        "intro slide"
+      ],
+      "truncated": false,
+      "more": 0
+    }
+  },
+  "available": {
+    "audio": true,
+    "loudness": true,
+    "silence": true,
+    "speech": true,
+    "scenes": true,
+    "ocr": true,
+    "description": false
+  },
+  "missing": []
+}

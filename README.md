@@ -390,6 +390,22 @@ about half), things within 15 seconds are merged, and matching is by word with n
 when they exist. Over HTTP: `GET /api/v1/assets/{id}/search?q=&sources=` and `GET /api/v1/assets/{id}/search/visual?q=`
 (both paged); MCP has `search_asset` and `visual_search`.
 
+#### What is happening at a time (`at`, `timeline-index`)
+
+One call returns every stored signal around a timestamp: the audio class, loudness, silences, the words spoken, the
+nearest scene cut and screen activity, and the on-screen text. It only reads what `analyze`, `propose`, `transcribe`,
+`scenes` and `ocr` already stored (no decoding, no model); a signal that was never made is `null` and `missing` says
+which command makes it.
+
+```bash
+docker run --rm -v "$PWD":/data split-video:ocr at stream.mp4 1:23:45 --root /data [--window 10] [--json]
+docker run --rm -v "$PWD":/data split-video:ocr timeline-index stream.mp4 --root /data [--start 0 --end 3600 --step 60] [--json]
+```
+
+Over HTTP: `GET /api/v1/assets/{id}/at?time=&window=` and `GET /api/v1/assets/{id}/timeline?start=&end=&step=`; MCP has
+`what_is_happening` and `timeline_index`. All three return the same JSON; its shape (version 1) is in
+[docs/time-index.md](docs/time-index.md).
+
 ### Compose: combine clips, overlays, audio and titles (`compose`)
 
 Besides splitting one recording, you can build a video from several files.

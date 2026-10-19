@@ -1,0 +1,220 @@
+{
+  "version": 1,
+  "asset": "a_e37c5eab78c34f0f",
+  "time": 100.0,
+  "window": {
+    "start": 95.0,
+    "end": 105.0
+  },
+  "duration": 300.0,
+  "audio": {
+    "class": "speech",
+    "share": 0.9,
+    "secondary": "music",
+    "regions": [
+      {
+        "start": 95.0,
+        "end": 96.0,
+        "class": "music",
+        "score": 0.9
+      },
+      {
+        "start": 96.0,
+        "end": 105.0,
+        "class": "speech",
+        "score": 0.9
+      }
+    ],
+    "regions_truncated": false
+  },
+  "loudness": {
+    "mean_db": -29.2,
+    "max_db": -22.0,
+    "min_db": -40.0,
+    "window_seconds": 1.0,
+    "curve": [
+      {
+        "t": 95.0,
+        "db": -40.0
+      },
+      {
+        "t": 96.0,
+        "db": -40.0
+      },
+      {
+        "t": 97.0,
+        "db": -40.0
+      },
+      {
+        "t": 98.0,
+        "db": -22.0
+      },
+      {
+        "t": 99.0,
+        "db": -22.0
+      },
+      {
+        "t": 100.0,
+        "db": -22.0
+      },
+      {
+        "t": 101.0,
+        "db": -22.0
+      },
+      {
+        "t": 102.0,
+        "db": -22.0
+      },
+      {
+        "t": 103.0,
+        "db": -22.0
+      },
+      {
+        "t": 104.0,
+        "db": -40.0
+      }
+    ]
+  },
+  "silence": {
+    "threshold_db": -35.0,
+    "inside": false,
+    "intervals": [
+      {
+        "start": 96.0,
+        "end": 97.5
+      }
+    ],
+    "truncated": false
+  },
+  "speech": {
+    "words": [
+      {
+        "start": 98.0,
+        "end": 98.4,
+        "word": "welcome"
+      },
+      {
+        "start": 98.5,
+        "end": 98.9,
+        "word": "everybody"
+      },
+      {
+        "start": 99.0,
+        "end": 99.4,
+        "word": "to"
+      },
+      {
+        "start": 99.5,
+        "end": 99.9,
+        "word": "the"
+      },
+      {
+        "start": 100.0,
+        "end": 100.4,
+        "word": "live"
+      },
+      {
+        "start": 100.5,
+        "end": 100.9,
+        "word": "stream"
+      },
+      {
+        "start": 101.0,
+        "end": 101.4,
+        "word": "tonight"
+      },
+      {
+        "start": 101.5,
+        "end": 101.9,
+        "word": "we"
+      },
+      {
+        "start": 102.0,
+        "end": 102.4,
+        "word": "start"
+      },
+      {
+        "start": 102.5,
+        "end": 102.9,
+        "word": "now"
+      }
+    ],
+    "text": "welcome everybody to the live stream tonight we start now",
+    "word_count": 10,
+    "words_per_minute": 60.0,
+    "truncated": false
+  },
+  "visual": {
+    "scene_change": null,
+    "scene_changes": 0,
+    "scene_index": 1,
+    "shot_start": 20.0,
+    "activity": {
+      "mean": 0.1,
+      "max": 0.1,
+      "curve": [
+        {
+          "t": 95.0,
+          "value": 0.1
+        },
+        {
+          "t": 96.0,
+          "value": 0.1
+        },
+        {
+          "t": 97.0,
+          "value": 0.1
+        },
+        {
+          "t": 98.0,
+          "value": 0.1
+        },
+        {
+          "t": 99.0,
+          "value": 0.1
+        },
+        {
+          "t": 100.0,
+          "value": 0.1
+        },
+        {
+          "t": 101.0,
+          "value": 0.1
+        },
+        {
+          "t": 102.0,
+          "value": 0.1
+        },
+        {
+          "t": 103.0,
+          "value": 0.1
+        },
+        {
+          "t": 104.0,
+          "value": 0.1
+        }
+      ]
+    },
+    "description": null,
+    "text": {
+      "time": 0.0,
+      "until": 140.0,
+      "text": "intro slide",
+      "lines": [
+        "intro slide"
+      ],
+      "truncated": false,
+      "more": 0
+    }
+  },
+  "available": {
+    "audio": true,
+    "loudness": true,
+    "silence": true,
+    "speech": true,
+    "scenes": true,
+    "ocr": true,
+    "description": false
+  },
+  "missing": []
+}

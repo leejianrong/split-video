@@ -1,6 +1,35 @@
 {
   "components": {
     "schemas": {
+      "ActivityOut": {
+        "properties": {
+          "curve": {
+            "items": {
+              "additionalProperties": {
+                "type": "number"
+              },
+              "type": "object"
+            },
+            "title": "Curve",
+            "type": "array"
+          },
+          "max": {
+            "title": "Max",
+            "type": "number"
+          },
+          "mean": {
+            "title": "Mean",
+            "type": "number"
+          }
+        },
+        "required": [
+          "mean",
+          "max",
+          "curve"
+        ],
+        "title": "ActivityOut",
+        "type": "object"
+      },
       "AddClipRequest": {
         "properties": {
           "asset": {
@@ -312,6 +341,105 @@
           "present"
         ],
         "title": "AssetOut",
+        "type": "object"
+      },
+      "AtOut": {
+        "description": "What is happening around a time (`time_index.what_is_happening`, version 1).",
+        "properties": {
+          "asset": {
+            "title": "Asset",
+            "type": "string"
+          },
+          "audio": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Audio"
+          },
+          "available": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "title": "Available",
+            "type": "object"
+          },
+          "duration": {
+            "title": "Duration",
+            "type": "number"
+          },
+          "loudness": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LoudnessOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "missing": {
+            "items": {
+              "$ref": "#/components/schemas/MissingOut"
+            },
+            "title": "Missing",
+            "type": "array"
+          },
+          "silence": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SilenceOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "speech": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SpeechOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "time": {
+            "title": "Time",
+            "type": "number"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          },
+          "visual": {
+            "$ref": "#/components/schemas/VisualOut"
+          },
+          "window": {
+            "$ref": "#/components/schemas/SpanOut"
+          }
+        },
+        "required": [
+          "version",
+          "asset",
+          "time",
+          "window",
+          "duration",
+          "audio",
+          "loudness",
+          "silence",
+          "speech",
+          "visual",
+          "available",
+          "missing"
+        ],
+        "title": "AtOut",
         "type": "object"
       },
       "BrowseEntryOut": {
@@ -1052,6 +1180,84 @@
         "title": "LibraryScanStartResponse",
         "type": "object"
       },
+      "LoudnessOut": {
+        "properties": {
+          "curve": {
+            "items": {
+              "additionalProperties": {
+                "type": "number"
+              },
+              "type": "object"
+            },
+            "title": "Curve",
+            "type": "array"
+          },
+          "max_db": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Db"
+          },
+          "mean_db": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mean Db"
+          },
+          "min_db": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min Db"
+          },
+          "window_seconds": {
+            "title": "Window Seconds",
+            "type": "number"
+          }
+        },
+        "required": [
+          "mean_db",
+          "max_db",
+          "min_db",
+          "window_seconds",
+          "curve"
+        ],
+        "title": "LoudnessOut",
+        "type": "object"
+      },
+      "MissingOut": {
+        "properties": {
+          "how": {
+            "title": "How",
+            "type": "string"
+          },
+          "signal": {
+            "title": "Signal",
+            "type": "string"
+          }
+        },
+        "required": [
+          "signal",
+          "how"
+        ],
+        "title": "MissingOut",
+        "type": "object"
+      },
       "MomentOut": {
         "properties": {
           "context_after": {
@@ -1415,6 +1621,47 @@
         "title": "OcrStateOut",
         "type": "object"
       },
+      "OnScreenTextOut": {
+        "properties": {
+          "lines": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Lines",
+            "type": "array"
+          },
+          "more": {
+            "title": "More",
+            "type": "integer"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "time": {
+            "title": "Time",
+            "type": "number"
+          },
+          "truncated": {
+            "title": "Truncated",
+            "type": "boolean"
+          },
+          "until": {
+            "title": "Until",
+            "type": "number"
+          }
+        },
+        "required": [
+          "time",
+          "until",
+          "text",
+          "lines",
+          "truncated",
+          "more"
+        ],
+        "title": "OnScreenTextOut",
+        "type": "object"
+      },
       "OpenRequest": {
         "properties": {
           "path": {
@@ -1454,6 +1701,120 @@
           }
         },
         "title": "PlaceRequest",
+        "type": "object"
+      },
+      "PointOut": {
+        "properties": {
+          "activity": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Activity"
+          },
+          "audio": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Audio"
+          },
+          "end": {
+            "title": "End",
+            "type": "number"
+          },
+          "loudness_db": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Loudness Db"
+          },
+          "loudness_max_db": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Loudness Max Db"
+          },
+          "scene_changes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Changes"
+          },
+          "start": {
+            "title": "Start",
+            "type": "number"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          },
+          "word_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Word Count"
+          },
+          "words_per_minute": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Words Per Minute"
+          }
+        },
+        "required": [
+          "start",
+          "end",
+          "audio",
+          "loudness_db",
+          "loudness_max_db",
+          "word_count",
+          "words_per_minute",
+          "scene_changes",
+          "activity",
+          "text"
+        ],
+        "title": "PointOut",
         "type": "object"
       },
       "ProjectListOut": {
@@ -1929,6 +2290,24 @@
         "title": "RevisionConflictOut",
         "type": "object"
       },
+      "SceneChangeOut": {
+        "properties": {
+          "score": {
+            "title": "Score",
+            "type": "number"
+          },
+          "time": {
+            "title": "Time",
+            "type": "number"
+          }
+        },
+        "required": [
+          "time",
+          "score"
+        ],
+        "title": "SceneChangeOut",
+        "type": "object"
+      },
       "SceneOut": {
         "properties": {
           "score": {
@@ -2362,6 +2741,91 @@
         "title": "SilenceIntervalOut",
         "type": "object"
       },
+      "SilenceOut": {
+        "properties": {
+          "inside": {
+            "title": "Inside",
+            "type": "boolean"
+          },
+          "intervals": {
+            "items": {
+              "$ref": "#/components/schemas/SpanOut"
+            },
+            "title": "Intervals",
+            "type": "array"
+          },
+          "threshold_db": {
+            "title": "Threshold Db",
+            "type": "number"
+          },
+          "truncated": {
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "threshold_db",
+          "inside",
+          "intervals",
+          "truncated"
+        ],
+        "title": "SilenceOut",
+        "type": "object"
+      },
+      "SpanOut": {
+        "properties": {
+          "end": {
+            "title": "End",
+            "type": "number"
+          },
+          "start": {
+            "title": "Start",
+            "type": "number"
+          }
+        },
+        "required": [
+          "start",
+          "end"
+        ],
+        "title": "SpanOut",
+        "type": "object"
+      },
+      "SpeechOut": {
+        "properties": {
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "truncated": {
+            "title": "Truncated",
+            "type": "boolean"
+          },
+          "word_count": {
+            "title": "Word Count",
+            "type": "integer"
+          },
+          "words": {
+            "items": {
+              "$ref": "#/components/schemas/WordOut"
+            },
+            "title": "Words",
+            "type": "array"
+          },
+          "words_per_minute": {
+            "title": "Words Per Minute",
+            "type": "number"
+          }
+        },
+        "required": [
+          "words",
+          "text",
+          "word_count",
+          "words_per_minute",
+          "truncated"
+        ],
+        "title": "SpeechOut",
+        "type": "object"
+      },
       "StateParams": {
         "properties": {
           "min_silence_duration": {
@@ -2549,6 +3013,74 @@
           "tolerance"
         ],
         "title": "ThumbnailsInfo",
+        "type": "object"
+      },
+      "TimelineOut": {
+        "description": "Compact points over a span (`time_index.timeline_index`, version 1).",
+        "properties": {
+          "asset": {
+            "title": "Asset",
+            "type": "string"
+          },
+          "available": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "title": "Available",
+            "type": "object"
+          },
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "duration": {
+            "title": "Duration",
+            "type": "number"
+          },
+          "end": {
+            "title": "End",
+            "type": "number"
+          },
+          "missing": {
+            "items": {
+              "$ref": "#/components/schemas/MissingOut"
+            },
+            "title": "Missing",
+            "type": "array"
+          },
+          "points": {
+            "items": {
+              "$ref": "#/components/schemas/PointOut"
+            },
+            "title": "Points",
+            "type": "array"
+          },
+          "start": {
+            "title": "Start",
+            "type": "number"
+          },
+          "step": {
+            "title": "Step",
+            "type": "number"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "version",
+          "asset",
+          "duration",
+          "start",
+          "end",
+          "step",
+          "count",
+          "points",
+          "available",
+          "missing"
+        ],
+        "title": "TimelineOut",
         "type": "object"
       },
       "TrackOut": {
@@ -2966,6 +3498,95 @@
         "title": "ValidationError",
         "type": "object"
       },
+      "VisualOut": {
+        "properties": {
+          "activity": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ActivityOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "scene_change": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SceneChangeOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "scene_changes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Changes"
+          },
+          "scene_index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Index"
+          },
+          "shot_start": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shot Start"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OnScreenTextOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "scene_change",
+          "scene_changes",
+          "scene_index",
+          "shot_start",
+          "activity",
+          "description",
+          "text"
+        ],
+        "title": "VisualOut",
+        "type": "object"
+      },
       "VisualSearchOut": {
         "description": "One page of on-screen text hits (`search.visual_search`).",
         "properties": {
@@ -3094,6 +3715,29 @@
           "auth_required"
         ],
         "title": "WhoAmIOut",
+        "type": "object"
+      },
+      "WordOut": {
+        "properties": {
+          "end": {
+            "title": "End",
+            "type": "number"
+          },
+          "start": {
+            "title": "Start",
+            "type": "number"
+          },
+          "word": {
+            "title": "Word",
+            "type": "string"
+          }
+        },
+        "required": [
+          "start",
+          "end",
+          "word"
+        ],
+        "title": "WordOut",
         "type": "object"
       }
     },
@@ -3387,6 +4031,81 @@
           }
         },
         "summary": "Get Asset"
+      }
+    },
+    "/api/v1/assets/{asset_id}/at": {
+      "get": {
+        "description": "Everything stored about the asset around `time` (seconds): the audio class, loudness, silences, words\nspoken, scene cuts and screen activity, and on-screen text, in a `window` (seconds, default 10, at most 600)\ncentred on `time` and clamped to the asset. A signal that was never computed is `null`; `available` and\n`missing` (with how to make each) say which. Never decodes or runs a model. 404 for an unknown asset; 422 for\na negative time, a time beyond the duration or a bad window.",
+        "operationId": "what_is_happening_api_v1_assets__asset_id__at_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "asset_id",
+            "required": true,
+            "schema": {
+              "title": "Asset Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "time",
+            "required": true,
+            "schema": {
+              "title": "Time",
+              "type": "number"
+            }
+          },
+          {
+            "in": "query",
+            "name": "window",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Window"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AtOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedOut"
+                }
+              }
+            },
+            "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "What Is Happening"
       }
     },
     "/api/v1/assets/{asset_id}/contact-sheet": {
@@ -4748,6 +5467,104 @@
           }
         },
         "summary": "Get Thumbnails Info"
+      }
+    },
+    "/api/v1/assets/{asset_id}/timeline": {
+      "get": {
+        "description": "Compact points, one per `step` seconds (default 60, raised so that there are at most 500 points) from\n`start` to `end` (default the whole asset): audio class, mean and max loudness, word count and rate, scene\ncuts, mean activity and the first line of on-screen text. 422 when the span, step or number of points is\nnot allowed.",
+        "operationId": "timeline_index_api_v1_assets__asset_id__timeline_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "asset_id",
+            "required": true,
+            "schema": {
+              "title": "Asset Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "start",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Start"
+            }
+          },
+          {
+            "in": "query",
+            "name": "end",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "End"
+            }
+          },
+          {
+            "in": "query",
+            "name": "step",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Step"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TimelineOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedOut"
+                }
+              }
+            },
+            "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Timeline Index"
       }
     },
     "/api/v1/assets/{asset_id}/transcribe": {
