@@ -343,6 +343,35 @@ gives the time and pixel position of every tile. Over HTTP it is
 rendered); MCP has `get_contact_sheet`, an image block plus the tile times. Timestamps need a TrueType font (the
 Docker image has one; elsewhere set `SPLIT_VIDEO_FONT`).
 
+### On-screen text (`ocr`, optional)
+
+A coding stream is about what is on the screen: file names, error messages, terminal output. This reads the screen
+with Tesseract at each scene change and every 30 seconds, stores the text with its time, and lets you search it. It
+needs the `tesseract` program, which is not in the default image (+65 MB, no model download). Build the image with it:
+
+```bash
+docker build --build-arg WITH_OCR=1 -t split-video:ocr .
+
+docker run --rm -v "$PWD":/data split-video:ocr scenes stream.mp4 --root /data     # optional: also reads each scene change
+docker run --rm -v "$PWD":/data split-video:ocr ocr stream.mp4 --root /data [--interval 30] [--max-frames 2000] [--force] [--json]
+docker run --rm -v "$PWD":/data split-video:ocr ocr-search stream.mp4 "test_cut_burst" --root /data [--start 600 --end 900] [--limit 20] [--json]
+docker run --rm -v "$PWD":/data split-video:ocr ocr-text stream.mp4 --root /data --start 600 --end 900
+```
+
+Frames come from the original file at 1280 px wide (the 640 px proxy cannot read code), are prepared with ffmpeg
+(grayscale, inverted when the picture is dark, upscaled 2x) and read four at a time; a frame that looks like the last
+one read is skipped. Run `scenes` first if you want a frame at every scene change, otherwise only the regular
+frames are read (the output says so). Search is fuzzy and by word, because OCR is imperfect (`test_cut_burst`
+also finds `test cut burst`, and a glued or slightly misread word still matches, with a lower score): you get the
+time the text first appeared, when it was replaced, the best-matching line and the lines around it. Results are
+stored next to the video (format in `src/split_video/ocr.py`) and go stale if the file changes. Over HTTP it is an
+`ocr` job (`POST /api/v1/assets/{id}/ocr`, with progress by frame and cancel), read with `GET /api/v1/assets/{id}/ocr`
+and `GET /api/v1/assets/{id}/ocr/search?q=` (paged); MCP has `ocr_asset`, `get_ocr` and `ocr_search`, and
+`list_assets` shows `ocr`. Outside Docker: `sudo apt install tesseract-ocr tesseract-ocr-eng` (or `brew install
+tesseract`). Without it the CLI exits with code 4, `POST .../ocr` answers 501 and the MCP tool returns a tool error,
+all with the install hint. The choice of engine and the numbers behind it are in
+[`docs/decisions/vision-and-ocr.md`](docs/decisions/vision-and-ocr.md).
+
 ### Compose: combine clips, overlays, audio and titles (`compose`)
 
 Besides splitting one recording, you can build a video from several files.

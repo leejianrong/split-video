@@ -22,6 +22,8 @@ NO_LEGACY_ALIAS = {
     "/api/v1/assets/{asset_id}/transcript",
     "/api/v1/assets/{asset_id}/transcript/search",
     "/api/v1/assets/{asset_id}/scenes",
+    "/api/v1/assets/{asset_id}/ocr",
+    "/api/v1/assets/{asset_id}/ocr/search",
     "/api/v1/assets/{asset_id}/frame",
     "/api/v1/assets/{asset_id}/contact-sheet",
     "/api/v1/assets/{asset_id}/contact-sheet/info",

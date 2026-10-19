@@ -6,7 +6,7 @@ the editor's HTTP API, a future event stream (SPL-37) and a hosted worker pool (
 who owns a job) all talk to the same thing. `InProcessJobQueue` is the local implementation:
 a bounded pool of daemon threads inside the server process. It is not a distributed queue.
 
-Job kinds are plain strings: `export`, `analysis`, `render`, `library_scan`, `proxy`, `transcription` and `scene_analysis`.
+Job kinds are plain strings: `export`, `analysis`, `render`, `library_scan`, `proxy`, `transcription`, `scene_analysis` and `ocr`.
 
 Cancellation is cooperative. `cancel` flags the job and runs the callbacks its work registered
 with `JobContext.on_cancel` (that is how a running ffmpeg is terminated at once); the work
@@ -40,6 +40,7 @@ LIBRARY_SCAN = "library_scan"
 PROXY = "proxy"
 TRANSCRIPTION = "transcription"
 SCENE_ANALYSIS = "scene_analysis"
+OCR = "ocr"
 
 JobState = Literal["queued", "running", "done", "error", "cancelled"]
 FINISHED_STATES: frozenset[str] = frozenset({"done", "error", "cancelled"})

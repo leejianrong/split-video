@@ -1,4 +1,4 @@
-"""The work functions the job queue runs: export, audio analysis, timeline render, proxies, scans, transcription and scene analysis.
+"""The work functions the job queue runs: export, audio analysis, timeline render, proxies, scans, transcription, scene analysis and on-screen text.
 
 Each `*_work` builds a `Callable[[JobContext], Any]` for `JobQueue.submit`. They are thin: the
 actual operations are `project.run_export`, `project.run_analysis` and
@@ -12,7 +12,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from split_video import library, project, proxy, scenes, timeline_service, transcribe
+from split_video import library, ocr, project, proxy, scenes, timeline_service, transcribe
 from split_video.editor import classify
 from split_video.editor.cache import ClassificationCache
 from split_video.jobs import PROXY, JobContext, JobQueue
@@ -158,6 +158,30 @@ def scene_work(
         ctx.progress(0, SCENE_STEPS)
         return scenes.analyze(
             media, asset_id, threshold=threshold, min_gap=min_gap, force=force, on_progress=on_progress, cancel=ctx
+        )
+
+    return work
+
+
+def ocr_work(
+    media: MediaStore,
+    asset_id: str,
+    *,
+    interval: float = ocr.DEFAULT_INTERVAL,
+    max_frames: int = ocr.DEFAULT_MAX_FRAMES,
+    force: bool = False,
+) -> Callable[[JobContext], dict[str, Any]]:
+    """Read the asset's on-screen text (`ocr.recognize`). Progress counts frames (the total is known once the frames
+    are chosen); the result is the stored document's counts `{asset, engine, duration, interval, max_frames,
+    scenes_used, frames, scene_frames, ocr_frames, skipped_unchanged, capped, frames_before_cap, failed_frames,
+    note, made}` (the text itself is `GET /assets/{id}/ocr`)."""
+
+    def work(ctx: JobContext) -> dict[str, Any]:
+        def on_progress(done: int, total: int) -> None:
+            ctx.progress(done, total)
+
+        return ocr.recognize(
+            media, asset_id, interval=interval, max_frames=max_frames, force=force, on_progress=on_progress, cancel=ctx
         )
 
     return work

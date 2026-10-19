@@ -248,6 +248,11 @@
             "title": "Mtime",
             "type": "number"
           },
+          "ocr": {
+            "default": false,
+            "title": "Ocr",
+            "type": "boolean"
+          },
           "path": {
             "title": "Path",
             "type": "string"
@@ -1013,6 +1018,279 @@
           "to_index"
         ],
         "title": "MoveTrackRequest",
+        "type": "object"
+      },
+      "OcrHitOut": {
+        "properties": {
+          "context_after": {
+            "title": "Context After",
+            "type": "string"
+          },
+          "context_before": {
+            "title": "Context Before",
+            "type": "string"
+          },
+          "end": {
+            "title": "End",
+            "type": "number"
+          },
+          "frame": {
+            "title": "Frame",
+            "type": "integer"
+          },
+          "matched_tokens": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Matched Tokens",
+            "type": "array"
+          },
+          "score": {
+            "title": "Score",
+            "type": "number"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "time": {
+            "title": "Time",
+            "type": "number"
+          }
+        },
+        "required": [
+          "source",
+          "time",
+          "end",
+          "score",
+          "text",
+          "context_before",
+          "context_after",
+          "matched_tokens",
+          "frame"
+        ],
+        "title": "OcrHitOut",
+        "type": "object"
+      },
+      "OcrPageOut": {
+        "description": "One page of the stored text (`ocr.ocr_range`).",
+        "properties": {
+          "asset": {
+            "title": "Asset",
+            "type": "string"
+          },
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "duration": {
+            "title": "Duration",
+            "type": "number"
+          },
+          "engine": {
+            "title": "Engine",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/OcrStateOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "range": {
+            "$ref": "#/components/schemas/OcrRangeBoundsOut"
+          },
+          "total_in_range": {
+            "title": "Total In Range",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "asset",
+          "engine",
+          "duration",
+          "range",
+          "total_in_range",
+          "count",
+          "items",
+          "next_cursor"
+        ],
+        "title": "OcrPageOut",
+        "type": "object"
+      },
+      "OcrRangeBoundsOut": {
+        "properties": {
+          "end": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End"
+          },
+          "start": {
+            "title": "Start",
+            "type": "number"
+          }
+        },
+        "required": [
+          "start",
+          "end"
+        ],
+        "title": "OcrRangeBoundsOut",
+        "type": "object"
+      },
+      "OcrRequest": {
+        "properties": {
+          "force": {
+            "default": false,
+            "title": "Force",
+            "type": "boolean"
+          },
+          "interval": {
+            "default": 30.0,
+            "minimum": 1.0,
+            "title": "Interval",
+            "type": "number"
+          },
+          "max_frames": {
+            "default": 2000,
+            "maximum": 10000.0,
+            "minimum": 1.0,
+            "title": "Max Frames",
+            "type": "integer"
+          }
+        },
+        "title": "OcrRequest",
+        "type": "object"
+      },
+      "OcrSearchOut": {
+        "description": "One page of hits for some text (`ocr.ocr_search`).",
+        "properties": {
+          "asset": {
+            "title": "Asset",
+            "type": "string"
+          },
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "hits": {
+            "items": {
+              "$ref": "#/components/schemas/OcrHitOut"
+            },
+            "title": "Hits",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "query": {
+            "title": "Query",
+            "type": "string"
+          },
+          "range": {
+            "$ref": "#/components/schemas/OcrRangeBoundsOut"
+          },
+          "tokens": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tokens",
+            "type": "array"
+          },
+          "total_matches": {
+            "title": "Total Matches",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "asset",
+          "query",
+          "tokens",
+          "range",
+          "total_matches",
+          "count",
+          "hits",
+          "next_cursor"
+        ],
+        "title": "OcrSearchOut",
+        "type": "object"
+      },
+      "OcrStartResponse": {
+        "properties": {
+          "job_id": {
+            "title": "Job Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "job_id"
+        ],
+        "title": "OcrStartResponse",
+        "type": "object"
+      },
+      "OcrStateOut": {
+        "properties": {
+          "lines": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Lines",
+            "type": "array"
+          },
+          "source_scene": {
+            "title": "Source Scene",
+            "type": "boolean"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "time": {
+            "title": "Time",
+            "type": "number"
+          },
+          "until": {
+            "title": "Until",
+            "type": "number"
+          }
+        },
+        "required": [
+          "time",
+          "until",
+          "text",
+          "lines",
+          "source_scene"
+        ],
+        "title": "OcrStateOut",
         "type": "object"
       },
       "OpenRequest": {
@@ -3215,6 +3493,324 @@
           }
         },
         "summary": "Get Frame"
+      }
+    },
+    "/api/v1/assets/{asset_id}/ocr": {
+      "get": {
+        "description": "The stored on-screen text that was up at some point between `start` and `end` seconds (the whole\nrecording by default), one page of `limit` states (default 20, at most 200) with a `next_cursor` to pass back\nuntil it is null. Each item is `{time, until, text, lines, source_scene}`. 404 until an ocr job has run, or\nafter the file changed; 422 for a bad span, limit or cursor.",
+        "operationId": "get_ocr_api_v1_assets__asset_id__ocr_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "asset_id",
+            "required": true,
+            "schema": {
+              "title": "Asset Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "start",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Start"
+            }
+          },
+          {
+            "in": "query",
+            "name": "end",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "End"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Limit"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OcrPageOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedOut"
+                }
+              }
+            },
+            "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Ocr"
+      },
+      "post": {
+        "description": "Queue reading the text on the asset's screen: a frame at each scene change (when scenes exist) and every\n`interval` seconds, read from the original with Tesseract. The job's result is `{asset, engine, duration,\ninterval, max_frames, scenes_used, frames, scene_frames, ocr_frames, skipped_unchanged, capped,\nframes_before_cap, failed_frames, note, made}`; read the text with `GET /assets/{id}/ocr` and search it with\n`GET /assets/{id}/ocr/search`. 501 (detail: the install hint) without the tesseract program; 422 for an\naudio-only asset.",
+        "operationId": "start_ocr_api_v1_assets__asset_id__ocr_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "asset_id",
+            "required": true,
+            "schema": {
+              "title": "Asset Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/OcrRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Request"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OcrStartResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedOut"
+                }
+              }
+            },
+            "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Start Ocr"
+      }
+    },
+    "/api/v1/assets/{asset_id}/ocr/search": {
+      "get": {
+        "description": "Where the text `q` was on screen: fuzzy and token-based (case-insensitive, split on anything that is not a\nletter or digit, so `test_cut_burst` finds `test cut burst`; every token must be in the same frame). Hits best\nfirst with `source` (\"ocr\"), `time`, `end`, `score` (0..1), `text` (the best line), `context_before` /\n`context_after` (`context` lines each, default 1, at most 10) and `matched_tokens`; `limit` per page (default\n20, at most 200) and a `next_cursor`. `start` / `end` keep text that was up in that span. 404 without stored\ntext; 422 for an empty or over-long query (500 characters), a bad span, limit or cursor.",
+        "operationId": "search_ocr_api_v1_assets__asset_id__ocr_search_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "asset_id",
+            "required": true,
+            "schema": {
+              "title": "Asset Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": true,
+            "schema": {
+              "title": "Q",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "start",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Start"
+            }
+          },
+          {
+            "in": "query",
+            "name": "end",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "End"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Limit"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "context",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Context"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OcrSearchOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedOut"
+                }
+              }
+            },
+            "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Search Ocr"
       }
     },
     "/api/v1/assets/{asset_id}/proxy": {
