@@ -70,7 +70,7 @@ Reading and searching
 `load`, `info`, `has_ocr`, `excerpt` (a document cut to a span), `ocr_between(media, asset, start, end)` (the text
 states on screen in a span: `{time, until, text, lines, source_scene}`, what a media report calls) and
 `ocr_range` (the same, paged, with opaque cursors) read the stored text. `ocr_search` finds text, and is the function
-a combined search (SPL-99) merges with `transcript_search.transcript_search`: its hits all carry
+the combined search (`search.py`, SPL-99) merges, through `ocr_hits` (all hits, unpaged), with `transcript_search.transcript_hits`: its hits all carry
 `source: "ocr"`, `time`, `score` (0..1) and `text`.
 
 Tesseract's recall is imperfect (token recall about 0.83 on code, exact lines about 40 %) and it splits `a_b` into
@@ -612,28 +612,23 @@ def _line_matches(line_tokens: list[str], query: list[str], matches: dict[str, d
     return (0.5 if found == len(set(query)) else 0.0), found
 
 
-def ocr_search(
+def ocr_hits(
     media: MediaStore,
     asset_id: str,
     query: str,
     *,
     start: float | None = None,
     end: float | None = None,
-    limit: int | None = None,
-    cursor: str | None = None,
     context: int | None = None,
-) -> dict[str, Any]:
-    """Where the text `query` was on screen: fuzzy, token-based, best first (see the module docstring). Returns
-    `{asset, query, tokens, range: {start, end}, total_matches, count, hits, next_cursor}`; each hit is
-    `{source: "ocr", time, end, score, text, context_before, context_after, matched_tokens, frame}` (`frame` indexes
-    the stored document's `frames`)."""
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """Every hit for `query`, best first (the ranking of the module docstring), unpaged: `(document, hits)` with
+    the hits as `ocr_search` returns them. What a search over several sources (`search.py`) merges."""
     if not isinstance(query, str) or len(query) > MAX_QUERY_CHARS:
         raise OcrQueryError(f"query must be text of at most {MAX_QUERY_CHARS} characters")
     wanted = tokens_of(query)
     if not wanted:
         raise OcrQueryError("query is empty: give a word or phrase to look for")
     lo, hi = _span(start, end)
-    size = _bounded("limit", limit, DEFAULT_SEARCH_LIMIT, 1, MAX_LIMIT)
     around = _bounded("context", context, DEFAULT_CONTEXT, 0, MAX_CONTEXT)
     document = _require(media, asset_id)
     states = [s for s in _states(document) if _overlaps(s, lo, hi)]
@@ -689,19 +684,41 @@ def ocr_search(
                 )
             )
     ranked.sort(key=lambda r: r[:3])
+    return document, [r[3] for r in ranked]
+
+
+def ocr_search(
+    media: MediaStore,
+    asset_id: str,
+    query: str,
+    *,
+    start: float | None = None,
+    end: float | None = None,
+    limit: int | None = None,
+    cursor: str | None = None,
+    context: int | None = None,
+) -> dict[str, Any]:
+    """Where the text `query` was on screen: fuzzy, token-based, best first (see the module docstring). Returns
+    `{asset, query, tokens, range: {start, end}, total_matches, count, hits, next_cursor}`; each hit is
+    `{source: "ocr", time, end, score, text, context_before, context_after, matched_tokens, frame}` (`frame` indexes
+    the stored document's `frames`)."""
+    size = _bounded("limit", limit, DEFAULT_SEARCH_LIMIT, 1, MAX_LIMIT)
+    document, hits = ocr_hits(media, asset_id, query, start=start, end=end, context=context)
+    wanted = tokens_of(query)
+    lo, hi = _span(start, end)
     tag = _tag("search", wanted, lo, _stop(hi))
-    at = _decode(cursor, "hit", len(ranked), tag) if cursor else 0
-    page = ranked[at : at + size]
+    at = _decode(cursor, "hit", len(hits), tag) if cursor else 0
+    page = hits[at : at + size]
     nxt = at + len(page)
     return {
         "asset": document["asset"],
         "query": query,
         "tokens": wanted,
         "range": {"start": lo, "end": _stop(hi)},
-        "total_matches": len(ranked),
+        "total_matches": len(hits),
         "count": len(page),
-        "hits": [r[3] for r in page],
-        "next_cursor": _encode("hit", nxt, len(ranked), tag) if nxt < len(ranked) else None,
+        "hits": page,
+        "next_cursor": _encode("hit", nxt, len(hits), tag) if nxt < len(hits) else None,
     }
 
 

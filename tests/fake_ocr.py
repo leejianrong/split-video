@@ -110,3 +110,31 @@ class ClipEngine:
                 return "\n".join(text for text, _, _ in screen_clip.SCENES[scene][1])
 
         return Engine(shutil.which("ffmpeg"), *args, **kwargs)
+
+
+def store_ocr(media, asset, screens, *, duration=11_000.0):
+    """Store an on-screen text document for `asset` without running anything: `screens` is `[(time, text)]`, each
+    on screen until the next one. Saved the way `ocr.recognize` saves it (document and counts entry)."""
+    entries = []
+    for k, (t, text) in enumerate(screens):
+        until = screens[k + 1][0] if k + 1 < len(screens) else duration
+        norm, lines = ocr.normalise(text)
+        entries.append(
+            {"time": t, "text": norm, "lines": lines, "changed": True, "source_scene": False, "until": until}
+        )
+    document = {
+        "version": ocr.VERSION,
+        "asset": asset.id,
+        "engine": "fake-ocr 1.0",
+        "duration": duration,
+        "interval": 30.0,
+        "max_frames": 2000,
+        "scenes_used": False,
+        "capped": False,
+        "frames_before_cap": len(entries),
+        "frames": entries,
+    }
+    summary = {k: v for k, v in document.items() if k != "frames"} | {"frames": len(entries)}
+    media.save_cache(asset.path, ocr.CACHE_NAME, document)
+    media.save_cache(asset.path, ocr.INFO_NAME, summary)
+    return document
