@@ -22,6 +22,7 @@ from split_video.editor.app import create_app
 from split_video.editor.events import EventBus, EventsConfig
 from split_video.editor.schemas import StateParams
 from split_video.editor.serve import make_server
+from split_video.errors import RevisionConflictError
 from split_video.jobs import InProcessJobQueue
 from split_video.local_store import LocalProjectStore
 from split_video.store import InMemoryProjectStore
@@ -344,6 +345,49 @@ def test_every_in_process_write_is_one_local_event_even_with_a_fast_watcher(live
     assert {d["source"] for d in data} == {"local"}
 
 
+def test_a_write_the_watcher_sees_before_its_announcement_is_still_one_local_event(live, monkeypatch):
+    """SPL-106: force the bad interleaving. The file is replaced, then the writer is held up (as a
+    starved thread under load is) until the watcher has polled, seen the new revision and run its
+    confirm step. The write must still be one `local` event, not `external` (and never dropped)."""
+    from split_video import local_store
+
+    server = live(EventsConfig(poll_interval=0.01, keepalive_interval=5, confirm_grace=0.01, progress_interval=0))
+    stream = server.stream(params={"kind": "project"})
+    confirmed = threading.Event()
+    real_on_peek = server.bus._on_peek
+
+    def watching_on_peek(snapshot):
+        real_on_peek(snapshot)  # the loop has now handled a poll that saw the new file
+        if ("timeline", "held") in snapshot:
+            confirmed.set()
+
+    monkeypatch.setattr(server.bus, "_on_peek", watching_on_peek)
+    real_announce = local_store.announce_revision
+
+    def late_announce(change):
+        assert confirmed.wait(5), "the watcher never noticed the new file"
+        time.sleep(0.1)  # longer than confirm_grace: the old code called the write external here
+        real_announce(change)
+
+    monkeypatch.setattr(local_store, "announce_revision", late_announce)
+    assert server.http.post("/api/v1/compose/projects", json={"name": "held"}).status_code == 200
+    event = stream.next(5)
+    assert event["data"] == {"kind": "timeline", "project_id": "held", "revision": 0, "source": "local"}
+    assert stream.quiet_for(0.3) == []
+
+
+def test_a_failed_write_does_not_hide_an_external_edit(live, tmp_path):
+    server = live(EventsConfig(poll_interval=0.01, keepalive_interval=5, confirm_grace=0.01, progress_interval=0))
+    server.http.post("/api/v1/compose/projects", json={"name": "calm"})
+    stream = server.stream(params={"kind": "project"})
+    from split_video import timeline
+
+    with pytest.raises(RevisionConflictError):
+        server.bus._store.update_timeline("calm", lambda p: p, base_revision=99)  # conflict: begins, then aborts
+    LocalProjectStore(tmp_path).save_timeline("calm", timeline.empty_project())  # another store: external
+    assert stream.next(5)["data"] == {"kind": "timeline", "project_id": "calm", "revision": 1, "source": "external"}
+
+
 def test_a_split_project_save_emits_a_local_event_with_the_new_revision(live, three_songs_clip):
     server = live(root=three_songs_clip.parent)
     stream = server.stream(params={"kind": "project"})
@@ -589,7 +633,7 @@ def test_listeners_and_the_watcher_are_cleaned_up_after_a_disconnect(live):
     a, b = server.stream(), server.stream()
     assert server.bus.client_count == 2 and server.bus.listening and server.bus.watcher_running
     assert len(server.jobs._listeners) == 1  # one subscription per app, not per client
-    assert sum(fn == server.bus._on_revision for fn in store_module._listeners) == 1
+    assert sum(sub.listener == server.bus._on_revision for sub in store_module._listeners) == 1
     a.close()
     _wait_for(lambda: server.bus.client_count == 1)
     assert server.bus.watcher_running  # one client left
@@ -598,7 +642,7 @@ def test_listeners_and_the_watcher_are_cleaned_up_after_a_disconnect(live):
     _wait_for(lambda: not server.bus.watcher_running)  # the poller stops at once
     _wait_for(lambda: not server.bus.listening)  # listeners go after the short linger
     assert server.jobs._listeners == []
-    assert server.bus._on_revision not in store_module._listeners
+    assert all(sub.listener != server.bus._on_revision for sub in store_module._listeners)
     _wait_for(lambda: not any(t.name == "events-watcher" for t in threading.enumerate()))
 
 
