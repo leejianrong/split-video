@@ -225,6 +225,10 @@
             "title": "Has Audio",
             "type": "boolean"
           },
+          "has_video": {
+            "title": "Has Video",
+            "type": "boolean"
+          },
           "height": {
             "anyOf": [
               {
@@ -275,6 +279,7 @@
           "mtime",
           "duration",
           "has_audio",
+          "has_video",
           "width",
           "height",
           "fps",
@@ -915,6 +920,30 @@
           "created_at"
         ],
         "title": "JobOut",
+        "type": "object"
+      },
+      "LibraryScanRequest": {
+        "properties": {
+          "folder": {
+            "default": "",
+            "title": "Folder",
+            "type": "string"
+          }
+        },
+        "title": "LibraryScanRequest",
+        "type": "object"
+      },
+      "LibraryScanStartResponse": {
+        "properties": {
+          "job_id": {
+            "title": "Job Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "job_id"
+        ],
+        "title": "LibraryScanStartResponse",
         "type": "object"
       },
       "MoveRequest": {
@@ -4179,6 +4208,62 @@
           }
         },
         "summary": "Cancel"
+      }
+    },
+    "/api/v1/library/scan": {
+      "post": {
+        "description": "Queue a scan of `folder`: every new or changed media file under it is probed once and recorded\nas an asset (see `GET /assets`). Files already recorded are not probed again. The job's result is\n`{folder, total, added, copies, unchanged, skipped}`.",
+        "operationId": "scan_library_api_v1_library_scan_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/LibraryScanRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Request"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryScanStartResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedOut"
+                }
+              }
+            },
+            "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Scan Library"
       }
     },
     "/api/v1/media/asset/{asset_id}": {

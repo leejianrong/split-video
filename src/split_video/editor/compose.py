@@ -96,6 +96,7 @@ class AssetOut(BaseModel):
     mtime: float
     duration: float
     has_audio: bool
+    has_video: bool
     width: int | None
     height: int | None
     fps: float | None

@@ -11,7 +11,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from split_video import compose_cli, project_cli
+from split_video import compose_cli, library_cli, project_cli
 from split_video.editor.app import create_app
 from split_video.editor.auth import TOKEN_ENV, authenticator_from_env
 from split_video.editor.schemas import StateParams
@@ -247,3 +247,4 @@ def mcp_cmd(
 
 project_cli.register(app)
 compose_cli.register(app)
+library_cli.register(app)

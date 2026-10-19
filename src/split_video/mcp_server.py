@@ -33,7 +33,7 @@ from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp_types import ToolAnnotations
 
-from split_video import assets, project, timeline, timeline_service
+from split_video import library, project, timeline, timeline_service
 from split_video.editor.cache import ClassificationCache
 from split_video.editor.classify import ModelNotFoundError
 from split_video.errors import RevisionConflictError
@@ -83,7 +83,8 @@ remove_timeline_clip / set_timeline_transition -> show_timeline to review ->
 render_timeline. Clips are numbered from 1 in track order.
 
 Clips reference media by asset id (a_ plus 16 hex digits), not path: list_assets shows
-the ids, paths and stream info of every file a timeline has used, and
+the ids, paths and stream info of every file in the library (scan_library adds a folder's
+media; a timeline clip's file is added too), and
 add_clip_to_timeline takes either a video path or an asset id. Timeline results show
 each clip's asset id and its file's current path, so a renamed file is found again.
 
@@ -376,15 +377,25 @@ def create_server(root: Path, store: ProjectStore | None = None, media: MediaSto
 
     @server.tool(annotations=_READ_ONLY)
     async def list_assets() -> dict[str, Any]:
-        """List the assets: every media file a timeline has used, with its asset id (stable, derived
+        """List the library: every media file scanned or used by a timeline, with its asset id (stable, derived
         from the file's content, so it survives renames), current path, duration, size and stream
         info (width, height, fps, has_audio). `present` is false if the file is missing."""
 
-        def work() -> list[dict[str, Any]]:
-            with assets.open_book(media) as book:
-                return [a.summary(book.present(a)) for a in book.list()]
+        return {"assets": await run(library.listing, media)}
 
-        return {"assets": await run(work)}
+    @server.tool(annotations=_EDITS_PROJECT)
+    async def scan_library(folder: str = "") -> dict[str, Any]:
+        """Scan `folder` (default: the whole workspace, recursively) and record every media file as
+        an asset, so list_assets shows it with duration, size and stream info. Incremental: files
+        already recorded and unchanged are not probed again. Returns the counts, the newly `added`
+        assets (id and path), `copies` (paths whose bytes are already in the library) and `skipped`
+        files that could not be read as media, each with a reason."""
+        try:
+            return (await run(library.scan, media, folder)).to_dict()
+        except MediaOutsideRootError:
+            raise ToolError(f"{folder} is outside the allowed root directory") from None
+        except MediaNotFoundError:
+            raise ToolError(f"folder not found: {folder}") from None
 
     @server.tool(annotations=_EDITS_PROJECT)
     async def add_clip_to_timeline(
