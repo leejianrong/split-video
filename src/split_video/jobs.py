@@ -6,7 +6,7 @@ the editor's HTTP API, a future event stream (SPL-37) and a hosted worker pool (
 who owns a job) all talk to the same thing. `InProcessJobQueue` is the local implementation:
 a bounded pool of daemon threads inside the server process. It is not a distributed queue.
 
-Job kinds are plain strings: `export`, `analysis`, `render`, and `transcription` (reserved,
+Job kinds are plain strings: `export`, `analysis`, `render`, `library_scan`, and `transcription` (reserved,
 nothing implements it yet).
 
 Cancellation is cooperative. `cancel` flags the job and runs the callbacks its work registered
@@ -37,6 +37,7 @@ log = logging.getLogger(__name__)
 EXPORT = "export"
 ANALYSIS = "analysis"
 RENDER = "render"
+LIBRARY_SCAN = "library_scan"
 TRANSCRIPTION = "transcription"
 
 JobState = Literal["queued", "running", "done", "error", "cancelled"]

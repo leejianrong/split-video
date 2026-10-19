@@ -15,9 +15,11 @@ GUARDED = [
     "timeline_ops.py",
     "project_cli.py",
     "compose_cli.py",
+    "library_cli.py",
     "mcp_server.py",
     "editor/app.py",
     "editor/compose.py",
+    "editor/library.py",
 ]
 FORBIDDEN = re.compile(
     r"_project_path|project_path|FILE_SUFFIX|\.split-video-project\.json|\.split-video-timeline\.json"
@@ -37,6 +39,7 @@ ENGINE = [
     "timeline.py",
     "timeline_ops.py",
     "assets.py",
+    "library.py",
     "render.py",
     "editor/cache.py",
     "jobs.py",
@@ -47,7 +50,15 @@ ENGINE = [
 ]
 # Adapters may take a `Path` root at their entry point (and app.py serves its static dir) but
 # must not do filesystem work or root-relative arithmetic on media themselves.
-ADAPTERS = ["mcp_server.py", "editor/app.py", "editor/media_response.py", "project_cli.py", "compose_cli.py"]
+ADAPTERS = [
+    "mcp_server.py",
+    "editor/app.py",
+    "editor/media_response.py",
+    "editor/library.py",
+    "project_cli.py",
+    "compose_cli.py",
+    "library_cli.py",
+]
 MEDIA_FORBIDDEN = re.compile(
     r"\.split-video-cache|CACHE_DIR_NAME|cache_store|resolve_within_root|resolve_source|relative_source"
     r"|\.relative_to\(|\.with_name\(|\.glob\(|\.rglob\(|\.stat\(\)"

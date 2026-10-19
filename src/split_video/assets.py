@@ -107,6 +107,10 @@ class Asset:
     copies: dict[str, tuple[int, float]] = field(default_factory=dict)
 
     @property
+    def has_video(self) -> bool:
+        return self.width is not None
+
+    @property
     def info(self) -> MediaInfo:
         return MediaInfo(self.duration, self.width, self.height, self.has_audio, self.fps)
 
@@ -130,7 +134,13 @@ class Asset:
         """The asset as the CLI, API and MCP show it: the row with `copies` as a list of paths, and `present`."""
         row = self.to_dict()
         row.pop("copies", None)
-        return {"id": self.id, **row, "copies": sorted(self.copies), "present": present}
+        return {
+            "id": self.id,
+            **row,
+            "has_video": self.has_video,
+            "copies": sorted(self.copies),
+            "present": present,
+        }
 
 
 class Located(NamedTuple):
@@ -172,11 +182,11 @@ def sample_id(media: MediaStore, media_id: str, size: int) -> str:
     return ID_PREFIX + digest.hexdigest()[:ID_HEX_DIGITS]
 
 
-def iter_media_ids(media: MediaStore) -> Iterator[tuple[str, int]]:
-    """Every media file in the workspace as (media id, depth), breadth first.
-    Folders are visited once even through symlink loops."""
-    queue: list[tuple[str, int]] = [("", 0)]
-    seen = {""}
+def iter_media_ids(media: MediaStore, start: str = "") -> Iterator[tuple[str, int]]:
+    """Every media file under the folder `start` (default: the whole workspace) as (media id, depth),
+    breadth first. Folders are visited once even through symlink loops."""
+    queue: list[tuple[str, int]] = [(start, 0)]
+    seen = {start}
     while queue:
         directory, depth = queue.pop(0)
         try:
@@ -251,11 +261,21 @@ class AssetBook:
         if not self.media.is_file(media_id):
             raise SourceNotFoundError(f"file not found: {path}")
         stat = self.media.stat(media_id)
+        unchanged = self.unchanged(media_id, stat)
+        if unchanged is not None:
+            return unchanged  # unchanged since it was registered: nothing to hash
+        return self._adopt(media_id, stat, self._digest(media_id, stat))
+
+    def unchanged(self, media_id: str, stat: MediaStat) -> Asset | None:
+        """The row for the file at `media_id` if its size and mtime are as recorded (as its path or a copy)."""
         for row in self._rows.values():
             known = (row.size, row.mtime) if row.path == media_id else row.copies.get(media_id)
             if known == (stat.size, stat.mtime):
-                return row  # unchanged since it was registered: nothing to hash
-        return self._adopt(media_id, stat, self._digest(media_id, stat))
+                return row
+        return None
+
+    def __len__(self) -> int:
+        return len(self._rows)
 
     def _digest(self, media_id: str, stat: MediaStat) -> str:
         key = (media_id, stat.size, stat.mtime)

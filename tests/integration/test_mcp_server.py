@@ -51,6 +51,7 @@ async def test_exposes_the_documented_tools(root):
         "export",
         "list_timelines",
         "list_assets",
+        "scan_library",
         "create_timeline",
         "show_timeline",
         "add_clip_to_timeline",

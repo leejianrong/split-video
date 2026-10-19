@@ -12,7 +12,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from split_video import project, timeline_service
+from split_video import library, project, timeline_service
 from split_video.editor import classify
 from split_video.editor.cache import ClassificationCache
 from split_video.jobs import JobContext
@@ -93,5 +93,18 @@ def render_work(
 
         timeline_service.run_render(timeline, media, out_id, on_progress, cancel=ctx)
         return {"output": filename}
+
+    return work
+
+
+def library_scan_work(media: MediaStore, folder: str) -> Callable[[JobContext], dict[str, Any]]:
+    """Scan `folder` into the asset table. Progress counts files, the message is the file just handled;
+    the result is `ScanReport.to_dict()`."""
+
+    def work(ctx: JobContext) -> dict[str, Any]:
+        def on_progress(done: int, total: int, path: str) -> None:
+            ctx.progress(done, total, message=path)
+
+        return library.scan(media, folder, on_progress=on_progress, cancel=ctx).to_dict()
 
     return work

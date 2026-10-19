@@ -196,6 +196,22 @@ split-video analyze liveshow.mp4                                # YAMNet classif
 `propose` only prints unless you pass `--apply`, which replaces any splits
 already saved.
 
+### Library: catalogue a folder of recordings (`library`)
+
+```bash
+docker run --rm -v "$PWD":/data ghcr.io/leejianrong/split-video library scan /data
+docker run --rm -v "$PWD":/data ghcr.io/leejianrong/split-video library list /data --json
+```
+
+`library scan` walks the folder recursively and records every media file as an
+asset (duration, size, video and audio, width, height, fps) in
+`.split-video-assets.json` next to the media. A second scan probes only new or
+changed files, and a 3-hour recording is identified from about 3 MiB of
+samples plus one ffprobe, not read in full. Files that are not readable media
+are listed as skipped with a reason. `library list` never probes. The editor
+queues the same scan as a `library_scan` job (`POST /api/v1/library/scan`), and
+MCP has `scan_library`.
+
 ### Compose: combine clips, overlays, audio and titles (`compose`)
 
 Besides splitting one recording, you can build a video from several files.
@@ -309,7 +325,7 @@ reads and writes the same project file, so a human can open the result in
 the visual editor afterward. Tools: `list_videos`, `list_segments`,
 `propose_splits`, `add_split`, `move_split`, `remove_split`, `label_segment`,
 `analyze_audio`, `export`. The `compose` commands above have matching tools:
-`list_timelines`, `list_assets`, `create_timeline`, `show_timeline`, `add_clip_to_timeline`
+`list_timelines`, `scan_library`, `list_assets`, `create_timeline`, `show_timeline`, `add_clip_to_timeline`
 (a path or an asset id),
 `trim_timeline_clip`, `move_timeline_clip`, `remove_timeline_clip`,
 `set_timeline_transition`, `add_timeline_track`, `remove_timeline_track`,
