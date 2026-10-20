@@ -20,7 +20,7 @@ from split_video.timeline import AssetNotFoundError
 GOLDEN = Path(__file__).resolve().parents[1] / "fixtures" / "time_index"
 HOW = {
     "audio": "split-video analyze",
-    "loudness": "/api/v1/waveform",
+    "loudness": "report <target> --prepare",
     "silence": "split-video propose",
     "speech": "split-video transcribe",
     "scenes": "split-video scenes",

@@ -1,0 +1,352 @@
+{
+ "version": 1,
+ "asset": {
+  "id": "a_e37c5eab78c34f0f",
+  "path": "talk.mp4",
+  "duration": 300.0,
+  "size": 1,
+  "has_audio": true,
+  "has_video": true,
+  "streams": [
+   "video",
+   "audio"
+  ],
+  "width": 1280,
+  "height": 720,
+  "fps": 5.0
+ },
+ "signals": {
+  "available": {
+   "audio": true,
+   "loudness": true,
+   "silence": true,
+   "speech": true,
+   "scenes": true,
+   "ocr": true
+  },
+  "missing": [],
+  "excluded": []
+ },
+ "prepared": null,
+ "limits": {
+  "max_bytes": 40000
+ },
+ "notices": {
+  "coarsened": null,
+  "shrunk": null,
+  "dropped": [],
+  "truncated": []
+ },
+ "buckets": {
+  "seconds": 30.0,
+  "count": 10,
+  "audio_class": [
+   "music",
+   "music",
+   "music",
+   "speech",
+   "speech",
+   "speech",
+   "speech",
+   "music",
+   "music",
+   "music"
+  ],
+  "audio_share": [
+   1.0,
+   1.0,
+   1.0,
+   0.8,
+   1.0,
+   1.0,
+   0.67,
+   0.99,
+   1.0,
+   1.0
+  ],
+  "loudness_mean_db": [
+   -40.0,
+   -40.0,
+   -40.0,
+   -36.4,
+   -40.0,
+   -40.0,
+   -38.8,
+   -40.0,
+   -40.0,
+   -40.0
+  ],
+  "loudness_max_db": [
+   -40.0,
+   -40.0,
+   -40.0,
+   -22.0,
+   -40.0,
+   -40.0,
+   -3.0,
+   -40.0,
+   -40.0,
+   -40.0
+  ],
+  "silence_fraction": [
+   0.0,
+   0.0,
+   0.0,
+   0.05,
+   0.0,
+   0.0,
+   0.03,
+   0.0,
+   0.0,
+   0.0
+  ],
+  "words": [
+   0,
+   0,
+   0,
+   10,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "words_per_minute": [
+   0,
+   0,
+   0,
+   20,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "scene_changes": [
+   1,
+   0,
+   0,
+   0,
+   1,
+   1,
+   0,
+   0,
+   0,
+   0
+  ],
+  "activity_mean": [
+   0.13,
+   0.1,
+   0.1,
+   0.1,
+   0.1,
+   0.13,
+   0.1,
+   0.1,
+   0.1,
+   0.1
+  ],
+  "activity_max": [
+   0.9,
+   0.1,
+   0.1,
+   0.1,
+   0.1,
+   0.9,
+   0.1,
+   0.1,
+   0.1,
+   0.1
+  ],
+  "screen_text_changed": [
+   1,
+   0,
+   0,
+   0,
+   1,
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "transcript": [
+   "",
+   "",
+   "",
+   "welcome everybody to the live stream ton",
+   "",
+   "",
+   "",
+   "",
+   "",
+   ""
+  ],
+  "screen_text": [
+   "intro slide",
+   null,
+   null,
+   null,
+   "def main():",
+   null,
+   null,
+   null,
+   null,
+   null
+  ]
+ },
+ "loudness": {
+  "mean_db": -39.5,
+  "p95_db": -40.0,
+  "max_db": -3.0,
+  "curve_seconds": 5.0,
+  "curve": [
+   -40,
+   -40,
+   -40,
+   -40,
+   -40,
+   -40,
+   -40,
+   -40,
+   -40,
+   -40,
+   -40,
+   -40,
+   -40,
+   -40,
+   -40,
+   -40,
+   -40,
+   -40,
+   -40,
+   -33,
+   -26,
+   -40,
+   -40,
+   -40,
+   -40,
+   -40,
+   -40,
+   -40,
+   -40,
+   -40,
+   -40,
+   -40,
+   -40,
+   -40,
+   -40,
+   -40,
+   -40,
+   -40,
+   -40,
+   -40,
+   -40,
+   -33,
+   -40,
+   -40,
+   -40,
+   -40,
+   -40,
+   -40,
+   -40,
+   -40,
+   -40,
+   -40,
+   -40,
+   -40,
+   -40,
+   -40,
+   -40,
+   -40,
+   -40,
+   -40
+  ]
+ },
+ "regions": {
+  "min_seconds": 10.0,
+  "seconds_by_class": {
+   "applause_crowd": 10.1,
+   "music": 185.8,
+   "speech": 104.2
+  },
+  "count": 4,
+  "truncated": 0,
+  "items": [
+   [
+    0.0,
+    96.0,
+    "music"
+   ],
+   [
+    96.0,
+    200.2,
+    "speech"
+   ],
+   [
+    200.2,
+    210.2,
+    "applause_crowd"
+   ],
+   [
+    210.2,
+    300.0,
+    "music"
+   ]
+  ]
+ },
+ "silence_gaps": {
+  "min_seconds": 2.0,
+  "threshold_db": -35.0,
+  "count": 0,
+  "truncated": 0,
+  "items": []
+ },
+ "scene_changes": {
+  "count": 2,
+  "truncated": 0,
+  "items": [
+   [
+    20.0,
+    0.4
+   ],
+   [
+    150.0,
+    0.62
+   ]
+  ]
+ },
+ "transcript": {
+  "words": 10,
+  "language": "en",
+  "words_per_minute": 2.0,
+  "top_keywords": [
+   [
+    "everybody",
+    1
+   ],
+   [
+    "live",
+    1
+   ],
+   [
+    "start",
+    1
+   ],
+   [
+    "stream",
+    1
+   ],
+   [
+    "tonight",
+    1
+   ],
+   [
+    "welcome",
+    1
+   ]
+  ]
+ }
+}

@@ -2239,6 +2239,148 @@
         "title": "RenderStatusOut",
         "type": "object"
       },
+      "ReportOut": {
+        "description": "The media report (`media_report.media_report`, version 1). The nested parts are documented in\ndocs/media-report.md; they are plain JSON so that the shape is identical on every surface.",
+        "properties": {
+          "asset": {
+            "additionalProperties": true,
+            "title": "Asset",
+            "type": "object"
+          },
+          "buckets": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Buckets"
+          },
+          "limits": {
+            "additionalProperties": true,
+            "title": "Limits",
+            "type": "object"
+          },
+          "loudness": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Loudness"
+          },
+          "notices": {
+            "additionalProperties": true,
+            "title": "Notices",
+            "type": "object"
+          },
+          "prepared": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prepared"
+          },
+          "regions": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Regions"
+          },
+          "scene_changes": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Changes"
+          },
+          "signals": {
+            "additionalProperties": true,
+            "title": "Signals",
+            "type": "object"
+          },
+          "silence_gaps": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Silence Gaps"
+          },
+          "transcript": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transcript"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "version",
+          "asset",
+          "signals",
+          "prepared",
+          "limits",
+          "notices",
+          "buckets",
+          "loudness",
+          "regions",
+          "silence_gaps",
+          "scene_changes",
+          "transcript"
+        ],
+        "title": "ReportOut",
+        "type": "object"
+      },
+      "ReportStartResponse": {
+        "properties": {
+          "job_id": {
+            "title": "Job Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "job_id"
+        ],
+        "title": "ReportStartResponse",
+        "type": "object"
+      },
       "RethresholdRequest": {
         "properties": {
           "thresholds": {
@@ -4928,6 +5070,138 @@
           }
         },
         "summary": "Make Proxy"
+      }
+    },
+    "/api/v1/assets/{asset_id}/report": {
+      "get": {
+        "description": "Every stored signal of the asset in one document of at most 40 KB: asset info, which signals exist (and how\nto make the missing ones), whole-recording structure (loudness summary, audio class regions, silence gaps,\nstrongest scene changes, transcript summary) and one array per column over time buckets (default\nmax(10, duration / 180) seconds; `bucket_seconds` 5 to 600). `include` is a comma separated list of audio,\nloudness, silence, speech, scenes, ocr. Reads only: it never decodes or runs a model. When the document would\nbe too large it is shrunk and `notices` says how. 404 for an unknown asset; 422 for a bad bucket size.",
+        "operationId": "get_report_api_v1_assets__asset_id__report_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "asset_id",
+            "required": true,
+            "schema": {
+              "title": "Asset Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "bucket_seconds",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Bucket Seconds"
+            }
+          },
+          {
+            "in": "query",
+            "name": "include",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Include"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedOut"
+                }
+              }
+            },
+            "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Report"
+      }
+    },
+    "/api/v1/assets/{asset_id}/report/prepare": {
+      "post": {
+        "description": "Queue making the asset's missing cheap signals: the loudness curve, the silence scan and (when the YAMNet\nmodel is installed) the audio classification. Never transcribes, finds scenes or reads on-screen text. The job's\nresult is `{asset, prepared, already, skipped}`; cancelling it stores no half-made signal. Then read the\nreport with `GET /assets/{id}/report`.",
+        "operationId": "prepare_report_api_v1_assets__asset_id__report_prepare_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "asset_id",
+            "required": true,
+            "schema": {
+              "title": "Asset Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportStartResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedOut"
+                }
+              }
+            },
+            "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Prepare Report"
       }
     },
     "/api/v1/assets/{asset_id}/scenes": {

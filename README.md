@@ -406,6 +406,21 @@ Over HTTP: `GET /api/v1/assets/{id}/at?time=&window=` and `GET /api/v1/assets/{i
 `what_is_happening` and `timeline_index`. All three return the same JSON; its shape (version 1) is in
 [docs/time-index.md](docs/time-index.md).
 
+### Everything about a recording in one call (`report`)
+
+`report` returns duration, silence gaps, loudness, music / speech / applause regions, scene changes, screen activity, a
+transcript summary and on-screen text for a whole recording as time-bucketed JSON that stays under 40 KB however long
+the recording is (about 24 KB for 3 hours with every signal). It only reads what other commands stored; `--prepare`
+first makes the cheap missing ones (loudness curve, silence scan, audio classes), never a transcript, scenes or text.
+
+```bash
+docker run --rm -v "$PWD":/data split-video:ocr report stream.mp4 --root /data --prepare          # a table
+docker run --rm -v "$PWD":/data split-video:ocr report stream.mp4 --root /data --json [--bucket-seconds 60]
+```
+
+Over HTTP: `GET /api/v1/assets/{id}/report` and `POST /api/v1/assets/{id}/report/prepare` (a job); MCP has
+`media_report`. All three return the same JSON, documented in [docs/media-report.md](docs/media-report.md).
+
 ### Compose: combine clips, overlays, audio and titles (`compose`)
 
 Besides splitting one recording, you can build a video from several files.

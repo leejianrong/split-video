@@ -48,7 +48,7 @@ def test_silence_cache_keeps_multiple_thresholds_on_disk(tmp_path, monkeypatch):
     media, source = _touch(tmp_path / "video.mp4")
     calls = []
 
-    def fake_detect_silence(source_arg, threshold_db, min_duration):
+    def fake_detect_silence(source_arg, threshold_db, min_duration, cancel=None):
         calls.append(threshold_db)
         return [SilenceInterval(start=float(len(calls)), end=float(len(calls) + 1))]
 

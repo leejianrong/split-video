@@ -12,7 +12,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from split_video import library, ocr, project, proxy, scenes, timeline_service, transcribe
+from split_video import library, media_report, ocr, project, proxy, scenes, timeline_service, transcribe
 from split_video.editor import classify
 from split_video.editor.cache import ClassificationCache
 from split_video.jobs import PROXY, JobContext, JobQueue
@@ -82,6 +82,18 @@ def analysis_work(
         estimate = max(1, int(media.probe(source).duration * classify.SAMPLE_RATE) // classify.HOP_SAMPLES)
         ctx.progress(0, total=estimate)
         project.run_analysis(media, source, cache, thresholds, ctx.progress, cancel=ctx)
+
+    return work
+
+
+def report_prepare_work(media: MediaStore, asset_id: str) -> Callable[[JobContext], dict[str, Any]]:
+    """Make the asset's missing cheap signals (`media_report.prepare_signals`: loudness, silence scan, audio
+    classification). Progress is `media_report.PREPARE_STEPS` thousandths of the work; the result is `{asset,
+    prepared, already, skipped}`. A cancelled job stores no half-made signal."""
+
+    def work(ctx: JobContext) -> dict[str, Any]:
+        ctx.progress(0, media_report.PREPARE_STEPS)
+        return media_report.prepare_signals(media, asset_id, on_progress=ctx.progress, cancel=ctx)
 
     return work
 

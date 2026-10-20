@@ -38,6 +38,7 @@ from split_video import (
     contact_sheet,
     frames,
     library,
+    media_report,
     ocr,
     project,
     proxy,
@@ -78,6 +79,7 @@ _EXPECTED_ERRORS = (
     search.SearchNotFoundError,
     search.SearchQueryError,
     time_index.TimeIndexError,
+    media_report.MediaReportError,
 )
 
 _READ_ONLY = ToolAnnotations(read_only_hint=True, destructive_hint=False, idempotent_hint=True, open_world_hint=False)
@@ -779,6 +781,36 @@ def create_server(root: Path, store: ProjectStore | None = None, media: MediaSto
         it). Pick a point, then ask what_is_happening for the detail. A tool error for a bad span, step or more than
         500 points."""
         return await run(time_index.timeline_index, media, asset, start, end, step)
+
+    @server.tool(
+        name="media_report",
+        annotations=ToolAnnotations(
+            read_only_hint=False, destructive_hint=False, idempotent_hint=True, open_world_hint=False
+        ),
+    )
+    async def media_report_tool(
+        asset: str, bucket_seconds: float | None = None, include: list[str] | None = None, prepare: bool = False
+    ) -> dict[str, Any]:
+        """Every stored signal of the library asset `asset` in ONE document of at most 40 KB, so you do not have to call
+        five tools: `asset` info, `signals` (which exist; `missing` says how to make the others), whole-recording
+        structure (`loudness` summary, `regions` of music/speech/applause, `silence_gaps`, the strongest
+        `scene_changes`, a `transcript` summary with top keywords) and `buckets`: one array per column (dominant
+        audio class, mean and max loudness, silence fraction, words, scene cuts, activity, on-screen text changes
+        and short transcript / screen text snippets) over equal time buckets (default max(10, duration / 180)
+        seconds; `bucket_seconds` 5 to 600). `include` limits it to some of audio, loudness, silence, speech, scenes,
+        ocr. If the document would be too large it is shrunk (shorter snippets, no snippets, coarser buckets) and
+        `notices` says how. It only reads what is stored, unless prepare=true, which first makes the missing cheap
+        signals (loudness curve, silence scan, audio classification if the YAMNet model is installed; can take
+        minutes on a long recording) but never transcribes, finds scenes or reads on-screen text. A tool error for
+        an unknown asset or a bad bucket size. See what_is_happening for the detail at one time."""
+        return await run(
+            media_report.media_report,
+            media,
+            asset,
+            bucket_seconds=bucket_seconds,
+            include=include,
+            prepare=prepare,
+        )
 
     @server.tool(annotations=_EDITS_PROJECT)
     async def add_clip_to_timeline(
