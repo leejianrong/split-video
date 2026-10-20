@@ -343,11 +343,16 @@
               "required": [
                 "saturation"
               ]
+            },
+            {
+              "required": [
+                "crop"
+              ]
             }
           ]
         }
       ],
-      "description": "Change gain, mute, overlay placement or colour of a clip (`timeline_service.set_clip_properties`).",
+      "description": "Change gain, mute, overlay placement, colour or crop of a clip (`timeline_service.set_clip_properties`).",
       "properties": {
         "brightness": {
           "description": "Brightness adjustment (ffmpeg `eq`).",
@@ -364,6 +369,38 @@
           "maximum": 3.0,
           "minimum": 0.0,
           "type": "number"
+        },
+        "crop": {
+          "additionalProperties": false,
+          "description": "Media clips on video tracks: the part of the source frame to show, as fractions of the frame with the origin at its top-left. Absent = the whole frame. x, y in 0..1; w, h from 0.02 to 1; x+w and y+h at most 1. Applied before the clip is scaled to fit the output frame, so for a vertical short compute it with the `crop_for_aspect` helper (CLI `compose crop --aspect 9:16`, MCP `set_clip_crop`, GET /api/v1/assets/{id}/reframe) rather than by hand. `null` removes the crop.",
+          "properties": {
+            "h": {
+              "description": "Height (fraction of the source height).",
+              "type": "number"
+            },
+            "w": {
+              "description": "Width (fraction of the source width).",
+              "type": "number"
+            },
+            "x": {
+              "description": "Left edge (fraction of the source width).",
+              "type": "number"
+            },
+            "y": {
+              "description": "Top edge (fraction of the source height).",
+              "type": "number"
+            }
+          },
+          "required": [
+            "x",
+            "y",
+            "w",
+            "h"
+          ],
+          "type": [
+            "object",
+            "null"
+          ]
         },
         "gain": {
           "description": "Volume multiplier.",

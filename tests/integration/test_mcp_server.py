@@ -83,6 +83,7 @@ async def test_exposes_the_documented_tools(root):
         "move_timeline_track",
         "place_timeline_clip",
         "set_timeline_clip",
+        "set_clip_crop",
         "add_timeline_text",
         "set_timeline_text",
         "apply_ops",
@@ -214,6 +215,11 @@ async def test_timeline_tools_build_and_render_a_two_clip_project(root):
         assert (await call(client, "list_timelines"))["projects"] == ["mix"]
         rendered = await call(client, "render_timeline", name="mix")
         assert (root / rendered["output"]).is_file()
+        assert "even" in await call_error(client, "render_timeline", name="mix", output="v.mp4", width=361, height=640)
+        await call(client, "render_timeline", name="mix", output="v.mp4", width=360, height=640)
+        from split_video.ffmpeg import probe_media
+
+        assert (probe_media(root / "v.mp4").width, probe_media(root / "v.mp4").height) == (360, 640)
         assert "already exists" in await call_error(client, "render_timeline", name="mix")
 
         body = await call(client, "remove_timeline_clip", name="mix", clip=1)
@@ -245,6 +251,21 @@ async def test_multi_track_tools_build_an_overlay_project(root):
         got = body["tracks"][1]["clips"][0]
         assert (got["opacity"], got["scale"], got["muted"]) == (0.5, 0.3, True)
         assert "at least one" in await call_error(client, "set_timeline_clip", name="mix", clip=1)
+
+        body = await call(client, "set_clip_crop", name="mix", clip=1, track=2, aspect="9:16", center_x=0.2, zoom=1.5)
+        crop = body["tracks"][1]["clips"][0][
+            "crop"
+        ]  # the clip is 320x240: 9:16 is 0.421875 of the width, zoomed by 1.5
+        assert crop["h"] == pytest.approx(1 / 1.5, abs=1e-5) and crop["w"] == pytest.approx(0.28125, abs=1e-5)
+        body = await call(client, "set_clip_crop", name="mix", clip=1, track=2, x=0.5, y=0, w=0.5, h=1)
+        assert body["tracks"][1]["clips"][0]["crop"] == {"x": 0.5, "y": 0.0, "w": 0.5, "h": 1.0}
+        assert "crop must have" in await call_error(
+            client, "set_clip_crop", name="mix", clip=1, track=2, x=0.9, y=0, w=0.5, h=1
+        )
+        assert "exactly one" in await call_error(client, "set_clip_crop", name="mix", clip=1, track=2)
+        assert "together" in await call_error(client, "set_clip_crop", name="mix", clip=1, track=2, x=0.1)
+        body = await call(client, "set_clip_crop", name="mix", clip=1, track=2, clear=True)
+        assert body["tracks"][1]["clips"][0]["crop"] is None
 
         body = await call(client, "place_timeline_clip", name="mix", clip=1, track=2, start=2)
         assert body["tracks"][1]["clips"][0]["start"] == 2

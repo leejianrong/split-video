@@ -98,7 +98,7 @@ clip ranges of the [plan](edit-plan.md#clip).
 | `move_clip` | `clip`, `to_index` | Move a clip within its magnetic track. |
 | `remove_clip` | `clip` | Remove a clip (the file is untouched). |
 | `set_transition` | `clip`, `transition` (`cut`/`crossfade`), `duration` | Set how the clip joins the one before it. A request that cannot be honoured is an error, not clamped. |
-| `set_clip_properties` | `clip`, any of `gain`, `muted`, `x`, `y`, `scale`, `opacity`, `brightness`, `contrast`, `saturation` (at least one) | Change volume, overlay placement or colour. Only the fields you give change. |
+| `set_clip_properties` | `clip`, any of `gain`, `muted`, `x`, `y`, `scale`, `opacity`, `brightness`, `contrast`, `saturation`, `crop` (at least one) | Change volume, overlay placement, colour or crop. Only the fields you give change. `crop` is `{"x","y","w","h"}` (fractions of the source frame, see edit-plan.md) or `null` to remove it. |
 | `add_text_clip` | `id`, `track` (required), `text`, `duration` (both required), `start`, `font_size`, `color`, `x`, `y` | Add a title to a non-magnetic video track. |
 | `set_text_properties` | `clip`, any of `text`, `font_size`, `color` (at least one) | Change a title. |
 | `add_track` | `id`, `kind` (`video`/`audio`, required), `magnetic` | Append an empty track on top of the stack (free unless `magnetic`). |
@@ -237,6 +237,8 @@ describes them); field-level problems use the `ops.field.*` family.
 | `plan.source.unknown` / `plan.source.outside_root` / `plan.clip.media_source_missing` | `source` is not a known asset (never registered by a batch) / escapes the workspace / neither `asset` nor `source`. |
 | `plan.clip.audio_only_on_video_track` / `plan.clip.no_audio_for_audio_track` | The asset's streams do not fit the track. |
 | `plan.clip.in_after_out` / `plan.clip.out_of_range` / `plan.clip.too_short` / `plan.clip.in_negative` | The source range (or a title's `duration`) is not legal. |
+| `plan.clip.crop_invalid` | `set_clip_properties` with a `crop` outside the frame or smaller than 0.02. |
+| `plan.clip.field_not_applicable` | `crop` on a text clip or an audio-track clip. |
 | `plan.clip.start_on_magnetic_track` | `start` on a back-to-back track. |
 | `plan.clip.overlap` | The clip would overlap another on a free track. |
 | `plan.clip.crossfade_first` / `plan.clip.crossfade_on_free_track` | A crossfade on a first clip / on a free track. |

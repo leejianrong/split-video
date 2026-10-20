@@ -106,7 +106,12 @@ def report_prepare_work(media: MediaStore, asset_id: str) -> Callable[[JobContex
 
 
 def render_work(
-    timeline: Project, media: MediaStore, out_id: str, filename: str
+    timeline: Project,
+    media: MediaStore,
+    out_id: str,
+    filename: str,
+    width: int | None = None,
+    height: int | None = None,
 ) -> Callable[[JobContext], dict[str, Any]]:
     """Render the timeline to `out_id`. Progress is `RENDER_STEPS` thousandths; the result is `{"output": filename}`."""
 
@@ -114,7 +119,7 @@ def render_work(
         def on_progress(fraction: float) -> None:
             ctx.progress(round(fraction * RENDER_STEPS), RENDER_STEPS)
 
-        timeline_service.run_render(timeline, media, out_id, on_progress, cancel=ctx)
+        timeline_service.run_render(timeline, media, out_id, on_progress, cancel=ctx, width=width, height=height)
         return {"output": filename}
 
     return work

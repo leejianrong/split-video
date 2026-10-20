@@ -7,7 +7,9 @@ The picture is built bottom-up on a black canvas as long as the project:
    with `concat` for cuts or `xfade`/`acrossfade` for crossfades.
 2. Every clip on any other video track is overlaid at its own start time with
    its own position, size and opacity, in track order (later tracks on top).
-3. Clips with a colour adjustment get ffmpeg's `eq` filter (brightness,
+3. A cropped clip (`Clip.crop`, fractions of the source frame) is cut to its region first, in source
+   pixels, before it is scaled to fit the frame or overlaid; it then fits like any other clip.
+   Clips with a colour adjustment get ffmpeg's `eq` filter (brightness,
    contrast, saturation), before padding or overlaying.
 4. Audio: each clip's sound (the main track's already joined) gets its gain
    (muted clips contribute silence), is delayed to its start time, and all of
@@ -110,6 +112,35 @@ def _eq(clip: Clip) -> str:
     return f",eq=brightness={clip.brightness:g}:contrast={clip.contrast:g}:saturation={clip.saturation:g}"
 
 
+def _even(n: float) -> int:
+    return max(2, round(n / 2) * 2)
+
+
+def _crop(clip: Clip, info: MediaInfo) -> tuple[str, int, int]:
+    """The `crop` filter (with its leading comma, or nothing) for a clip and the size of the picture after it.
+
+    The fractions are applied to the source's pixel size and rounded to even numbers (yuv420p), staying inside
+    the frame."""
+    iw, ih = info.width or 0, info.height or 0
+    if not clip.cropped or not iw or not ih:
+        return "", iw, ih
+    cw, ch = min(_even(iw * clip.crop_w), iw // 2 * 2), min(_even(ih * clip.crop_h), ih // 2 * 2)
+    cx = min(_even(iw * clip.crop_x) if clip.crop_x else 0, iw - cw)
+    cy = min(_even(ih * clip.crop_y) if clip.crop_y else 0, ih - ch)
+    return f",crop={cw}:{ch}:{cx}:{cy}", cw, ch
+
+
+def _fit(cw: int, ch: int, width: int, height: int, cropped: bool) -> str:
+    """The scale-to-fit filter. A cropped picture whose aspect matches the frame to within the rounding of
+    the crop (2 source pixels: it was rounded to even sizes) fills it exactly, a barely visible stretch,
+    instead of leaving a bar a pixel or two wide."""
+    if cropped and cw and ch:
+        ratio = min(width / cw, height / ch)
+        if abs(cw - width / ratio) <= 2 and abs(ch - height / ratio) <= 2:
+            return f"scale={width}:{height}"
+    return f"scale={width}:{height}:force_original_aspect_ratio=decrease"
+
+
 def _gain(clip: Clip) -> str:
     return "0" if clip.muted else f"{clip.gain:g}"
 
@@ -119,9 +150,10 @@ def _main_chain(clips: list[Clip], first_input: int, infos: dict[str, MediaInfo]
     parts: list[str] = []
     for n, clip in enumerate(clips):
         i = first_input + n
+        crop, cw, ch = _crop(clip, infos[clip.source])
         parts.append(
-            f"[{i}:v]setpts=PTS-STARTPTS,fps={FPS},"
-            f"scale={width}:{height}:force_original_aspect_ratio=decrease{_eq(clip)},"
+            f"[{i}:v]setpts=PTS-STARTPTS,fps={FPS}{crop},"
+            f"{_fit(cw, ch, width, height, clip.cropped)}{_eq(clip)},"
             f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,setsar=1,format=yuv420p[v{n}]"
         )
         if infos[clip.source].has_audio:
@@ -195,8 +227,9 @@ def build_plan(project: Project, infos: dict[str, MediaInfo], width: int, height
         i = len(main_clips) + media_seen
         media_seen += 1
         w = max(2, int(width * clip.scale) // 2 * 2)
+        crop = _crop(clip, infos[clip.source])[0]
         parts.append(
-            f"[{i}:v]setpts=PTS-STARTPTS+{clip.start:.3f}/TB,fps={FPS},scale={w}:-2{_eq(clip)},"
+            f"[{i}:v]setpts=PTS-STARTPTS+{clip.start:.3f}/TB,fps={FPS}{crop},scale={w}:-2{_eq(clip)},"
             f"format=yuva420p,colorchannelmixer=aa={clip.opacity:g}[ov{n}]"
         )
         nxt = f"vo{n}"
@@ -226,6 +259,33 @@ def build_plan(project: Project, infos: dict[str, MediaInfo], width: int, height
     return Plan(ordered, ";".join(parts), vlabel, alabel, width, height)
 
 
+MIN_SIZE, MAX_SIZE = 64, 4096
+
+
+def parse_size(text: str | None) -> tuple[int | None, int | None]:
+    """`"1080x1920"` as (1080, 1920); (None, None) for no size. `TimelineError` if it isn't WxH
+    (the range is checked by `check_size`)."""
+    if text is None:
+        return None, None
+    parts = text.lower().split("x")
+    if len(parts) != 2 or not all(p.strip().isdigit() for p in parts):
+        raise TimelineError(f"size must look like 1080x1920, not {text!r}")
+    return int(parts[0]), int(parts[1])
+
+
+def check_size(width: int | None, height: int | None) -> tuple[int, int] | None:
+    """The explicit output size, validated: both or neither, whole even numbers from 64 to 4096.
+    Raises `TimelineError`; None (neither given) means "the first clip's size"."""
+    if width is None and height is None:
+        return None
+    if width is None or height is None:
+        raise TimelineError("give both width and height, or neither")
+    for name, value in (("width", width), ("height", height)):
+        if isinstance(value, bool) or not isinstance(value, int) or value % 2 or not MIN_SIZE <= value <= MAX_SIZE:
+            raise TimelineError(f"{name} must be an even whole number from {MIN_SIZE} to {MAX_SIZE}")
+    return width, height
+
+
 def _clip_inputs(clips: list[Clip], paths: list[str]) -> list[str]:
     """`-ss/-t/-i` arguments for each clip, reading the matching local path."""
     args: list[str] = []
@@ -240,14 +300,21 @@ def render(
     out_id: str,
     progress: Callable[[float], None] | None = None,
     cancel: CancelToken | None = None,
+    *,
+    width: int | None = None,
+    height: int | None = None,
 ) -> None:
     """Write the project to `out_id` (an mp4 in `media`). `progress` gets 0.0..1.0.
+
+    The picture is the first clip's size unless `width` and `height` (see `check_size`) say otherwise,
+    e.g. 1080x1920 for a vertical short; every clip then fits that frame.
 
     With a `cancel` token (a job's `JobContext`), cancelling terminates ffmpeg at once, deletes
     the partial output and raises `JobCancelledError`.
 
     Clips are found by asset id (relinked if their file moved); a clip that can't be found
     is a `SourceNotFoundError` naming the asset and its last known path."""
+    size = check_size(width, height)
     project = assets.resolve_project(media, project)  # every clip's `source` is now its file's current media id
     video_clips = [c for t in project.tracks if t.kind == "video" for c in t.clips]
     if not video_clips:
@@ -267,7 +334,9 @@ def render(
 
     main = _main_track(project)
     first = main.clips[0] if main else next((c for c in video_clips if c.kind == "media"), None)
-    if first is None:
+    if size is not None:
+        width, height = size
+    elif first is None:
         width, height = DEFAULT_SIZE
     else:
         width, height = infos[first.source].width // 2 * 2, infos[first.source].height // 2 * 2

@@ -22,7 +22,7 @@ from split_video import store as store_module
 from split_video.ffmpeg import ProbeError
 from split_video.jobs import CancelToken
 from split_video.media_store import MediaError, MediaOutsideRootError, MediaStore
-from split_video.render import render
+from split_video.render import check_size, render
 from split_video.store import ProjectStore
 from split_video.timeline import (
     OutputExistsError,
@@ -243,12 +243,55 @@ def set_clip_properties(
     *,
     media: MediaStore | None = None,
     base_revision: int | None = None,
-    **properties: float | bool,
+    **properties: float | bool | dict[str, float] | None,
 ) -> Project:
     return edit(
         store, name, lambda p: timeline_ops.set_clip_properties(p, clip_id, **properties), media,
         base_revision=base_revision,
     )  # fmt: skip
+
+
+def set_clip_crop(
+    store: ProjectStore,
+    name: str,
+    clip_id: str,
+    *,
+    media: MediaStore,
+    crop: dict[str, float] | None = None,
+    aspect: str | None = None,
+    center_x: float = 0.5,
+    center_y: float = 0.5,
+    zoom: float = 1.0,
+    clear: bool = False,
+    base_revision: int | None = None,
+) -> Project:
+    """Crop a clip to a region of its source frame. Give exactly one of an explicit `crop`
+    (`{"x","y","w","h"}`, fractions of the frame), an `aspect` like "9:16" (the largest region of that
+    shape, centred on `center_x`/`center_y` and zoomed in by `zoom`, computed by `timeline_ops.crop_for_aspect`
+    from the clip's source size) or `clear` (back to the full frame)."""
+    if sum([crop is not None, aspect is not None, clear]) != 1:
+        raise TimelineError("give exactly one of an explicit crop, an aspect, or clear")
+
+    def change(project: Project) -> Project:
+        region = crop
+        if aspect is not None:
+            track, i = timeline_ops.find_clip(project, clip_id)
+            clip = track.clips[i]
+            if clip.kind != "media" or track.kind != "video":
+                raise timeline_ops.RuleViolation(
+                    "crop_not_applicable", "only media clips on video tracks can be cropped"
+                )
+            with assets.open_book(media) as book:
+                found = assets.lookup(book, clip.asset, clip.source)
+            if found is None or not found.asset.width or not found.asset.height:
+                raise TimelineError("the clip's source file is missing or has no picture")
+            aspect_w, aspect_h = timeline_ops.parse_aspect(aspect)
+            region = timeline_ops.crop_for_aspect(
+                found.asset.width, found.asset.height, aspect_w, aspect_h, center_x, center_y, zoom
+            )
+        return timeline_ops.set_clip_properties(project, clip_id, crop=region)
+
+    return edit(store, name, change, media, base_revision=base_revision)
 
 
 def set_text_properties(
@@ -350,10 +393,19 @@ def set_transition(
 
 
 def plan_render(
-    store: ProjectStore, media: MediaStore, name: str, output: str | None, overwrite: bool
+    store: ProjectStore,
+    media: MediaStore,
+    name: str,
+    output: str | None,
+    overwrite: bool,
+    width: int | None = None,
+    height: int | None = None,
 ) -> tuple[Project, str, str]:
     """Check a render request and return the project, output filename and the
-    output's media id (a plain filename is a file in the root)."""
+    output's media id (a plain filename is a file in the root). `width`/`height`
+    (both or neither, see `render.check_size`) are checked here so a bad size fails
+    before any job starts."""
+    check_size(width, height)
     project = load_existing(store, name, media)
     filename = output or f"{name}-render.mp4"
     if "/" in filename or "\\" in filename or filename.startswith("."):
@@ -373,8 +425,11 @@ def run_render(
     out_id: str,
     progress: Callable[[float], None] | None = None,
     cancel: CancelToken | None = None,
+    *,
+    width: int | None = None,
+    height: int | None = None,
 ) -> None:
-    render(project, media, out_id, progress, cancel)
+    render(project, media, out_id, progress, cancel, width=width, height=height)
 
 
 # --- describing ---------------------------------------------------------------
@@ -428,6 +483,7 @@ def describe(media: MediaStore, name: str, project: Project, *, read_only: bool 
                         "brightness": c.brightness,
                         "contrast": c.contrast,
                         "saturation": c.saturation,
+                        "crop": c.crop,
                     }
                     for i, c in enumerate(t.clips)
                 ],

@@ -434,16 +434,16 @@ def test_validate_plan_is_pure(world):
 
 def test_unknown_fields_are_rejected_naming_the_field_and_the_allowed_ones(world):
     plan = minimal(world, colour="red")
-    plan["tracks"][0]["clips"][0]["crop"] = {"x": 0}
+    plan["tracks"][0]["clips"][0]["zoom"] = 2
     plan["tracks"][0]["wobble"] = 1
     report = edit_plan.validate_plan(world.media, plan)
     assert pairs(report) == {
         ("/colour", "plan.field.unknown"),
         ("/tracks/0/wobble", "plan.field.unknown"),
-        ("/tracks/0/clips/0/crop", "plan.field.unknown"),
+        ("/tracks/0/clips/0/zoom", "plan.field.unknown"),
     }
-    hint = next(e for e in report.errors if e.path.endswith("/crop")).hint
-    assert "'crop'" in report.errors[2].message and "allowed fields here" in hint and "transition_duration" in hint
+    hint = next(e for e in report.errors if e.path.endswith("/zoom")).hint
+    assert "'zoom'" in report.errors[2].message and "allowed fields here" in hint and "transition_duration" in hint
 
 
 @pytest.mark.parametrize(
