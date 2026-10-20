@@ -493,7 +493,20 @@ split-video compose show mix
 split-video compose render mix                                     # writes mix-render.mp4
 split-video compose crop mix 1 --aspect 9:16 --center-x 0.3       # vertical crop of a 16:9 clip (or --x --y --w --h)
 split-video compose render mix --size 1080x1920 --overwrite       # a 9:16 short; the crop then fills the frame
+split-video presets                                                # named export destinations
+split-video compose render mix --preset vertical-1080 --overwrite  # 1080x1920, 30 fps, tuned encoder
+split-video compose render mix --preset youtube-1080p --fit crop --overwrite  # cover the frame instead of black bars
 ```
+
+**Export presets** name a destination instead of codec flags: `youtube-1080p` (1920x1080, 30 fps),
+`vertical-1080` (1080x1920, 30 fps), `square-1080` (1080x1080, 30 fps) and `draft-720` (1280x720, 24 fps, fastest
+encoder and lower quality, for quick review renders). All are mp4 with H.264/AAC and `+faststart`; `split-video presets`
+(or `--json`) shows every setting. Precedence for the frame size is `--size` over `--preset` over the first clip's,
+and without a preset renders are as before. When a clip's aspect differs from the frame, `--fit letterbox` (default)
+scales it to fit and pads with black bars, `--fit crop` scales it to cover the frame and cuts the overflow, centered; a
+clip with its own `compose crop` region keeps that crop either way. The same options are `preset` and `fit` on
+`POST /api/v1/compose/projects/{name}/render` (list: `GET /api/v1/presets`) and on the MCP tool `render_timeline`
+(list: `list_export_presets`). Presets are about how to export, so they are not part of an edit plan.
 
 Clips reference media by asset id, so a renamed or moved file is found again
 (an id comes from hashing the file's size and its first, middle and last MiB).
@@ -597,7 +610,7 @@ the visual editor afterward. Tools: `list_videos`, `list_segments`,
 `trim_timeline_clip`, `move_timeline_clip`, `remove_timeline_clip`,
 `set_timeline_transition`, `add_timeline_track`, `remove_timeline_track`,
 `move_timeline_track`, `place_timeline_clip`, `set_timeline_clip`,
-`add_timeline_text`, `set_timeline_text`, `render_timeline`.
+`add_timeline_text`, `set_timeline_text`, `render_timeline` (with `preset` and `fit`), `list_export_presets`.
 
 Tools only touch files under `--root` (default: the current directory):
 

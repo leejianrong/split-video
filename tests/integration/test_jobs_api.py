@@ -270,9 +270,14 @@ def test_render_through_the_queue_keeps_the_polling_shape(tmp_path):
     job_id = client.post("/api/v1/compose/projects/show/render", json={}).json()["job_id"]
     job = _wait(client, job_id)
     status = client.get(f"/api/v1/compose/render/{job_id}").json()
-    assert set(status) == {"status", "progress", "output", "error"}
-    assert status == {"status": "done", "progress": 1.0, "output": "show-render.mp4", "error": None}
-    assert job["kind"] == "render" and job["result"] == {"output": "show-render.mp4"}
+    # The original four keys keep their meaning; what was used (SPL-52) is added to them.
+    assert {"status", "progress", "output", "error"} <= set(status)
+    assert (status["status"], status["progress"], status["output"], status["error"]) == (
+        "done", 1.0, "show-render.mp4", None,
+    )  # fmt: skip
+    used = {"name": "show", "duration": 2.0, "preset": None, "fit": "letterbox", "width": 320, "height": 240, "fps": 30}
+    assert {k: status[k] for k in used} == used
+    assert job["kind"] == "render" and job["result"] == {"output": "show-render.mp4", **used}
     assert (tmp_path / "show-render.mp4").is_file()
 
 

@@ -2345,6 +2345,118 @@
         "title": "PointOut",
         "type": "object"
       },
+      "PresetOut": {
+        "properties": {
+          "audio_bitrate": {
+            "title": "Audio Bitrate",
+            "type": "string"
+          },
+          "audio_codec": {
+            "title": "Audio Codec",
+            "type": "string"
+          },
+          "audio_sample_rate": {
+            "title": "Audio Sample Rate",
+            "type": "integer"
+          },
+          "container": {
+            "title": "Container",
+            "type": "string"
+          },
+          "crf": {
+            "title": "Crf",
+            "type": "integer"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "faststart": {
+            "title": "Faststart",
+            "type": "boolean"
+          },
+          "fps": {
+            "title": "Fps",
+            "type": "integer"
+          },
+          "height": {
+            "title": "Height",
+            "type": "integer"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "pix_fmt": {
+            "title": "Pix Fmt",
+            "type": "string"
+          },
+          "video_codec": {
+            "title": "Video Codec",
+            "type": "string"
+          },
+          "width": {
+            "title": "Width",
+            "type": "integer"
+          },
+          "x264_preset": {
+            "title": "X264 Preset",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "label",
+          "description",
+          "width",
+          "height",
+          "fps",
+          "video_codec",
+          "x264_preset",
+          "crf",
+          "pix_fmt",
+          "audio_codec",
+          "audio_bitrate",
+          "audio_sample_rate",
+          "container",
+          "faststart"
+        ],
+        "title": "PresetOut",
+        "type": "object"
+      },
+      "PresetsOut": {
+        "properties": {
+          "default_fit": {
+            "title": "Default Fit",
+            "type": "string"
+          },
+          "fits": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Fits",
+            "type": "array"
+          },
+          "presets": {
+            "items": {
+              "$ref": "#/components/schemas/PresetOut"
+            },
+            "title": "Presets",
+            "type": "array"
+          }
+        },
+        "required": [
+          "presets",
+          "default_fit",
+          "fits"
+        ],
+        "title": "PresetsOut",
+        "type": "object"
+      },
       "ProjectListOut": {
         "properties": {
           "projects": {
@@ -2704,6 +2816,17 @@
       },
       "RenderRequest": {
         "properties": {
+          "fit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fit"
+          },
           "height": {
             "anyOf": [
               {
@@ -2730,6 +2853,17 @@
             "default": false,
             "title": "Overwrite",
             "type": "boolean"
+          },
+          "preset": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preset"
           },
           "width": {
             "anyOf": [
@@ -2761,6 +2895,17 @@
       },
       "RenderStatusOut": {
         "properties": {
+          "duration": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration"
+          },
           "error": {
             "anyOf": [
               {
@@ -2771,6 +2916,50 @@
               }
             ],
             "title": "Error"
+          },
+          "fit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fit"
+          },
+          "fps": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fps"
+          },
+          "height": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Height"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
           },
           "output": {
             "anyOf": [
@@ -2783,6 +2972,17 @@
             ],
             "title": "Output"
           },
+          "preset": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preset"
+          },
           "progress": {
             "title": "Progress",
             "type": "number"
@@ -2790,6 +2990,17 @@
           "status": {
             "title": "Status",
             "type": "string"
+          },
+          "width": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Width"
           }
         },
         "required": [
@@ -9606,6 +9817,35 @@
           }
         },
         "summary": "Open File"
+      }
+    },
+    "/api/v1/presets": {
+      "get": {
+        "description": "Every export preset with all its fields. Pass a `name` as `preset` when starting a render.",
+        "operationId": "list_presets_api_v1_presets_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PresetsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedOut"
+                }
+              }
+            },
+            "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
+          }
+        },
+        "summary": "List Presets"
       }
     },
     "/api/v1/project": {

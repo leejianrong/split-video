@@ -22,7 +22,8 @@ from split_video import store as store_module
 from split_video.ffmpeg import ProbeError
 from split_video.jobs import CancelToken
 from split_video.media_store import MediaError, MediaOutsideRootError, MediaStore
-from split_video.render import check_size, render
+from split_video.presets import resolve_export
+from split_video.render import render
 from split_video.store import ProjectStore
 from split_video.timeline import (
     OutputExistsError,
@@ -400,12 +401,14 @@ def plan_render(
     overwrite: bool,
     width: int | None = None,
     height: int | None = None,
+    preset: str | None = None,
+    fit: str | None = None,
 ) -> tuple[Project, str, str]:
     """Check a render request and return the project, output filename and the
     output's media id (a plain filename is a file in the root). `width`/`height`
-    (both or neither, see `render.check_size`) are checked here so a bad size fails
-    before any job starts."""
-    check_size(width, height)
+    (both or neither, see `render.check_size`), the export `preset` and the `fit` are checked here so a
+    bad one fails before any job starts."""
+    resolve_export(preset, width, height, fit)
     project = load_existing(store, name, media)
     filename = output or f"{name}-render.mp4"
     if "/" in filename or "\\" in filename or filename.startswith("."):
@@ -428,8 +431,16 @@ def run_render(
     *,
     width: int | None = None,
     height: int | None = None,
-) -> None:
-    render(project, media, out_id, progress, cancel, width=width, height=height)
+    preset: str | None = None,
+    fit: str | None = None,
+) -> dict[str, Any]:
+    """Render and return what was used (`render.render`'s `{preset, fit, width, height, fps}`)."""
+    return render(project, media, out_id, progress, cancel, width=width, height=height, preset=preset, fit=fit)
+
+
+def render_result(name: str, filename: str, project: Project, used: dict[str, Any]) -> dict[str, Any]:
+    """The JSON every surface (job result, CLI --json, MCP tool) reports for a finished render."""
+    return {"name": name, "output": filename, "duration": project.duration, **used}
 
 
 # --- describing ---------------------------------------------------------------

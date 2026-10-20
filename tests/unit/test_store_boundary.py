@@ -29,6 +29,8 @@ GUARDED = [
     "ops_cli.py",
     "edit_plan.py",
     "edit_ops.py",
+    "presets.py",
+    "presets_cli.py",
     "mcp_server.py",
     "editor/app.py",
     "editor/compose.py",
@@ -44,6 +46,7 @@ GUARDED = [
     "editor/frames.py",
     "editor/contact_sheet.py",
     "editor/plan.py",
+    "editor/presets.py",
 ]
 FORBIDDEN = re.compile(
     r"_project_path|project_path|FILE_SUFFIX|\.split-video-project\.json|\.split-video-timeline\.json"
@@ -78,6 +81,7 @@ ENGINE = [
     "frames.py",
     "contact_sheet.py",
     "render.py",
+    "presets.py",
     "editor/cache.py",
     "jobs.py",
     "job_work.py",
@@ -103,6 +107,7 @@ ADAPTERS = [
     "editor/frames.py",
     "editor/contact_sheet.py",
     "editor/plan.py",
+    "editor/presets.py",
     "editor/ops.py",
     "project_cli.py",
     "compose_cli.py",
@@ -116,6 +121,7 @@ ADAPTERS = [
     "frames_cli.py",
     "contact_sheet_cli.py",
     "plan_cli.py",
+    "presets_cli.py",
     "ops_cli.py",
 ]
 MEDIA_FORBIDDEN = re.compile(

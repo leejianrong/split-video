@@ -21,6 +21,7 @@ from split_video import (
     ocr_cli,
     ops_cli,
     plan_cli,
+    presets_cli,
     project_cli,
     scenes_cli,
     search_cli,
@@ -262,6 +263,7 @@ def mcp_cmd(
 
 project_cli.register(app)
 compose_cli.register(app)
+app.command("presets")(presets_cli.presets_cmd)
 library_cli.register(app)
 transcribe_cli.register(app)
 app.command("scenes")(scenes_cli.scenes_cmd)

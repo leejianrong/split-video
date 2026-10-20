@@ -78,6 +78,7 @@ async def test_exposes_the_documented_tools(root):
         "remove_timeline_clip",
         "set_timeline_transition",
         "render_timeline",
+        "list_export_presets",
         "add_timeline_track",
         "remove_timeline_track",
         "move_timeline_track",
