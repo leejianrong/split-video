@@ -71,7 +71,7 @@ def test_api_scene_job_then_get_signals(workspace):
     assert job["result"]["made"] is True and job["result"]["scenes"] == 3 and job["result"]["source"] == "original"
 
     doc = client.get(f"{base}/scenes").json()
-    assert doc["asset"] == asset.id and doc["version"] == 1 and doc["activity_interval"] == 1.0
+    assert doc["asset"] == asset.id and doc["version"] == 2 and doc["activity_interval"] == 1.0
     assert _near([s["time"] for s in doc["scenes"]]) and len(doc["activity"]) == 26 and "activity_start" not in doc
     cut = client.get(f"{base}/scenes", params={"start": 10, "end": 14}).json()
     assert [s["time"] for s in cut["scenes"]] == [12.0] and len(cut["activity"]) == 4 and cut["activity_start"] == 10.0
@@ -79,7 +79,9 @@ def test_api_scene_job_then_get_signals(workspace):
     assert [a["scenes"] for a in client.get("/api/v1/assets").json()["assets"] if a["has_video"]] == [True]
 
     assert _wait(client, client.post(f"{base}/scenes").json()["job_id"])["result"]["made"] is False
-    loose = _wait(client, client.post(f"{base}/scenes", json={"threshold": 0.9}).json()["job_id"])
+    loose = _wait(
+        client, client.post(f"{base}/scenes", json={"threshold": 0.9, "screen_threshold": 0}).json()["job_id"]
+    )
     assert loose["result"]["made"] is True and loose["result"]["scenes"] == 0
 
 
@@ -135,7 +137,20 @@ def test_cli_scenes_by_path_and_by_asset_id(workspace):
     assert plain.exit_code == 0 and "Already analysed" in plain.output and "3 scene change(s)" in plain.output
     assert "00:12" in plain.output or "0:12" in plain.output
     strict = json.loads(
-        runner.invoke(app, ["scenes", doc["asset"], "--root", str(workspace), "--threshold", "0.9", "--json"]).stdout
+        runner.invoke(
+            app,
+            [
+                "scenes",
+                doc["asset"],
+                "--root",
+                str(workspace),
+                "--threshold",
+                "0.9",
+                "--screen-threshold",
+                "0",
+                "--json",
+            ],
+        ).stdout
     )
     assert strict["made"] is True and strict["scenes"] == [] and strict["threshold"] == 0.9
 

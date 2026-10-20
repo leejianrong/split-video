@@ -22,7 +22,7 @@ else fails: a missing signal is reported, not raised.
 
 The result (version 1, stable)
 ------------------------------
-Keys are never added or removed within a version; a signal that has not been computed is `null`, never absent.
+Keys are never removed or renamed within a version (new ones may be added, see below); a signal that has not been computed is `null`, never absent.
 Times are seconds, rounded to 3 decimals; levels are dBFS.
 
     {"version": 1, "asset": "a_...", "time": 205.0, "window": {"start": 200.0, "end": 210.0}, "duration": 3600.0,
@@ -39,7 +39,8 @@ Times are seconds, rounded to 3 decimals; levels are dBFS.
         "curve": [{"t", "db"}]},     # at most 60 points; thinned by keeping the loudest of each group
      "silence": {                    # null without a stored silence scan (made by `propose`)
         "threshold_db": -35.0,       # the scan used: -35 dB if stored, else the closest stored one
-        "inside": false,             # `time` is inside a silence
+        "inside": false,             # `time` is inside a silence AND no transcribed word is being spoken at `time`
+        "inside_exact": false,       # `time` is inside a listed silence interval, whatever the transcript says
         "intervals": [{"start", "end"}],  # silences of at least 0.5 s, clipped to the window, at most 50
         "truncated": false},
      "speech": {                     # null without a transcript
@@ -49,7 +50,7 @@ Times are seconds, rounded to 3 decimals; levels are dBFS.
         "words_per_minute": 186.0,   # word_count / window length
         "truncated": false},
      "visual": {                     # always an object; each member is null when its signal is missing
-        "scene_change": {"time", "score"},  # the cut nearest `time` within the window (scenes), or null
+        "scene_change": {"time", "score", "kind"},  # the cut nearest `time` within the window, or null
         "scene_changes": 1,          # cuts inside the window
         "scene_index": 3,            # cuts at or before `time` (0: before the first cut)
         "shot_start": 150.0,         # the time of the last cut at or before `time` (0.0 before the first)
@@ -58,10 +59,29 @@ Times are seconds, rounded to 3 decimals; levels are dBFS.
         "text": {                    # OCR: the text that was on screen at `time` (else the latest text shown in the
                                      # window), or null when there is none
            "time", "until",          # when that text appeared and when it was replaced
+           "age_seconds",            # `time` minus the last OCR frame that saw this text (0 if that frame is later)
+           "stale",                  # true: this may no longer be on screen (see below)
+           "note",                   # null, or a sentence saying why it is stale
            "text", "lines",          # at most 1000 characters / 30 lines
            "truncated", "more"}},    # `more`: other text states shown in the window
      "available": {"audio", "loudness", "silence", "speech", "scenes", "ocr", "description"},  # booleans
      "missing": [{"signal": "speech", "how": "run `split-video transcribe <target>` ..."}]}
+
+Staleness: OCR reads a frame every `interval` seconds (default 30) and at each scene change, so the text reported
+at `time` was read `age_seconds` earlier. `visual.text.stale` is true when that age exceeds `STALE_INTERVALS` (2)
+times the OCR document's interval, or when a scene change (either kind, see scenes.py) happened after the frame
+and at or before `time`: the picture changed and the text was not read again. `note` then says which. Stale text
+is still returned (it is the best known); an agent should treat it as possibly outdated, or run `ocr` with a
+shorter `interval`.
+
+Silence: the silence scan and the transcript are separate analyses, so they can disagree by a few tenths of a second
+at a speech onset (a silence interval that ends 0.4 s after a word starts). `silence.inside` is false when a
+transcribed word is being spoken at `time` (`word.start - SPEECH_ONSET_SLACK <= time < word.end`, the slack
+being 0.5 s: word starts run late); `silence.inside_exact` is the raw
+test against the intervals. Without a transcript the two are equal and `intervals` are never trimmed.
+
+Within version 1, keys may be added (never removed or renamed); the two additions above (`inside_exact`, and
+`age_seconds` / `stale` / `note` in `visual.text`) are of that kind.
 
 `available.description` is always false and is not listed in `missing` (nothing makes it yet). A signal the asset
 cannot have (no audio track: audio, loudness, silence, speech; no picture: scenes, ocr) is neither available nor
@@ -107,7 +127,13 @@ MAX_SILENCES = 50
 MAX_TEXT_CHARS = 1000
 MAX_TEXT_LINES = 30
 TIMELINE_TEXT_CHARS = 120
+# Text read more than this many OCR intervals before `time` is stale (a scene change after the frame makes it stale
+# at any age).
+STALE_INTERVALS = 2.0
 MIN_SILENCE = 0.5
+# Transcribed word starts run late by up to a few tenths of a second, so a word counts as sounding this long before
+# its stated start when `silence.inside` is decided.
+SPEECH_ONSET_SLACK = 0.5
 SILENCE_THRESHOLD_DB = -35.0
 MAX_POINTS = 500
 DEFAULT_STEP = 60.0
@@ -220,6 +246,8 @@ class TimeIndex:
         self._ocr_on = ocr_document is not None
         self._states = sorted(ocr.states(ocr_document), key=lambda s: s["time"]) if ocr_document else []
         self._o_starts = [s["time"] for s in self._states]
+        self._ocr_interval = float(ocr_document.get("interval", ocr.DEFAULT_INTERVAL)) if ocr_document else 0.0
+        self._o_frames = sorted(f["time"] for f in ocr_document["frames"]) if ocr_document else []
 
     @classmethod
     def load(cls, media: MediaStore, asset_id: str) -> TimeIndex:
@@ -440,14 +468,25 @@ class TimeIndex:
         found = [
             (self._s_starts[i], self._s_ends[i]) for i in _clipped_overlaps(self._s_starts, self._s_ends, start, end)
         ]
-        inside = any(a <= time < b for a, b in found)
+        inside_exact = any(a <= time < b for a, b in found)
+        inside = inside_exact and not self._speaking_at(time)
         intervals = [{"start": _r(max(a, start)), "end": _r(min(b, end))} for a, b in found]
         return {
             "threshold_db": self._silence_db,
             "inside": inside,
+            "inside_exact": inside_exact,
             "intervals": intervals[:MAX_SILENCES],
             "truncated": len(intervals) > MAX_SILENCES,
         }
+
+    def _speaking_at(self, time: float) -> bool:
+        """Whether a transcribed word is being spoken at `time`, counting `SPEECH_ONSET_SLACK` before its start (False
+        without a transcript)."""
+        if not self._words:
+            return False
+        lo = bisect_right(self._w_ends, time)  # words ending at or before `time` are over
+        hi = bisect_right(self._w_starts, time + SPEECH_ONSET_SLACK)
+        return any(w["start"] - SPEECH_ONSET_SLACK <= time < w["end"] for w in self._words[lo:hi])
 
     def _speech(self, start: float, end: float) -> dict[str, Any] | None:
         if self._words is None:
@@ -495,7 +534,11 @@ class TimeIndex:
         return {
             "scene_change": None
             if near is None
-            else {"time": _r(cuts[near]), "score": self._scenes["scenes"][near]["score"]},
+            else {
+                "time": _r(cuts[near]),
+                "score": self._scenes["scenes"][near]["score"],
+                "kind": self._scenes["scenes"][near].get("kind", scenes.KIND_CUT),
+            },
             "scene_changes": len(inside),
             "scene_index": index,
             "shot_start": _r(cuts[index - 1]) if index else 0.0,
@@ -515,15 +558,42 @@ class TimeIndex:
         if state is None:
             return None
         text, lines = state["text"], state["lines"]
+        age, stale, note = self._staleness(state, time)
         cut = len(text) > MAX_TEXT_CHARS or len(lines) > MAX_TEXT_LINES
         return {
             "time": _r(state["time"]),
             "until": _r(state["until"]),
+            "age_seconds": age,
+            "stale": stale,
+            "note": note,
             "text": text[:MAX_TEXT_CHARS],
             "lines": lines[:MAX_TEXT_LINES],
             "truncated": cut,
             "more": max(0, len(overlapping) - (1 if state in overlapping else 0)),
         }
+
+    def _staleness(self, state: dict[str, Any], time: float) -> tuple[float, bool, str | None]:
+        """`(age_seconds, stale, note)` for a text state seen at `time`: the age is from the last OCR frame that saw
+        this text (the frame that read it, or a later one that found it unchanged) up to `time`."""
+        seen = state["time"]
+        for t in self._o_frames[
+            bisect_left(self._o_frames, state["time"]) : bisect_left(self._o_frames, state["until"])
+        ]:
+            if t > time:
+                break
+            seen = t
+        age = _r(max(0.0, time - seen))
+        reasons = []
+        if self._scenes is not None:
+            after = self._cuts[bisect_right(self._cuts, seen) : bisect_right(self._cuts, time)]
+            if after:
+                reasons.append(f"the picture changed at {after[0]:g} s, after this text was read")
+        limit = STALE_INTERVALS * self._ocr_interval
+        if age > limit:
+            reasons.append(f"it was read {age:g} s before this time (more than {limit:g} s)")
+        if not reasons:
+            return age, False, None
+        return age, True, "this text may no longer be on screen: " + "; ".join(reasons)
 
 
 def _compact(full: dict[str, Any]) -> dict[str, Any]:

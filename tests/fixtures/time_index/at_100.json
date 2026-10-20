@@ -78,6 +78,7 @@
   "silence": {
     "threshold_db": -35.0,
     "inside": false,
+    "inside_exact": false,
     "intervals": [
       {
         "start": 96.0,
@@ -199,6 +200,9 @@
     "text": {
       "time": 0.0,
       "until": 140.0,
+      "age_seconds": 100.0,
+      "stale": true,
+      "note": "this text may no longer be on screen: the picture changed at 20 s, after this text was read; it was read 100 s before this time (more than 60 s)",
       "text": "intro slide",
       "lines": [
         "intro slide"

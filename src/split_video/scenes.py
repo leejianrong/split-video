@@ -3,7 +3,8 @@
 For a coding stream or a lecture the interesting moments show on the screen, not in the audio: a window
 switch, a new slide, a burst of typing. Every video asset can have one `scenes` document with two signals
 that later cards (highlights, contact sheets, captions) read through `load`, `scenes_between` and
-`activity_between`.
+`activity_between`. The cuts come from two rules in the same pass: `scdet` (a whole-picture change) and a
+screen-change rule (a text pane swapped for another on the same background).
 
 The pass
 --------
@@ -11,8 +12,9 @@ One ffmpeg run reads `proxy.visual_source(media, asset_id)` (the proxy if it is 
 the document says which in `source`) and decodes it into a tiny picture: `fps=<SAMPLE_FPS>` (5, or the
 source's own rate if that is lower, so a slideshow is not padded with repeats), `scale=160:-2` (area
 averaging, so thin text and a cursor still register) and `format=gray`. ffmpeg's `scdet` filter then
-measures every sampled frame against the one before it and `metadata=print` writes its numbers to stdout,
-which is parsed line by line as it arrives (memory does not grow with the length of the file; a 3-hour
+measures every sampled frame against the one before it. Behind it `tblend=difference`, `lutyuv` and
+`signalstats` measure the fraction of pixels that changed by more than `SCREEN_DELTA` grey levels, and
+`metadata=print` writes all the numbers to stdout, which is parsed line by line as it arrives (memory does not grow with the length of the file; a 3-hour
 proxy is 54,000 lines). Nothing is encoded.
 
 `scdet` gives two numbers per frame: `mafd`, the mean absolute difference from the previous frame in 0..255
@@ -22,17 +24,48 @@ predecessor, i.e. a cut, not a continuous pan, a scroll or a fade (a slow dissol
 
 Scene changes
 -------------
-A sampled frame with `score / 100 >= threshold` is a cut, at that frame's time (the first frame of the new
-shot; accurate to one sample period, 0.2 s at 5 fps). `threshold` is 0..1, as in ffmpeg's
-`select='gt(scene,X)'`, default `DEFAULT_THRESHOLD` = 0.15 (a typed line or a scroll scores well under 0.05; a
-window switch between two editors 0.2 to 0.5; a camera cut more). Cuts closer together than `min_gap`
-seconds (default 1.0) are one: the strongest of the burst is kept, which stops a flickering transition from
-filling the list. Each cut has its `score` (0..1, rounded to 3 decimals).
+Rule 1, kind `"cut"`: a sampled frame with `score / 100 >= threshold` is a cut, at that frame's time (the first
+frame of the new shot; accurate to one sample period, 0.2 s at 5 fps). `threshold` is 0..1, as in ffmpeg's
+`select='gt(scene,X)'`, default `DEFAULT_THRESHOLD` = 0.15. This catches a camera cut or a switch between
+windows with different backgrounds. It cannot see a change that is local: two dark text panes on the same
+background differ in a few percent of the pixels, which is a mean difference of about one grey level (score
+0.01), far below any usable threshold.
+
+Rule 2, kind `"screen"`: `changed` is the fraction (0..1) of the pixels of a sampled frame that differ from the
+previous sampled frame by more than `SCREEN_DELTA` (16 of 255) grey levels (after the conversion to yuv420p's limited range: about 14). A frame is a screen change when its
+`changed` is at least `screen_threshold` (default `DEFAULT_SCREEN_THRESHOLD` = 0.02, 2% of the picture; 0 turns
+the rule off) AND it is an isolated one-frame burst: the frame before it and the frame after it both have
+`changed` below half the threshold. A pane swap happens once, so it passes; scrolling and a running video keep
+`changed` high frame after frame, and the start and the end of a scroll have a high neighbour, so none of them
+fires. A blinking cursor (0.08%) and typing (at most 0.2% per frame) are far below the threshold.
+
+The two rules are independent knobs: `threshold` only governs rule 1, so a whole-picture change that scdet scores
+below it still shows up, as a `"screen"` change (pass `screen_threshold` 0 to get scdet cuts only).
+
+Cuts of either kind closer together than `min_gap` seconds (default 1.0) are one: a `"cut"` beats a `"screen"`
+change, otherwise the stronger one (higher `score` / higher `changed`) stands, which stops a flickering
+transition from filling the list and makes a hard cut that both rules see count once. Each scene has its `time`,
+`kind`, `score` (the scdet score of that frame, 0..1, rounded to 3 decimals: its meaning does not depend on the
+kind, so a screen change has a tiny score) and `changed` (the fraction, 4 decimals).
+
+Measured on synthetic 1280x720 clips at the defaults (`score` is scdet's, `changed` the fraction; the "typing"
+clip shows a character per frame, "scroll" a code listing moving 120 px/s):
+
+| change                                         | score  | changed | found as             |
+| ---------------------------------------------- | ------ | ------- | -------------------- |
+| camera-like hard cut (test pattern to fractal) | 0.205  | 0.82    | cut                  |
+| light slide to dark editor (or reverse)        | 0.818  | 1.00    | cut                  |
+| dark text pane to another dark text pane       | 0.009  | 0.045   | screen               |
+| typing a line (per frame, max)                 | 0.0005 | 0.0019  | nothing              |
+| scrolling code (per frame, max)                | 0.052  | 0.26    | nothing (continuous) |
+| blinking cursor (per frame)                    | 0.0003 | 0.0008  | nothing              |
+
+The README used to say a window switch scores 0.2 to 0.5: that holds only when the backgrounds differ.
 
 Activity
 --------
 One value per `ACTIVITY_INTERVAL` (1 s) bucket, starting at 0: the mean `mafd` of the frames in the bucket
-(0 for a bucket with none), mapped to 0..1 by `log1p(10 * mafd) / log1p(500)` and clipped, which is
+(0 for a bucket with none; the first sampled frame has nothing to be compared with and is not counted), mapped to 0..1 by `log1p(10 * mafd) / log1p(500)` and clipped, which is
 logarithmic on purpose: the same curve has to separate "nothing changed" (0.0), "someone typing in an
 otherwise still editor" (about 0.05 to 0.2), "something is moving" (0.2 to 0.5) and "the whole picture
 changed" (a mean `mafd` of 50 or more reads 1.0). A bucket with a cut in it reads about 0.8 or more at 5
@@ -43,22 +76,28 @@ The document
 Stored through `MediaStore.save_cache(<the asset's media id>, "scenes", ...)`, so it is keyed by the
 original's size and mtime and is stale when the file changes (`VERSION` is bumped if the shape changes):
 
-    {"version": 1,
+    {"version": 2,
      "asset": "a_0123456789abcdef",
      "source": "proxy",              # "proxy" or "original": what the pass read
      "duration": 26.0,               # seconds of the asset
      "threshold": 0.15, "min_gap": 1.0,
+     "screen_threshold": 0.02,       # 0 = the screen rule was off
      "sample_fps": 5.0,
      "activity_interval": 1.0,       # seconds per activity value
-     "scenes": [{"time": 5.0, "score": 0.655}, ...],
+     "scenes": [{"time": 5.0, "score": 0.655, "kind": "cut", "changed": 0.97}, ...],
      "activity": [0.141, 0.0, ...]}  # activity[k] covers [k * interval, (k + 1) * interval)
 
-plus a small second entry "scenes_info" (`{version, asset, source, duration, threshold, min_gap, scenes,
-activity_buckets}`, the counts) so listings can say whether an asset has the signals without reading them.
+plus a small second entry "scenes_info" (`{version, asset, source, duration, threshold, min_gap, screen_threshold,
+scenes, activity_buckets}`, the counts) so listings can say whether an asset has the signals without reading them.
 
 `analyze` is idempotent: with a current document made with the same parameters from the same kind of source
 it does nothing (so making a proxy afterwards makes the next run redo it from the proxy). An audio-only
 asset has no picture and is reported as skipped.
+
+Version 1 documents (before the screen rule) stay readable: `load` returns them as they are with `kind: "cut"`
+filled in on every scene and no `changed` or `screen_threshold`; they are not current, so the next `analyze`
+redoes them (and the document then has version 2). Their consumers (the OCR schedule, the time index) work
+unchanged.
 """
 
 from __future__ import annotations
@@ -73,12 +112,19 @@ from split_video.ffmpeg import _require_binary, iter_stdout_lines
 from split_video.jobs import CancelToken
 from split_video.media_store import MediaStore
 
-VERSION = 1
+VERSION = 2
+READABLE_VERSIONS = (1, 2)
 CACHE_NAME = "scenes"
 INFO_NAME = "scenes_info"
 
 DEFAULT_THRESHOLD = 0.15
 DEFAULT_MIN_GAP = 1.0
+# A pixel counts as changed when its grey level (of 255, at 160 px wide) moved by more than this.
+SCREEN_DELTA = 16
+# The fraction of changed pixels a one-frame burst needs to be a screen change (a pane swap: 3-6%; typing <0.3%).
+DEFAULT_SCREEN_THRESHOLD = 0.02
+KIND_CUT = "cut"
+KIND_SCREEN = "screen"
 ACTIVITY_INTERVAL = 1.0
 SAMPLE_FPS = 5.0
 SAMPLE_WIDTH = 160
@@ -110,24 +156,36 @@ def activity_of(mafd: float) -> float:
 class SignalParser:
     """Folds `metadata=print` lines into cuts and activity buckets, keeping only those.
 
-    A frame prints as `frame:25 pts:125 pts_time:5` followed by `lavfi.scd.mafd=...` and
-    `lavfi.scd.score=...` (the latter ends the frame). `seconds` is the time of the last frame seen."""
+    A frame prints as `frame:25 pts:125 pts_time:5` followed by `lavfi.scd.mafd=...`, `lavfi.scd.score=...` and,
+    with the screen rule on, the `lavfi.signalstats.*` of the thresholded difference (`YAVG`, 0..255, ends the
+    frame; with the rule off the score ends it). `seconds` is the time of the last frame seen. Call `result` once
+    after the last line: a screen change is confirmed by the frame after it."""
 
-    def __init__(self, threshold: float, min_gap: float, interval: float = ACTIVITY_INTERVAL) -> None:
+    def __init__(
+        self,
+        threshold: float,
+        min_gap: float,
+        interval: float = ACTIVITY_INTERVAL,
+        screen_threshold: float = DEFAULT_SCREEN_THRESHOLD,
+    ) -> None:
         self.threshold = threshold
         self.min_gap = min_gap
         self.interval = interval
-        self.scenes: list[dict[str, float]] = []
+        self.screen_threshold = screen_threshold
+        self.scenes: list[dict[str, Any]] = []
         self.seconds = 0.0
         self._sums: list[float] = []
         self._counts: list[int] = []
         self._time: float | None = None
         self._mafd: float | None = None
+        self._score: float | None = None
+        self._prev_changed: float | None = None
+        self._candidate: dict[str, Any] | None = None
 
     def feed(self, line: str) -> None:
         line = line.strip()
         if line.startswith("frame:"):
-            self._time, self._mafd = None, None
+            self._time, self._mafd, self._score = None, None, None
             for part in line.split():
                 if part.startswith("pts_time:"):
                     self._time = _number(part[9:])
@@ -135,11 +193,19 @@ class SignalParser:
             self._mafd = _number(line[15:])
         elif line.startswith("lavfi.scd.score="):
             score = _number(line[16:])
-            if self._time is not None and self._mafd is not None and score is not None:
-                self._frame(self._time, self._mafd, score / 100.0)
-            self._time, self._mafd = None, None
+            self._score = None if score is None else score / 100.0
+            if not self.screen_threshold:
+                self._finish(None)
+        elif line.startswith("lavfi.signalstats.YAVG=") and self.screen_threshold:
+            avg = _number(line[23:])
+            self._finish(None if avg is None else min(1.0, max(0.0, avg / 255.0)))
 
-    def _frame(self, time: float, mafd: float, score: float) -> None:
+    def _finish(self, changed: float | None) -> None:
+        if self._time is not None and self._mafd is not None and self._score is not None:
+            self._frame(self._time, self._mafd, self._score, changed)
+        self._time, self._mafd, self._score = None, None, None
+
+    def _frame(self, time: float, mafd: float, score: float, changed: float | None) -> None:
         self.seconds = max(self.seconds, time)
         bucket = max(0, int(time / self.interval))
         while len(self._sums) <= bucket:
@@ -148,24 +214,52 @@ class SignalParser:
         self._sums[bucket] += mafd
         self._counts[bucket] += 1
         if score >= self.threshold:
-            self._cut(time, score)
+            self._add({"time": time, "score": score, "kind": KIND_CUT, "changed": changed})
+        if changed is None or not self.screen_threshold:
+            return
+        quiet = self.screen_threshold / 2.0
+        if self._candidate is not None:
+            if changed < quiet:  # the frame after the burst is calm again: it was a one-frame change
+                self._add(self._candidate)
+            self._candidate = None
+        elif changed >= self.screen_threshold and self._prev_changed is not None and self._prev_changed < quiet:
+            self._candidate = {"time": time, "score": score, "kind": KIND_SCREEN, "changed": changed}
+        self._prev_changed = changed
 
-    def _cut(self, time: float, score: float) -> None:
-        if self.scenes and time - self.scenes[-1]["time"] < self.min_gap:
-            if score > self.scenes[-1]["score"]:  # the strongest of a burst stands for it
-                self.scenes[-1] = {"time": time, "score": score}
-        else:
-            self.scenes.append({"time": time, "score": score})
+    def _add(self, scene: dict[str, Any]) -> None:
+        last = self.scenes[-1] if self.scenes else None
+        if last is None or abs(scene["time"] - last["time"]) >= self.min_gap:
+            self.scenes.append(scene)
+        elif _stronger(scene, last):  # the strongest of a burst stands for it
+            self.scenes[-1] = scene
 
-    def result(self, duration: float) -> tuple[list[dict[str, float]], list[float]]:
+    def result(self, duration: float) -> tuple[list[dict[str, Any]], list[float]]:
         """`(scenes, activity)`: the activity has one value per bucket up to `duration`."""
+        if self._candidate is not None:  # the file ended right after it: nothing contradicts it
+            self._add(self._candidate)
+            self._candidate = None
         buckets = max(1, math.ceil(duration / self.interval - 1e-9))
         activity = [
             round(activity_of(self._sums[k] / self._counts[k]), 3) if k < len(self._sums) and self._counts[k] else 0.0
             for k in range(buckets)
         ]
-        scenes = [{"time": round(s["time"], 3), "score": round(min(1.0, s["score"]), 3)} for s in self.scenes]
+        scenes = []
+        for s in self.scenes:
+            out = {"time": round(s["time"], 3), "score": round(min(1.0, s["score"]), 3), "kind": s["kind"]}
+            if s["changed"] is not None:
+                out["changed"] = round(s["changed"], 4)
+            scenes.append(out)
         return scenes, activity
+
+
+def _stronger(new: dict[str, Any], old: dict[str, Any]) -> bool:
+    """Whether `new` should replace `old` when they fall within `min_gap`: a scdet cut beats a screen change,
+    otherwise the higher score (cuts) or the larger changed fraction (screen changes) wins."""
+    if new["kind"] != old["kind"]:
+        return new["kind"] == KIND_CUT
+    if new["kind"] == KIND_CUT:
+        return new["score"] > old["score"]
+    return (new["changed"] or 0.0) > (old["changed"] or 0.0)
 
 
 def _number(text: str) -> float | None:
@@ -197,13 +291,35 @@ def scan_lines(
 # --- the pass ----------------------------------------------------------------------------------
 
 
-def _command(ffmpeg: str, source: str, fps: float) -> list[str]:
-    vf = f"fps={fps:g},scale={SAMPLE_WIDTH}:-2:flags=area,format=gray,scdet=t=100,metadata=mode=print:file=-"
+# What `signalstats` writes per frame: only YAVG is read, so the rest is deleted before `metadata=print` (it is
+# 31 lines a frame otherwise: 1.7 million lines for 3 hours, and the parser would read every one).
+_UNUSED_STATS = tuple(
+    [
+        f"{plane}{kind}"
+        for plane in "YUV"
+        for kind in ("MIN", "LOW", "AVG", "HIGH", "MAX")
+        if (plane, kind) != ("Y", "AVG")
+    ]
+    + [f"SAT{kind}" for kind in ("MIN", "LOW", "AVG", "HIGH", "MAX")]
+    + ["HUEMED", "HUEAVG", "YDIF", "UDIF", "VDIF", "YBITDEPTH", "UBITDEPTH", "VBITDEPTH"]
+)
+
+
+def _command(ffmpeg: str, source: str, fps: float, screen: bool = True) -> list[str]:
+    vf = f"fps={fps:g},scale={SAMPLE_WIDTH}:-2:flags=area,format=gray,scdet=t=100"
+    if screen:  # the share of pixels that moved by more than SCREEN_DELTA, as the mean (YAVG) of a 0/255 mask
+        # scdet needs the grey picture (on yuv420p it averages in the chroma planes and its scores change); the
+        # explicit yuv420p afterwards is what signalstats wants, and is cheaper here than letting it convert.
+        vf += f",format=yuv420p,tblend=all_mode=difference,lutyuv=y='if(gt(val,{SCREEN_DELTA}),255,0)',signalstats"
+        vf += "".join(f",metadata=mode=delete:key=lavfi.signalstats.{key}" for key in _UNUSED_STATS)
+    vf += ",metadata=mode=print:file=-"
     return [
         ffmpeg,
         "-hide_banner",
         "-loglevel",
         "error",
+        "-filter_threads",  # tiny frames: slice threading costs several times what it saves
+        "1",
         "-i",
         source,
         "-map",
@@ -218,7 +334,9 @@ def _command(ffmpeg: str, source: str, fps: float) -> list[str]:
 
 
 def _valid(payload: Any, asset: assets.Asset) -> bool:
-    return isinstance(payload, dict) and payload.get("version") == VERSION and payload.get("asset") == asset.id
+    return (
+        isinstance(payload, dict) and payload.get("version") in READABLE_VERSIONS and payload.get("asset") == asset.id
+    )
 
 
 def load(media: MediaStore, asset_id: str) -> dict[str, Any] | None:
@@ -226,7 +344,11 @@ def load(media: MediaStore, asset_id: str) -> dict[str, Any] | None:
     changed since. `AssetNotFoundError` / `SourceNotFoundError` for a missing asset."""
     asset = assets.get_asset(media, asset_id)
     payload = media.load_cache(asset.path, CACHE_NAME)
-    return payload if _valid(payload, asset) else None
+    if not _valid(payload, asset):
+        return None
+    if payload["version"] < 2:  # before the screen rule: every cut came from scdet
+        payload = {**payload, "scenes": [{"kind": KIND_CUT, **s} for s in payload["scenes"]]}
+    return payload
 
 
 def info(media: MediaStore, asset: assets.Asset) -> dict[str, Any] | None:
@@ -278,20 +400,23 @@ def analyze(
     *,
     threshold: float = DEFAULT_THRESHOLD,
     min_gap: float = DEFAULT_MIN_GAP,
+    screen_threshold: float = DEFAULT_SCREEN_THRESHOLD,
     force: bool = False,
     on_progress: ProgressFn | None = None,
     cancel: CancelToken | None = None,
 ) -> dict[str, Any]:
     """Find the asset's scene changes and activity curve and store them, unless a current document made with the
-    same `threshold` and `min_gap` from the same kind of source exists (`force` redoes it). Returns the info
-    `{asset, source, duration, threshold, min_gap, scenes, activity_buckets}` (counts) plus `made`; an audio-only
+    same `threshold`, `min_gap` and `screen_threshold` from the same kind of source exists (`force` redoes it). Returns the info
+    `{asset, source, duration, threshold, min_gap, screen_threshold, scenes, activity_buckets}` (counts) plus `made`; an audio-only
     asset gives `{asset, skipped: "audio-only asset", made: False}`.
 
-    Raises `ValueError` for a threshold outside 0..1 or a negative gap, `ExtractError` if ffmpeg fails,
+    Raises `ValueError` for a threshold or screen_threshold outside 0..1 or a negative gap, `ExtractError` if ffmpeg fails,
     `AssetNotFoundError` / `SourceNotFoundError` for a missing asset and `JobCancelledError` through `cancel`; a
     failed or cancelled run stores nothing and leaves any earlier document alone."""
     if not 0.0 <= threshold <= 1.0:
         raise ValueError("threshold must be between 0 and 1")
+    if not 0.0 <= screen_threshold <= 1.0:
+        raise ValueError("screen_threshold must be between 0 and 1")
     if min_gap < 0:
         raise ValueError("min_gap must not be negative")
     asset = assets.get_asset(media, asset_id)
@@ -304,18 +429,22 @@ def analyze(
         current = None if force else info(media, asset)
         if (
             current is not None
+            and current["version"] == VERSION
             and current["source"] == kind
             and current["threshold"] == threshold
             and current["min_gap"] == min_gap
+            and current["screen_threshold"] == screen_threshold
         ):
             return {**current, "made": False}
         total = max(asset.duration, 0.001)
         fps = min(SAMPLE_FPS, asset.fps) if asset.fps else SAMPLE_FPS
-        parser = SignalParser(threshold, min_gap)
+        parser = SignalParser(threshold, min_gap, screen_threshold=screen_threshold)
         if on_progress is not None:
             on_progress(0.0, total)
         with media.local_path(source_id) as source:
-            lines = iter_stdout_lines(_command(ffmpeg, str(source), fps), cancel, "analyse the scenes")
+            lines = iter_stdout_lines(
+                _command(ffmpeg, str(source), fps, screen_threshold > 0), cancel, "analyse the scenes"
+            )
             try:
                 scan_lines(lines, parser, total, on_progress, cancel)
             finally:
@@ -328,6 +457,7 @@ def analyze(
             "duration": asset.duration,
             "threshold": threshold,
             "min_gap": min_gap,
+            "screen_threshold": screen_threshold,
             "sample_fps": fps,
             "activity_interval": ACTIVITY_INTERVAL,
             "scenes": scenes,
@@ -340,6 +470,7 @@ def analyze(
             "duration": asset.duration,
             "threshold": threshold,
             "min_gap": min_gap,
+            "screen_threshold": screen_threshold,
             "scenes": len(scenes),
             "activity_buckets": len(activity),
         }

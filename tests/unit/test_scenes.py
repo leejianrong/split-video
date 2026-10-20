@@ -15,17 +15,21 @@ CUTS = [5.0, 12.0, 20.0]
 TOLERANCE = 0.5
 
 
-def frame_lines(time, mafd, score):
-    """What `metadata=print` writes for one frame."""
+def frame_lines(time, mafd, score, changed=0.0):
+    """What `metadata=print` writes for one frame: scdet's numbers, then signalstats' (the YAVG of the 0/255 mask of
+    changed pixels, so `changed` is the fraction of the picture)."""
     return [
         f"frame:{round(time * 5)}   pts:{round(time * 5)}      pts_time:{time:g}\n",
         f"lavfi.scd.mafd={mafd:.3f}\n",
         f"lavfi.scd.score={score:.3f}\n",
+        "lavfi.signalstats.YMIN=0\n",
+        f"lavfi.signalstats.YAVG={changed * 255:.3f}\n",
+        "lavfi.signalstats.YMAX=255\n",
     ]
 
 
 def fake_run(frames):
-    """A stand-in for `iter_stdout_lines` yielding the given `(time, mafd, score)` frames."""
+    """A stand-in for `iter_stdout_lines` yielding the given `(time, mafd, score[, changed])` frames."""
 
     def run(cmd, cancel=None, what="ffmpeg"):
         run.commands.append(cmd)
@@ -67,7 +71,7 @@ def test_parser_finds_cuts_buckets_the_activity_and_merges_a_burst():
         for line in frame_lines(*f):
             parser.feed(line)
     found, activity = parser.result(10.0)
-    assert [(s["time"], s["score"]) for s in found] == [(4.0, 0.4), (8.0, 0.18)]
+    assert [(s["time"], s["score"], s["kind"]) for s in found] == [(4.0, 0.4, "cut"), (8.0, 0.18, "cut")]
     assert len(activity) == 10
     assert activity[0] == 0.0 and activity[3] == 0.0
     assert activity[4] > 0.4 and activity[5] == 0.0  # the cut's bucket is the spike
@@ -127,12 +131,13 @@ def test_analyze_stores_the_document_and_reuses_it(memory, monkeypatch):
     monkeypatch.setattr(scenes, "iter_stdout_lines", run)
     first = scenes.analyze(media, asset.id)
     assert first == {
-        "version": 1,
+        "version": 2,
         "asset": asset.id,
         "source": "original",
         "duration": 10.0,
         "threshold": 0.15,
         "min_gap": 1.0,
+        "screen_threshold": 0.02,
         "scenes": 2,
         "activity_buckets": 10,
         "made": True,
@@ -143,6 +148,7 @@ def test_analyze_stores_the_document_and_reuses_it(memory, monkeypatch):
     assert assets.get_asset(media, asset.id) and scenes.has_scenes(media, asset)
     vf = run.commands[0][run.commands[0].index("-vf") + 1]
     assert vf.startswith("fps=5,scale=160:-2") and "scdet" in vf and "metadata=mode=print" in vf
+    assert "tblend=all_mode=difference" in vf and "signalstats" in vf and f"gt(val,{scenes.SCREEN_DELTA})" in vf
 
     again = scenes.analyze(media, asset.id)
     assert again["made"] is False and len(run.commands) == 1  # current: no second pass
@@ -150,6 +156,8 @@ def test_analyze_stores_the_document_and_reuses_it(memory, monkeypatch):
     assert scenes.analyze(media, asset.id, threshold=0.3)["scenes"] == 1  # other parameters redo it
     assert scenes.load(media, asset.id)["threshold"] == 0.3
     assert scenes.analyze(media, asset.id, threshold=0.3, min_gap=3.0)["made"] is True
+    assert scenes.analyze(media, asset.id, threshold=0.3, min_gap=3.0, screen_threshold=0.1)["made"] is True
+    assert scenes.load(media, asset.id)["screen_threshold"] == 0.1
 
 
 def test_a_slow_source_is_sampled_at_its_own_rate(monkeypatch):
@@ -226,6 +234,8 @@ def test_bad_parameters_and_audio_only_assets(memory, monkeypatch):
     media, asset = memory
     with pytest.raises(ValueError, match="threshold"):
         scenes.analyze(media, asset.id, threshold=1.5)
+    with pytest.raises(ValueError, match="screen_threshold"):
+        scenes.analyze(media, asset.id, screen_threshold=2)
     with pytest.raises(ValueError, match="min_gap"):
         scenes.analyze(media, asset.id, min_gap=-1)
     media.add("song.mp3", b"a", info=MediaInfo(3.0, None, None, True))
@@ -233,6 +243,118 @@ def test_bad_parameters_and_audio_only_assets(memory, monkeypatch):
     monkeypatch.setattr(scenes, "iter_stdout_lines", lambda *a, **k: pytest.fail("ffmpeg must not run"))
     assert scenes.analyze(media, song.id) == {"asset": song.id, "skipped": "audio-only asset", "made": False}
     assert not scenes.has_scenes(media, song)
+
+
+# --- the screen-change rule -----------------------------------------------------------------------------
+
+
+def parse(frames, **kwargs):
+    parser = scenes.SignalParser(**{"threshold": 0.15, "min_gap": 1.0, **kwargs})
+    for f in frames:
+        for line in frame_lines(*f):
+            parser.feed(line)
+    return parser.result(10.0)[0]
+
+
+def calm(n=50, changed=0.0008):
+    """Still frames with a blinking cursor's worth of change."""
+    return [(k / 5, 0.02, 0.02, changed) for k in range(n)]
+
+
+def test_an_isolated_burst_of_changed_pixels_is_a_screen_change_with_its_score_and_fraction():
+    frames = calm()
+    frames[25] = (5.0, 1.046, 1.046, 0.0572)  # a dark text pane swapped for another: scdet score 0.01
+    found = parse(frames)
+    assert found == [{"time": 5.0, "score": 0.01, "kind": "screen", "changed": 0.0572}]
+
+
+def test_cursor_typing_and_scrolling_do_not_fire():
+    typing = calm(changed=0.0015)
+    typing[10] = (2.0, 0.04, 0.03, 0.0021)
+    assert parse(typing) == []
+    scroll = calm()
+    for k in range(10, 30):  # continuous: high frame after frame, including its first and last frames
+        scroll[k] = (k / 5, 5.0, 0.05, 0.26)
+    assert parse(scroll) == []
+    two = calm()
+    two[10] = (2.0, 1.0, 1.0, 0.05)
+    two[11] = (2.2, 1.0, 1.0, 0.05)  # a burst of two frames is not a one-frame change
+    assert parse(two) == []
+
+
+def test_a_burst_next_to_a_noisy_frame_is_not_isolated():
+    frames = calm()
+    frames[24] = (4.8, 0.2, 0.2, 0.012)  # above half the threshold: the screen was already changing
+    frames[25] = (5.0, 1.0, 1.0, 0.05)
+    assert parse(frames) == []
+
+
+def test_a_burst_in_the_very_last_frame_stands_and_the_first_frame_cannot_be_one():
+    frames = calm(10)
+    frames[-1] = (1.8, 1.0, 1.0, 0.05)
+    assert [s["time"] for s in parse(frames)] == [1.8]
+    first = calm(10)
+    first[0] = (0.0, 1.0, 1.0, 0.05)
+    assert parse(first) == []
+
+
+def test_the_screen_threshold_decides_and_zero_turns_the_rule_off():
+    frames = calm()
+    frames[25] = (5.0, 1.0, 1.0, 0.03)
+    assert parse(frames, screen_threshold=0.02)[0]["kind"] == "screen"
+    assert parse(frames, screen_threshold=0.05) == []
+    # off: the frame ends at scdet's score line, and no signalstats lines are needed
+    parser = scenes.SignalParser(0.15, 1.0, screen_threshold=0)
+    for line in ["frame:1 pts:1 pts_time:0.2\n", "lavfi.scd.mafd=40\n", "lavfi.scd.score=40\n"]:
+        parser.feed(line)
+    assert parser.result(1.0)[0] == [{"time": 0.2, "score": 0.4, "kind": "cut"}]
+
+
+def test_a_hard_cut_both_rules_see_counts_once_as_a_cut_and_the_screen_one_does_not_win_a_burst():
+    frames = calm()
+    frames[25] = (5.0, 60.0, 60.0, 0.99)  # scdet and the screen rule both see it
+    found = parse(frames)
+    assert found == [{"time": 5.0, "score": 0.6, "kind": "cut", "changed": 0.99}]
+    mixed = calm()
+    mixed[25] = (5.0, 1.0, 1.0, 0.05)  # a screen change ...
+    mixed[27] = (5.4, 30.0, 30.0, 0.9)  # ... then a cut 0.4 s later: one detection, the cut
+    mixed[28] = (5.6, 0.0, 0.0, 0.0)
+    assert [(s["time"], s["kind"]) for s in parse(mixed)] == [(5.4, "cut")]
+    far = calm()
+    far[25] = (5.0, 1.0, 1.0, 0.05)
+    far[35] = (7.0, 1.0, 1.0, 0.08)  # two screen changes more than min_gap apart stay two
+    assert [(s["time"], s["kind"]) for s in parse(far)] == [(5.0, "screen"), (7.0, "screen")]
+    close = calm()
+    close[25] = (5.0, 1.0, 1.0, 0.05)
+    close[29] = (5.8, 1.0, 1.0, 0.08)  # within min_gap: the larger fraction stands
+    assert [(s["time"], s["changed"]) for s in parse(close)] == [(5.8, 0.08)]
+
+
+def test_a_version_1_document_is_still_readable_but_not_current(memory, monkeypatch):
+    media, asset = memory
+    old = {
+        "version": 1,
+        "asset": asset.id,
+        "source": "original",
+        "duration": 10.0,
+        "threshold": 0.15,
+        "min_gap": 1.0,
+        "sample_fps": 5.0,
+        "activity_interval": 1.0,
+        "scenes": [{"time": 4.0, "score": 0.4}],
+        "activity": [0.0] * 10,
+    }
+    summary = {k: v for k, v in old.items() if k not in ("sample_fps", "activity_interval", "scenes", "activity")}
+    media.save_cache(asset.path, scenes.CACHE_NAME, old)
+    media.save_cache(asset.path, scenes.INFO_NAME, {**summary, "scenes": 1, "activity_buckets": 10})
+    loaded = scenes.load(media, asset.id)
+    assert loaded["version"] == 1 and loaded["scenes"] == [{"kind": "cut", "time": 4.0, "score": 0.4}]
+    assert scenes.has_scenes(media, asset) and "screen_threshold" not in loaded
+    assert scenes.excerpt(loaded, 3.0, 5.0)["scenes"][0]["kind"] == "cut"
+    run = fake_run(FRAMES)
+    monkeypatch.setattr(scenes, "iter_stdout_lines", run)
+    assert scenes.analyze(media, asset.id)["made"] is True and len(run.commands) == 1  # redone as version 2
+    assert scenes.load(media, asset.id)["version"] == 2
 
 
 # --- the real pass on a clip with known cuts ----------------------------------------------------
@@ -327,7 +449,9 @@ def test_a_stale_proxy_is_not_used(local):
 
 def test_a_lower_threshold_finds_more_and_min_gap_merges(local):
     media, asset, _ = local
-    assert scenes.analyze(media, asset.id, threshold=0.9)["scenes"] == 0
+    assert scenes.analyze(media, asset.id, threshold=0.9, screen_threshold=0)["scenes"] == 0
+    # the screen rule is its own knob: the whole-picture changes below a strict scdet threshold still show, as "screen"
+    assert scenes.analyze(media, asset.id, threshold=0.9)["scenes"] == 3
     wide = scenes.analyze(media, asset.id, min_gap=10.0)  # 5 and 12 are 7 s apart, 12 and 20 are 8 s
     assert wide["scenes"] == 2 and scenes.load(media, asset.id)["min_gap"] == 10.0
 

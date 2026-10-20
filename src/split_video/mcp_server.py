@@ -607,6 +607,7 @@ def create_server(root: Path, store: ProjectStore | None = None, media: MediaSto
         asset: str,
         threshold: float = scenes.DEFAULT_THRESHOLD,
         min_gap: float = scenes.DEFAULT_MIN_GAP,
+        screen_threshold: float = scenes.DEFAULT_SCREEN_THRESHOLD,
         force: bool = False,
     ) -> dict[str, Any]:
         """Find the scene changes and the screen-activity curve of the library asset with id `asset` (from
@@ -614,19 +615,29 @@ def create_server(root: Path, store: ProjectStore | None = None, media: MediaSto
         if it has a current one (else the original), at 5 frames per second and 160 px wide: minutes for a
         multi-hour file, before this returns. A cut is a frame whose change score (0..1) reaches `threshold`
         (default 0.15; lower finds subtler switches, higher only hard cuts); cuts closer than `min_gap` seconds
-        (default 1) count as one. Activity is one 0..1 value per second: how much the picture changed (typing in a
+        (default 1) count as one. A second rule finds text-only changes on a same-background screen (a pane swapped for
+        another): a frame where at least `screen_threshold` (default 0.02, 0 turns it off) of the picture changed,
+        once, not scrolling or typing; each scene has `kind` ("cut" or "screen"), `score` and `changed`. Activity is one 0..1 value per second: how much the picture changed (typing in a
         still editor reads low, a window switch spikes). Returns `source` ("proxy" or "original"), `duration`,
         counts of `scenes` and `activity_buckets`, and `made` (false when current signals existed unless `force`).
         An audio-only asset returns `skipped`. list_assets shows `scenes` per asset."""
         try:
-            return await run(scenes.analyze, media, asset, threshold=threshold, min_gap=min_gap, force=force)
+            return await run(
+                scenes.analyze,
+                media,
+                asset,
+                threshold=threshold,
+                min_gap=min_gap,
+                screen_threshold=screen_threshold,
+                force=force,
+            )
         except ValueError as exc:
             raise ToolError(str(exc)) from None
 
     @server.tool(annotations=_READ_ONLY)
     async def get_scenes(asset: str, start: float | None = None, end: float | None = None) -> dict[str, Any]:
         """The stored scene changes and activity curve of the library asset `asset`: `scenes` (`time` in seconds from
-        the start, `score` 0..1), `activity` (one 0..1 value per `activity_interval` seconds; `activity[k]` covers
+        the start, `score` 0..1, `kind` "cut" or "screen", `changed` the share of the picture that changed), `activity` (one 0..1 value per `activity_interval` seconds; `activity[k]` covers
         `[k * interval, (k + 1) * interval)`), plus `source`, `duration`, `threshold` and `min_gap`. With `start`
         and/or `end` (seconds) only the cuts in that span and the activity values overlapping it (`activity_start` is
         the second the first value covers). Run analyze_scenes first: without signals this is a tool error."""
@@ -760,9 +771,10 @@ def create_server(root: Path, store: ProjectStore | None = None, media: MediaSto
         """Everything known about the library asset `asset` around `time` (seconds from the start), in one call:
         `audio` (dominant `class`: music, singing, speech, applause_crowd, laughter or silence_other, plus `share`,
         `secondary` and the `regions` in the window), `loudness` (`mean_db`, `max_db`, `min_db`, a `curve`),
-        `silence` (`inside` a silence or not, `intervals`), `speech` (the `words` spoken, `text`, `word_count`,
+        `silence` (`inside` a silence and no word being spoken, `inside_exact`, `intervals`), `speech` (the `words` spoken, `text`, `word_count`,
         `words_per_minute`), and `visual` (the nearest `scene_change`, `scene_index`, `shot_start`, screen `activity`,
-        the on-screen `text` with its `lines`, and `description`, which is always null for now). The window is
+        the on-screen `text` with its `lines`, `age_seconds` and `stale` (true when it was read long before `time` or the
+        picture changed since: `note` says why), and `description`, which is always null for now). The window is
         `window` seconds (default 10, at most 600) centred on `time`, clamped to the asset. It only reads what other
         tools stored and never decodes or runs a model: a signal that was never computed is null, and `available` and
         `missing` say which and how to make it (analyze_audio, propose_splits, transcribe_asset, analyze_scenes,

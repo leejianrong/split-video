@@ -41,7 +41,7 @@ def engine(monkeypatch):
     return FakeEngine(SCREENS)
 
 
-def with_scenes(media, asset, times):
+def with_scenes(media, asset, times, kind="cut"):
     media.save_cache(
         asset.path,
         scenes.CACHE_NAME,
@@ -52,9 +52,12 @@ def with_scenes(media, asset, times):
             "duration": 100.0,
             "threshold": 0.15,
             "min_gap": 1.0,
+            "screen_threshold": 0.02,
             "sample_fps": 5.0,
             "activity_interval": 1.0,
-            "scenes": [{"time": t, "score": 0.5} for t in times],
+            "scenes": [
+                {"time": t, "score": 0.5 if kind == "cut" else 0.01, "kind": kind, "changed": 0.06} for t in times
+            ],
             "activity": [0.0] * 100,
         },
     )
@@ -85,6 +88,20 @@ def test_frames_closer_than_the_min_gap_are_merged_and_the_scene_frame_wins():
     close = ocr.schedule(100.0, [0.4, 0.9, 1.2], 30.0)  # a burst of cuts: one frame
     assert [t for t in times(close) if t < 5] == [0.9]
     assert ocr.schedule(100.0, [], 30.0, min_gap=0.0).frames == ocr.schedule(100.0, [], 30.0).frames
+
+
+def test_text_only_screen_changes_are_sampled_like_cuts(memory, monkeypatch):
+    media, asset = memory
+    install_frames(monkeypatch)
+    engine = FakeEngine(SCREENS)
+    with_scenes(media, asset, [40.0, 70.0], kind="screen")  # found by the screen rule, not scdet
+    made = ocr.recognize(media, asset.id, interval=50.0, engine=engine)
+    assert made["scenes_used"] is True and made["scene_frames"] == 2
+    assert [(f["time"], f["source_scene"]) for f in ocr.load(media, asset.id)["frames"]][:3] == [
+        (0.0, False),
+        (40.5, True),
+        (50.0, False),
+    ]
 
 
 def test_a_scene_at_the_very_end_is_clamped_inside_the_asset():

@@ -299,12 +299,18 @@ pass over the proxy (the original if there is none; 5 frames per second, 160 px 
 finds the cuts and measures how much the picture changes:
 
 ```bash
-docker run --rm -v "$PWD":/data ghcr.io/leejianrong/split-video scenes stream.mp4 --root /data [--threshold 0.15] [--min-gap 1] [--json]
+docker run --rm -v "$PWD":/data ghcr.io/leejianrong/split-video scenes stream.mp4 --root /data [--threshold 0.15] [--screen-threshold 0.02] [--min-gap 1] [--json]
 ```
 
-You get each cut's `time` and `score` (0..1; the default threshold 0.15 catches a window switch or slide
-change but not typing or scrolling, and cuts under `--min-gap` seconds apart count as one) and one 0..1
-`activity` value per second (still screen 0, typing low, a switch near 1). Results are stored next to the
+You get each scene change's `time`, `kind`, `score` and `changed`, and one 0..1 `activity` value per second (still
+screen 0, typing low, a switch near 1). Two rules run in the same pass. `kind: "cut"` is ffmpeg's `scdet` (default
+`--threshold 0.15`): a camera cut or a switch between windows with different backgrounds (a light slide to a dark
+editor scores 0.8, a hard cut between two very different test pictures 0.2). `kind: "screen"` finds a text-only change on a screen with
+the same background (one dark text pane swapped for another scores only 0.01 with scdet, which a threshold cannot
+separate from noise): the fraction `changed` of the picture that changed in one isolated frame must reach
+`--screen-threshold` (default 0.02; 0 turns it off; a pane swap measured 0.045, typing under 0.003, a blinking cursor
+0.0008, scrolling code a continuous 0.26 that never fires). Scene changes under `--min-gap` seconds apart count as
+one (a `cut` beats a `screen` change). OCR (`ocr`) reads a frame after every scene change of either kind. Results are stored next to the
 video, record whether the proxy or the original was read, and go stale if the file changes (format in
 `src/split_video/scenes.py`). Slow fades are not cuts. Over HTTP it is a `scene_analysis` job
 (`POST /api/v1/assets/{id}/scenes`, with progress and cancel), read with `GET /api/v1/assets/{id}/scenes`

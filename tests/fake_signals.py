@@ -134,9 +134,16 @@ def plant(media, path: str = "talk.mp4", *, skip=(), duration: float = DURATION,
             raw += [[float(t), t + 1.0] for t in range(300, int(duration), 60)]
         media.save_cache(asset.path, "silence", {"-35.0": raw, "-50.0": [[10.0, 11.0]]})
     if "scenes" not in skip:
-        cuts = [{"time": 20.0, "score": 0.4}, {"time": CUT_AT, "score": 0.62}]
+        cuts = [
+            {"time": 20.0, "score": 0.4, "kind": "cut", "changed": 0.7},
+            {"time": CUT_AT, "score": 0.62, "kind": "cut", "changed": 0.9},
+        ]
         if dense:
-            extra = [{"time": float(t), "score": 0.3} for t in range(40, int(duration), 20) if t != int(CUT_AT)]
+            extra = [
+                {"time": float(t), "score": 0.3, "kind": "cut", "changed": 0.5}
+                for t in range(40, int(duration), 20)
+                if t != int(CUT_AT)
+            ]
             cuts = sorted(cuts + extra, key=lambda c: c["time"])
         activity = [0.9 if k in (20, int(CUT_AT)) else 0.1 for k in range(math.ceil(duration))]
         document = {
@@ -146,6 +153,7 @@ def plant(media, path: str = "talk.mp4", *, skip=(), duration: float = DURATION,
             "duration": duration,
             "threshold": 0.15,
             "min_gap": 1.0,
+            "screen_threshold": scenes.DEFAULT_SCREEN_THRESHOLD,
             "sample_fps": 5.0,
             "activity_interval": 1.0,
             "scenes": cuts,

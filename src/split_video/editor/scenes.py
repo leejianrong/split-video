@@ -24,6 +24,8 @@ AUDIO_ONLY = "audio-only asset: no picture to analyse"
 class ScenesRequest(BaseModel):
     threshold: float = Field(scenes.DEFAULT_THRESHOLD, ge=0, le=1)  # a cut needs a score of at least this (0..1)
     min_gap: float = Field(scenes.DEFAULT_MIN_GAP, ge=0)  # cuts closer than this many seconds count as one
+    screen_threshold: float = Field(scenes.DEFAULT_SCREEN_THRESHOLD, ge=0, le=1)  # share of the picture that changes
+    # in one frame for a text-only screen change (0 = off)
     force: bool = False  # redo even if current signals made with these parameters exist
 
 
@@ -33,7 +35,9 @@ class ScenesStartResponse(BaseModel):
 
 class SceneOut(BaseModel):
     time: float  # seconds from the start of the asset: the first frame of the new shot
-    score: float  # 0..1, how abrupt the change was
+    score: float  # 0..1, scdet's score of that frame
+    kind: str = "cut"  # "cut" (scdet) or "screen" (a text-only change on the same background)
+    changed: float | None = None  # share of the picture (0..1) that changed in that frame
 
 
 class ScenesOut(BaseModel):
@@ -45,6 +49,7 @@ class ScenesOut(BaseModel):
     duration: float
     threshold: float
     min_gap: float
+    screen_threshold: float | None = None  # None: a version 1 document, made before the screen rule
     sample_fps: float
     activity_interval: float  # seconds per activity value
     scenes: list[SceneOut]
@@ -75,7 +80,14 @@ def make_router(provider: StoreProvider, jobs: JobQueue) -> APIRouter:
             raise HTTPException(status_code=422, detail=AUDIO_ONLY)
         job_id = jobs.submit(
             SCENE_ANALYSIS,
-            scene_work(ctx.media, asset.id, threshold=request.threshold, min_gap=request.min_gap, force=request.force),
+            scene_work(
+                ctx.media,
+                asset.id,
+                threshold=request.threshold,
+                min_gap=request.min_gap,
+                screen_threshold=request.screen_threshold,
+                force=request.force,
+            ),
             label=asset.path,
             total=SCENE_STEPS,
             owner=ctx.principal.id,
