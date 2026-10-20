@@ -37,6 +37,7 @@ from split_video import (
     assets,
     contact_sheet,
     frames,
+    highlights,
     library,
     media_report,
     ocr,
@@ -80,6 +81,7 @@ _EXPECTED_ERRORS = (
     search.SearchQueryError,
     time_index.TimeIndexError,
     media_report.MediaReportError,
+    highlights.HighlightsError,
 )
 
 _READ_ONLY = ToolAnnotations(read_only_hint=True, destructive_hint=False, idempotent_hint=True, open_world_hint=False)
@@ -823,6 +825,52 @@ def create_server(root: Path, store: ProjectStore | None = None, media: MediaSto
             bucket_seconds=bucket_seconds,
             include=include,
             prepare=prepare,
+        )
+
+    @server.tool(annotations=_READ_ONLY)
+    async def suggest_highlights(
+        asset: str,
+        preset: str = "default",
+        count: int = highlights.DEFAULT_COUNT,
+        min_seconds: float = highlights.DEFAULT_MIN_SECONDS,
+        max_seconds: float = highlights.DEFAULT_MAX_SECONDS,
+        target_seconds: float | None = None,
+        start: float | None = None,
+        end: float | None = None,
+        keywords: list[str] | None = None,
+        weights: dict[str, float] | None = None,
+        min_gap_seconds: float = highlights.DEFAULT_MIN_GAP,
+        snap: bool = True,
+    ) -> dict[str, Any]:
+        """A deterministic first pass at the highlights of the library asset `asset`: ranked, non-overlapping
+        candidate windows (`start` / `end` are seconds on the asset's timeline, `duration` between min_seconds and
+        max_seconds) scored from the stored speech density, loudness, applause / music share, loud non-speech sound,
+        scene and screen changes, screen activity, on-screen text changes and `keywords` (found in speech or on-screen
+        text, e.g. ["FAILED", "error"]), minus silence. `preset` sets the weights: gig (music, applause, loudness),
+        stream (speech, screen changes, on-screen text, keywords), lecture (speech, slide changes, on-screen text)
+        or default; `weights` overrides single ones, e.g. {"applause": 3, "speech": 0}; the valid signals are speech,
+        loudness, applause, music, noise, scene, activity, ocr, keywords and silence (a penalty). Each candidate has
+        `score` (0 to 1), `reasons` (what was found, in words), `score_parts`, `snapped` (what its edges were moved to:
+        a silence, sentence or scene change), and a `title_hint` / `transcript_excerpt` / `ocr_excerpt`. `start` and
+        `end` limit where to look. Only reads what is stored: `signals.missing` says how to make the absent
+        signals. This proposes, it does not decide: judge the candidates yourself (get_frame, transcript_range,
+        what_is_happening). A tool error for an unknown asset, an unknown preset or weight signal, a negative weight,
+        a bad span, or when no signal is stored yet (it says what to run)."""
+        return await run(
+            highlights.suggest_highlights,
+            media,
+            asset,
+            preset=preset,
+            count=count,
+            min_seconds=min_seconds,
+            max_seconds=max_seconds,
+            target_seconds=target_seconds,
+            weights=weights,
+            keywords=keywords,
+            start=start,
+            end=end,
+            min_gap_seconds=min_gap_seconds,
+            snap=snap,
         )
 
     @server.tool(annotations=_EDITS_PROJECT)

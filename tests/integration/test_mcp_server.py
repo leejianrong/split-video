@@ -56,6 +56,7 @@ async def test_exposes_the_documented_tools(root):
         "what_is_happening",
         "timeline_index",
         "media_report",
+        "suggest_highlights",
         "get_frame",
         "get_contact_sheet",
         "list_segments",

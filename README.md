@@ -432,6 +432,23 @@ docker run --rm -v "$PWD":/data split-video:ocr report stream.mp4 --root /data -
 Over HTTP: `GET /api/v1/assets/{id}/report` and `POST /api/v1/assets/{id}/report/prepare` (a job); MCP has
 `media_report`. All three return the same JSON, documented in [docs/media-report.md](docs/media-report.md).
 
+### Suggest highlights (`highlights`)
+
+`highlights` is a deterministic first pass at "what should I cut?": it scores windows of a long recording from the
+signals other commands stored (speech density, loudness, applause and music, scene changes, screen activity, on-screen
+text, keywords, minus silence) and lists ranked, non-overlapping candidates with the reasons for each. Presets tune
+the weights for a `gig`, a coding `stream` or a `lecture`; `--weight signal=value` overrides one. It only reads what was
+stored (no decoding, no model) and proposes, it does not decide.
+
+```bash
+docker run --rm -v "$PWD":/data split-video:ocr highlights stream.mp4 --root /data --preset stream --count 10   # a table
+docker run --rm -v "$PWD":/data split-video:ocr highlights gig.mp4 --root /data --preset gig --weight applause=3 --json
+```
+
+Over HTTP: `GET /api/v1/assets/{id}/highlights?preset=&count=&keywords=&weights=speech:2`; MCP has `suggest_highlights`.
+All three return the same JSON; the method, the preset weight table and a worked example are in
+[docs/highlights.md](docs/highlights.md).
+
 ### Compose: combine clips, overlays, audio and titles (`compose`)
 
 Besides splitting one recording, you can build a video from several files.

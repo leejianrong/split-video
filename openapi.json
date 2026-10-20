@@ -1017,6 +1017,59 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
+      "HighlightsOut": {
+        "description": "`highlights.suggest_highlights` (version 1). The nested parts are documented in docs/highlights.md; they are\nplain JSON so that the shape is identical on every surface.",
+        "properties": {
+          "asset": {
+            "title": "Asset",
+            "type": "string"
+          },
+          "candidates": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Candidates",
+            "type": "array"
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Notes",
+            "type": "array"
+          },
+          "params": {
+            "additionalProperties": true,
+            "title": "Params",
+            "type": "object"
+          },
+          "preset": {
+            "title": "Preset",
+            "type": "string"
+          },
+          "signals": {
+            "additionalProperties": true,
+            "title": "Signals",
+            "type": "object"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "version",
+          "asset",
+          "preset",
+          "params",
+          "signals",
+          "candidates",
+          "notes"
+        ],
+        "title": "HighlightsOut",
+        "type": "object"
+      },
       "JobListOut": {
         "properties": {
           "jobs": {
@@ -4705,6 +4758,196 @@
           }
         },
         "summary": "Get Frame"
+      }
+    },
+    "/api/v1/assets/{asset_id}/highlights": {
+      "get": {
+        "description": "Suggest highlight candidates: windows scored from the stored speech density, loudness, applause / music\nshare, scene changes, screen activity, on-screen text and `keywords` (comma separated), minus silence, picked\nwithout overlap and snapped to silences, sentences and scene changes, ranked with the reasons for each.\n`preset` is default, gig, stream or lecture; `weights` overrides single weights (`speech:2,applause:0.5` or a\nJSON object). Start and end of each candidate are seconds on the asset's timeline. Reads stored signals only.\n404 for an unknown asset; 422 for bad parameters; 409 when no signal is stored.",
+        "operationId": "get_highlights_api_v1_assets__asset_id__highlights_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "asset_id",
+            "required": true,
+            "schema": {
+              "title": "Asset Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "preset",
+            "required": false,
+            "schema": {
+              "default": "default",
+              "title": "Preset",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "count",
+            "required": false,
+            "schema": {
+              "default": 10,
+              "title": "Count",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "min_seconds",
+            "required": false,
+            "schema": {
+              "default": 15.0,
+              "title": "Min Seconds",
+              "type": "number"
+            }
+          },
+          {
+            "in": "query",
+            "name": "max_seconds",
+            "required": false,
+            "schema": {
+              "default": 60.0,
+              "title": "Max Seconds",
+              "type": "number"
+            }
+          },
+          {
+            "in": "query",
+            "name": "target_seconds",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Target Seconds"
+            }
+          },
+          {
+            "in": "query",
+            "name": "start",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Start"
+            }
+          },
+          {
+            "in": "query",
+            "name": "end",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "End"
+            }
+          },
+          {
+            "in": "query",
+            "name": "keywords",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Keywords"
+            }
+          },
+          {
+            "in": "query",
+            "name": "weights",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Weights"
+            }
+          },
+          {
+            "in": "query",
+            "name": "min_gap_seconds",
+            "required": false,
+            "schema": {
+              "default": 10.0,
+              "title": "Min Gap Seconds",
+              "type": "number"
+            }
+          },
+          {
+            "in": "query",
+            "name": "snap",
+            "required": false,
+            "schema": {
+              "default": true,
+              "title": "Snap",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HighlightsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedOut"
+                }
+              }
+            },
+            "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Highlights"
       }
     },
     "/api/v1/assets/{asset_id}/ocr": {
