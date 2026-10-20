@@ -21,9 +21,24 @@ The engine is `src/split_video/time_index.py`; its module docstring is the refer
 - Errors: unknown asset (HTTP 404, MCP tool error, CLI exit 1); negative time, time beyond the duration, bad window
   or span or step (HTTP 422, tool error, exit 1). A missing signal is never an error.
 
+## Stale text and silence versus speech
+
+OCR reads a frame every `interval` seconds (default 30) and after each detected scene change, so the text reported at
+`time` was read earlier. `visual.text.age_seconds` is `time` minus the last OCR frame that saw the text (the frame that
+read it or a later one that found it unchanged; 0 if that frame is after `time`). `visual.text.stale` is `true` when
+that age is more than 2 times the OCR document's interval, or when a scene change of either kind happened after that
+frame and at or before `time` (the picture changed and was not read again); `note` then says why, else it is `null`.
+Stale text is still returned, as the best known: treat it as possibly outdated or re-run `ocr` with a shorter
+`--interval`. Scene changes include text-only screen changes (`kind: "screen"`, `scenes` docs), so a pane swap on a
+same-background screen is both sampled by OCR and flags older text as stale.
+
+`silence.inside` is false while a transcribed word is being spoken at `time` (`word.start - 0.5 <= time < word.end`: word starts run late by a few tenths of a second, so the half second before a word counts as speech), even
+when the silence scan's interval still covers it; `silence.inside_exact` is the raw interval test. Without a
+transcript they are equal. `intervals` are always the scan's, never trimmed.
+
 ## The result (`"version": 1`)
 
-The shape is stable within a version: keys are never added or removed, and a signal that was not computed is `null`,
+The shape is stable within a version: keys are never removed or renamed (new keys may be added, always present from then on), and a signal that was not computed is `null`,
 not absent. It is pinned by golden files in `tests/fixtures/time_index/`. Times are seconds, levels are dBFS.
 
 | Key | Meaning |
@@ -31,13 +46,13 @@ not absent. It is pinned by golden files in `tests/fixtures/time_index/`. Times 
 | `version`, `asset`, `time`, `window {start,end}`, `duration` | what was asked, after clamping |
 | `audio` | `class` (the class with the most seconds in the window: `music`, `singing`, `speech`, `applause_crowd`, `laughter` or `silence_other`), `share`, `secondary`, `regions [{start,end,class,score}]` clipped to the window (at most 100, `regions_truncated`). From the YAMNet classification (`split-video analyze`). |
 | `loudness` | `mean_db`, `max_db`, `min_db` over the 1 s RMS values overlapping the window, `window_seconds`, `curve [{t,db}]` (at most 60 points, thinned by keeping the loudest of each group). Only if the curve is stored; it is never computed here (`split-video report <target> --prepare` makes it without the editor, see [media-report.md](media-report.md)). |
-| `silence` | `threshold_db` (the stored scan closest to -35), `inside` (is `time` in a silence), `intervals [{start,end}]` of at least 0.5 s clipped to the window (at most 50, `truncated`). From `split-video propose`. |
+| `silence` | `threshold_db` (the stored scan closest to -35), `inside` (is `time` in a silence and no transcribed word being spoken then), `inside_exact` (the raw test against `intervals`: the silence scan and the transcript can disagree by a few tenths of a second at a speech onset), `intervals [{start,end}]` of at least 0.5 s clipped to the window (at most 50, `truncated`). From `split-video propose`. |
 | `speech` | `words [{start,end,word}]` (at most 200), `text`, `word_count` (all words in the window), `words_per_minute`, `truncated`. From the transcript. |
-| `visual.scene_change` | `{time, score}` of the cut nearest `time` inside the window, or null |
+| `visual.scene_change` | `{time, score, kind}` (`kind` is `cut` or `screen`, see below) of the cut nearest `time` inside the window, or null |
 | `visual.scene_changes`, `scene_index`, `shot_start` | cuts inside the window; cuts at or before `time`; time of the last one (0.0 before the first) |
 | `visual.activity` | `{mean, max, curve [{t,value}]}` of the 0..1 screen activity (at most 60 points) |
 | `visual.description` | reserved for picture descriptions (SPL-97): always `null` for now |
-| `visual.text` | the on-screen text up at `time` (else the latest shown in the window): `time`, `until`, `text`, `lines` (at most 1000 characters / 30 lines, `truncated`), `more` (other text states in the window). From `split-video ocr`. |
+| `visual.text` | the on-screen text up at `time` (else the latest shown in the window): `time`, `until`, `text`, `lines` (at most 1000 characters / 30 lines, `truncated`), `more` (other text states in the window), `age_seconds` (`time` minus the last OCR frame that saw this text), `stale` and `note` (see below). From `split-video ocr`. |
 | `available` | one boolean per signal: `audio loudness silence speech scenes ocr description` (`description` is always false) |
 | `missing` | `[{signal, how}]` for each absent signal the asset can have, with the CLI command, MCP tool and HTTP route that makes it. Audio-only assets do not list scenes or ocr; assets without sound do not list the audio signals. `description` is never listed. |
 
@@ -139,6 +154,7 @@ with indent 2 it is 3.7 KB):
   "silence": {
     "threshold_db": -35.0,
     "inside": false,
+    "inside_exact": false,
     "intervals": [
       {
         "start": 96.0,
@@ -260,6 +276,9 @@ with indent 2 it is 3.7 KB):
     "text": {
       "time": 0.0,
       "until": 140.0,
+      "age_seconds": 100.0,
+      "stale": true,
+      "note": "this text may no longer be on screen: the picture changed at 20 s, after this text was read; it was read 100 s before this time (more than 60 s)",
       "text": "intro slide",
       "lines": [
         "intro slide"

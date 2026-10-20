@@ -84,6 +84,7 @@ def test_silence_inside_and_clipped(media, asset):
     assert at(media, asset, 100)["silence"] == {
         "threshold_db": -35.0,
         "inside": False,
+        "inside_exact": False,
         "intervals": [{"start": 96.0, "end": 97.5}],
         "truncated": False,
     }
@@ -96,7 +97,7 @@ def test_silence_inside_and_clipped(media, asset):
 
 def test_scene_cut_and_shot(media, asset):
     cut = at(media, asset, 150)["visual"]
-    assert cut["scene_change"] == {"time": CUT_AT, "score": 0.62} and cut["scene_changes"] == 1
+    assert cut["scene_change"] == {"time": CUT_AT, "score": 0.62, "kind": "cut"} and cut["scene_changes"] == 1
     assert cut["scene_index"] == 2 and cut["shot_start"] == CUT_AT
     assert cut["activity"]["max"] == 0.9 and cut["activity"]["mean"] == pytest.approx(0.18)
     before = at(media, asset, 147)["visual"]  # [142, 152): the cut is ahead of `time`
@@ -129,6 +130,94 @@ def test_a_blank_screen_is_no_text_but_the_latest_text_in_the_window_is_reported
     assert at(media, asset, 40)["visual"]["text"]["until"] == 50.0
 
 
+# --- silence versus speech, and stale on-screen text (SPL-107) -----------------------------------------
+
+
+def test_inside_a_silence_is_false_while_a_word_is_being_spoken(media):
+    asset = plant(media, skip=("silence",))
+    # the silence scan ends 0.4 s after the first word starts (98.0): the two analyses disagree at the onset
+    media.save_cache(asset.path, "silence", {"-35.0": [[96.0, 98.4]]})
+    quiet = at(media, asset, 97.0)["silence"]
+    assert quiet["inside"] is True and quiet["inside_exact"] is True
+    early = at(media, asset, 97.6)["silence"]  # 0.4 s before the first word: its stated start runs late
+    assert early["inside"] is False and early["inside_exact"] is True
+    onset = at(media, asset, 98.1)["silence"]
+    assert onset["inside"] is False and onset["inside_exact"] is True
+    after = at(media, asset, 98.45)["silence"]  # a word is still sounding, the interval is over
+    assert after["inside"] is False and after["inside_exact"] is False
+
+
+def test_without_a_transcript_inside_and_inside_exact_agree(media):
+    asset = plant(media, skip=("silence", "speech"))
+    media.save_cache(asset.path, "silence", {"-35.0": [[96.0, 98.4]]})
+    found = at(media, asset, 98.1)["silence"]
+    assert found["inside"] is True and found["inside_exact"] is True
+
+
+def _with_cut(media, asset, time, kind="screen"):
+    from split_video import scenes
+
+    doc = media.load_cache(asset.path, scenes.CACHE_NAME)
+    doc["scenes"] = sorted(
+        doc["scenes"] + [{"time": time, "score": 0.01, "kind": kind, "changed": 0.057}], key=lambda s: s["time"]
+    )
+    media.save_cache(asset.path, scenes.CACHE_NAME, doc)
+
+
+def _text_at(media, asset, t, window=None):
+    return at(media, asset, t, window)["visual"]["text"]
+
+
+def test_text_read_before_a_scene_change_is_stale_and_says_why(media):
+    from fake_ocr import store_ocr
+
+    asset = plant(media, skip=("ocr",))
+    store_ocr(
+        media,
+        asset,
+        [(0.0, "intro"), (90.5, "def render_timeline(project):"), (150.0, "FAILED test_x")],
+        duration=DURATION,
+    )
+    _with_cut(media, asset, 130.0)  # a screen change the OCR schedule never sampled after
+    stale = _text_at(media, asset, 140)
+    assert stale["text"].startswith("def render_timeline") and stale["age_seconds"] == 49.5
+    assert stale["stale"] is True and "130" in stale["note"] and "no longer be on screen" in stale["note"]
+    fresh = _text_at(media, asset, 120)  # nothing happened since the frame at 90.5
+    assert fresh["stale"] is False and fresh["note"] is None and fresh["age_seconds"] == 29.5
+    shown = _text_at(media, asset, 155)  # the frame at 150 read it 5 s ago
+    assert shown["text"] == "FAILED test_x" and shown["stale"] is False and shown["age_seconds"] == 5.0
+
+
+def test_a_frame_that_found_the_text_unchanged_resets_the_age(media):
+    from fake_ocr import store_ocr
+
+    asset = plant(media, skip=("ocr", "scenes"))
+    document = store_ocr(media, asset, [(0.0, "intro"), (150.0, "next")], duration=DURATION)
+    assert _text_at(media, asset, 100)["age_seconds"] == 100.0  # one frame at 0 saw it
+    document["frames"].insert(
+        1, {"time": 90.0, "text": "intro", "lines": ["intro"], "changed": False, "reused_from": 0.0}
+    )
+    from split_video import ocr
+
+    media.save_cache(asset.path, ocr.CACHE_NAME, document)
+    seen = _text_at(media, asset, 100)
+    assert seen["age_seconds"] == 10.0 and seen["stale"] is False and seen["note"] is None
+
+
+def test_old_text_is_stale_by_age_alone_without_scene_data(media):
+    asset = plant(media, skip=("scenes",))
+    old = _text_at(media, asset, 100)  # "intro slide" read at 0 s, OCR interval 30: more than 2 intervals
+    assert old["age_seconds"] == 100.0 and old["stale"] is True and "100 s before" in old["note"]
+    assert _text_at(media, asset, 50)["stale"] is False  # 50 s <= 2 * 30 s
+    assert at(media, asset, 100)["available"]["scenes"] is False
+
+
+def test_staleness_for_a_text_that_starts_after_the_time_is_age_zero(media):
+    asset = plant(media)
+    ahead = _text_at(media, asset, 139.9, 0.2)  # intro slide still up at 139.9 (until 140)
+    assert ahead["age_seconds"] >= 0
+
+
 # --- edges ----------------------------------------------------------------------------------------
 
 
@@ -158,7 +247,12 @@ def test_explicit_window_matches_at(media, asset):
     index = TimeIndex.load(media, asset.id)
     assert index.window(200.0, 210.0) == index.at(205.0, 10.0)
     assert index.window(0.0, 4.0)["time"] == 2.0
-    assert index.at(DURATION, 10) == index.window(295.0, 300.0) | {"time": DURATION}
+    edge, span = index.at(DURATION, 10), index.window(295.0, 300.0)
+    assert edge["visual"]["text"]["age_seconds"] > span["visual"]["text"]["age_seconds"]  # measured to `time`
+    for answer in (edge, span):
+        answer["visual"]["text"].pop("age_seconds")
+        answer["visual"]["text"].pop("note")
+    assert edge == span | {"time": DURATION}
 
 
 def test_caps_on_a_long_window(tmp_path):

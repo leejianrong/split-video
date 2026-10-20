@@ -36,7 +36,8 @@ class LoudnessOut(BaseModel):
 
 class SilenceOut(BaseModel):
     threshold_db: float
-    inside: bool
+    inside: bool  # `time` is in a silence and no transcribed word is being spoken then
+    inside_exact: bool  # `time` is in a listed silence interval, whatever the transcript says
     intervals: list[SpanOut]
     truncated: bool
 
@@ -58,6 +59,7 @@ class SpeechOut(BaseModel):
 class SceneChangeOut(BaseModel):
     time: float
     score: float
+    kind: str  # "cut" (scdet) or "screen" (a text-only change on the same background)
 
 
 class ActivityOut(BaseModel):
@@ -69,6 +71,9 @@ class ActivityOut(BaseModel):
 class OnScreenTextOut(BaseModel):
     time: float
     until: float
+    age_seconds: float  # `time` minus the last OCR frame that saw this text
+    stale: bool  # older than 2 OCR intervals, or the picture changed after it was read
+    note: str | None  # why it is stale
     text: str
     lines: list[str]
     truncated: bool

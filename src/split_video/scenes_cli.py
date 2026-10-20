@@ -41,6 +41,13 @@ def scenes_cmd(
     min_gap: float = typer.Option(
         scenes.DEFAULT_MIN_GAP, "--min-gap", min=0.0, help="Cuts closer than this many seconds count as one."
     ),
+    screen_threshold: float = typer.Option(
+        scenes.DEFAULT_SCREEN_THRESHOLD,
+        "--screen-threshold",
+        min=0.0,
+        max=1.0,
+        help="Share of the picture (0..1) that must change in one frame to count as a text-only screen change; 0 = off.",
+    ),
     start: float | None = typer.Option(None, "--start", help="Only show signals from this second."),
     end: float | None = typer.Option(None, "--end", help="Only show signals up to this second."),
     force: bool = typer.Option(False, "--force", help="Redo it even if current signals exist."),
@@ -51,7 +58,14 @@ def scenes_cmd(
     try:
         asset_id = _asset_id(media, target)
         with error_console.status(f"Analysing {target}..."):
-            result = scenes.analyze(media, asset_id, threshold=threshold, min_gap=min_gap, force=force)
+            result = scenes.analyze(
+                media,
+                asset_id,
+                threshold=threshold,
+                min_gap=min_gap,
+                screen_threshold=screen_threshold,
+                force=force,
+            )
         if "skipped" in result:
             if as_json:
                 typer.echo(json.dumps(result, indent=2))
@@ -73,4 +87,9 @@ def scenes_cmd(
         f"{format_timestamp(result['duration'], result['duration'])}."
     )
     for s in document["scenes"]:
-        console.print(f"  {format_timestamp(s['time'], result['duration'])}  score {s['score']:.2f}", highlight=False)
+        kind = s.get("kind", "cut")
+        changed = f", {s['changed']:.1%} of the picture changed" if "changed" in s else ""
+        console.print(
+            f"  {format_timestamp(s['time'], result['duration'])}  {kind}  score {s['score']:.2f}{changed}",
+            highlight=False,
+        )

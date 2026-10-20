@@ -78,6 +78,7 @@
   "silence": {
     "threshold_db": -35.0,
     "inside": false,
+    "inside_exact": false,
     "intervals": [],
     "truncated": false
   },
@@ -143,6 +144,9 @@
     "text": {
       "time": 140.0,
       "until": 300.0,
+      "age_seconds": 65.0,
+      "stale": true,
+      "note": "this text may no longer be on screen: the picture changed at 150 s, after this text was read; it was read 65 s before this time (more than 60 s)",
       "text": "def main():\n    run_stream()",
       "lines": [
         "def main():",

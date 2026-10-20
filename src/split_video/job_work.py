@@ -157,11 +157,12 @@ def scene_work(
     *,
     threshold: float = scenes.DEFAULT_THRESHOLD,
     min_gap: float = scenes.DEFAULT_MIN_GAP,
+    screen_threshold: float = scenes.DEFAULT_SCREEN_THRESHOLD,
     force: bool = False,
 ) -> Callable[[JobContext], dict[str, Any]]:
     """Find the asset's scene changes and activity curve (`scenes.analyze`). Progress counts thousandths of the
-    video; the result is the stored document's info `{asset, source, duration, threshold, min_gap, scenes,
-    activity_buckets, made}` (the signals themselves are `GET /assets/{id}/scenes`)."""
+    video; the result is the stored document's info `{asset, source, duration, threshold, min_gap,
+    screen_threshold, scenes, activity_buckets, made}` (the signals themselves are `GET /assets/{id}/scenes`)."""
 
     def work(ctx: JobContext) -> dict[str, Any]:
         def on_progress(done: float, total: float) -> None:
@@ -169,7 +170,14 @@ def scene_work(
 
         ctx.progress(0, SCENE_STEPS)
         return scenes.analyze(
-            media, asset_id, threshold=threshold, min_gap=min_gap, force=force, on_progress=on_progress, cancel=ctx
+            media,
+            asset_id,
+            threshold=threshold,
+            min_gap=min_gap,
+            screen_threshold=screen_threshold,
+            force=force,
+            on_progress=on_progress,
+            cancel=ctx,
         )
 
     return work

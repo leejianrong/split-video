@@ -82,17 +82,21 @@ def at_cmd(
         loud = found["loudness"]
         _say(f"loudness: mean {loud['mean_db']} dB, max {loud['max_db']} dB")
     if found["silence"]:
-        _say(f"silence: {'inside a silence' if found['silence']['inside'] else 'not silent'}")
+        silence = found["silence"]
+        _say(f"silence: {'inside a silence' if silence['inside'] else 'not silent'}")
     if found["speech"]:
         speech = found["speech"]
         _say(f"speech: {speech['word_count']} words, {speech['words_per_minute']:g}/min: {escape(speech['text'])}")
     visual = found["visual"]
     if visual["scene_index"] is not None:
         cut = visual["scene_change"]
-        near = f", cut at {cut['time']:g} (score {cut['score']:g})" if cut else ""
+        near = f", {cut['kind']} at {cut['time']:g} (score {cut['score']:g})" if cut else ""
         _say(f"scene: shot {visual['scene_index']} from {visual['shot_start']:g}{near}")
     if visual["text"]:
-        _say(f"on screen: {escape(visual['text']['text'].splitlines()[0] if visual['text']['text'] else '')}")
+        seen = visual["text"]
+        _say(f"on screen: {escape(seen['text'].splitlines()[0] if seen['text'] else '')}")
+        if seen["stale"]:
+            _say(f"[yellow]stale text:[/yellow] {escape(seen['note'] or '')}")
     for item in found["missing"]:
         _say(f"[yellow]{item['signal']}:[/yellow] {escape(item['how'])}")
 
