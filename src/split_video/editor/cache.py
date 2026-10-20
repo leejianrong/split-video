@@ -35,6 +35,7 @@ from contextlib import closing
 from split_video.editor import classify
 from split_video.editor.classify import ClassificationRegion
 from split_video.ffmpeg import WAVEFORM_SAMPLE_RATE, ProbeError, detect_silence, iter_pcm_chunks
+from split_video.jobs import CancelToken
 from split_video.media_store import MediaStore
 from split_video.silence import SilenceInterval
 from split_video.waveform import Loudness, WaveformPeaks, stream_waveform
@@ -72,12 +73,14 @@ class SilenceCache:
         with self._lock:
             return {threshold: list(intervals) for threshold, intervals in self._raw.items()}
 
-    def get_raw_silences(self, threshold: float) -> list[SilenceInterval]:
+    def get_raw_silences(self, threshold: float, cancel: CancelToken | None = None) -> list[SilenceInterval]:
+        """The raw scan at `threshold`, made (one ffmpeg pass) and stored if there is none yet. A cancelled `cancel`
+        token stops the pass with `JobCancelledError` and stores nothing."""
         with self._lock:
             if threshold in self._raw:
                 return self._raw[threshold]
             with self._media.local_path(self._source) as path:
-                intervals = detect_silence(path, f"{threshold}dB", RAW_SCAN_MIN_SILENCE_DURATION)
+                intervals = detect_silence(path, f"{threshold}dB", RAW_SCAN_MIN_SILENCE_DURATION, cancel=cancel)
             self._raw[threshold] = intervals
             self._save()
             return intervals
@@ -115,12 +118,12 @@ class WaveformCache:
             payload["loudness"] = {"window_seconds": self._loudness.window_seconds, "db": self._loudness.db}
         self._media.save_cache(self._source, "waveform", payload)
 
-    def _compute(self) -> None:
+    def _compute(self, cancel: CancelToken | None = None) -> None:
         try:
             expected: int | None = int(self._media.probe(self._source).duration * WAVEFORM_SAMPLE_RATE)
         except ProbeError:
             expected = None  # unknown length: the peaks are then kept raw (see waveform.PeakAccumulator)
-        with self._media.local_path(self._source) as path, closing(iter_pcm_chunks(path)) as chunks:
+        with self._media.local_path(self._source) as path, closing(iter_pcm_chunks(path, cancel=cancel)) as chunks:
             self._peaks, self._loudness = stream_waveform(chunks, WAVEFORM_SAMPLE_RATE, expected)
         self._save()
 
@@ -136,10 +139,12 @@ class WaveformCache:
             assert self._peaks is not None
             return self._peaks
 
-    def get_loudness(self) -> Loudness:
+    def get_loudness(self, cancel: CancelToken | None = None) -> Loudness:
+        """The loudness curve, decoding the audio once (streamed) to make and store it if there is none. A cancelled
+        `cancel` token stops the decode with `JobCancelledError` and stores nothing."""
         with self._lock:
             if self._loudness is None:
-                self._compute()
+                self._compute(cancel)
             assert self._loudness is not None
             return self._loudness
 

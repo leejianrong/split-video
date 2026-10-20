@@ -69,8 +69,8 @@ listed in `missing`. A default (10 s) response is 1.5 to 3 KB as compact JSON; t
 is about 15 KB (see docs/time-index.md).
 
 Where it comes from: `classification` (`ClassificationCache`, regions at the default thresholds), `waveform`
-(`WaveformCache.stored_loudness`: a missing curve is NOT computed here, that would decode the whole audio; open
-the video in the editor to make it), `silence` (`SilenceCache.stored`), the transcript, `scenes` and `ocr` documents.
+(`WaveformCache.stored_loudness`: a missing curve is NOT computed here, that would decode the whole audio; `report
+--prepare` (media_report.py) or the editor's waveform route makes it), `silence` (`SilenceCache.stored`), the transcript, `scenes` and `ocr` documents.
 
 Timeline
 --------
@@ -121,7 +121,10 @@ HOW = {
         "run `split-video analyze <video>` (CLI), the analyze_audio tool (MCP) or POST /api/v1/analyze in the editor "
         "(HTTP)"
     ),
-    "loudness": "open the video in the editor (`split-video edit`): GET /api/v1/waveform stores the loudness curve",
+    "loudness": (
+        "run `split-video report <target> --prepare` (CLI), the media_report tool with prepare=true (MCP) or "
+        "POST /api/v1/assets/{id}/report/prepare (HTTP); the editor's waveform route stores it too"
+    ),
     "silence": "run `split-video propose <video>` (CLI), the propose_splits tool (MCP) or POST /api/v1/detect (HTTP)",
     "speech": (
         "run `split-video transcribe <target>` (CLI), the transcribe_asset tool (MCP) or "
@@ -182,6 +185,7 @@ class TimeIndex:
     ) -> None:
         self.asset = asset
         self.duration = float(asset.duration)
+        self._language = transcript.get("language") if transcript else None
         # audio classification
         self._regions = regions
         self._r_starts = [r.start for r in regions or []]
@@ -260,6 +264,45 @@ class TimeIndex:
         if not self.asset.has_video:
             impossible += _NEEDS_VIDEO
         return [{"signal": s, "how": HOW[s]} for s in SIGNALS if not have[s] and s not in impossible]
+
+    # --- the whole of each signal, for readers that summarise a recording (media_report.py) ------------
+
+    @property
+    def class_regions(self) -> list[classify.ClassificationRegion] | None:
+        """The audio classification's regions in time order, or None without one."""
+        return None if self._regions is None else list(self._regions)
+
+    @property
+    def silences(self) -> list[tuple[float, float]] | None:
+        """The silences of at least `MIN_SILENCE` seconds as (start, end), or None without a scan."""
+        return list(zip(self._s_starts, self._s_ends, strict=True)) if self._silence_on else None
+
+    @property
+    def silence_threshold_db(self) -> float | None:
+        return self._silence_db
+
+    @property
+    def cuts(self) -> list[tuple[float, float]] | None:
+        """The scene cuts as (time, score), or None without scene signals."""
+        return None if self._scenes is None else [(s["time"], s["score"]) for s in self._scenes["scenes"]]
+
+    @property
+    def loudness_db(self) -> list[float] | None:
+        """The 1 s loudness values (dBFS), or None without a stored curve."""
+        return None if self._loudness is None else list(self._loudness.db)
+
+    @property
+    def loudness_window_seconds(self) -> float | None:
+        return None if self._loudness is None else self._loudness.window_seconds
+
+    @property
+    def words(self) -> list[str] | None:
+        """Every transcribed word in time order, or None without a transcript."""
+        return None if self._words is None else [w["word"] for w in self._words]
+
+    @property
+    def language(self) -> str | None:
+        return self._language
 
     # --- asking -------------------------------------------------------------------------------
 

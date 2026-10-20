@@ -102,7 +102,7 @@ def test_export_plans_and_writes_through_the_media_store(media, monkeypatch):
 def test_propose_segments_uses_the_silence_cache(media, monkeypatch):
     scans = []
 
-    def fake_detect(path, threshold, min_duration):
+    def fake_detect(path, threshold, min_duration, cancel=None):
         scans.append(threshold)
         return [SilenceInterval(start=40.0, end=45.0)]
 
@@ -116,7 +116,7 @@ def test_propose_segments_uses_the_silence_cache(media, monkeypatch):
 def test_silence_cache_hits_survive_a_new_instance_and_miss_after_the_media_changes(media, monkeypatch):
     calls = []
 
-    def fake_detect(path, threshold, min_duration):
+    def fake_detect(path, threshold, min_duration, cancel=None):
         calls.append(threshold)
         return [SilenceInterval(start=1.0, end=2.0)]
 

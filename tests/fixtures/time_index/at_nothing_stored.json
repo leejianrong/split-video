@@ -36,7 +36,7 @@
     },
     {
       "signal": "loudness",
-      "how": "open the video in the editor (`split-video edit`): GET /api/v1/waveform stores the loudness curve"
+      "how": "run `split-video report <target> --prepare` (CLI), the media_report tool with prepare=true (MCP) or POST /api/v1/assets/{id}/report/prepare (HTTP); the editor's waveform route stores it too"
     },
     {
       "signal": "silence",

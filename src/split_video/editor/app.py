@@ -37,6 +37,7 @@ from split_video.editor.frames import make_router as make_frames_router
 from split_video.editor.job_routes import cancel_job, job_of_kind
 from split_video.editor.job_routes import make_router as make_jobs_router
 from split_video.editor.library import make_router as make_library_router
+from split_video.editor.media_report import make_router as make_media_report_router
 from split_video.editor.media_response import media_response
 from split_video.editor.ocr import make_router as make_ocr_router
 from split_video.editor.proxies import make_router as make_proxies_router
@@ -553,6 +554,7 @@ def create_app(
     app.include_router(make_ocr_router(provider, jobs), prefix=API_PREFIX, **guard)
     app.include_router(make_search_router(provider), prefix=API_PREFIX, **guard)
     app.include_router(make_time_index_router(provider), prefix=API_PREFIX, **guard)
+    app.include_router(make_media_report_router(provider, jobs), prefix=API_PREFIX, **guard)
     app.include_router(make_frames_router(provider), prefix=API_PREFIX, **guard)
     app.include_router(make_contact_sheet_router(provider), prefix=API_PREFIX, **guard)
     # Deprecated aliases for one release: /api/... and /media/... as they were

@@ -30,7 +30,7 @@ not absent. It is pinned by golden files in `tests/fixtures/time_index/`. Times 
 | --- | --- |
 | `version`, `asset`, `time`, `window {start,end}`, `duration` | what was asked, after clamping |
 | `audio` | `class` (the class with the most seconds in the window: `music`, `singing`, `speech`, `applause_crowd`, `laughter` or `silence_other`), `share`, `secondary`, `regions [{start,end,class,score}]` clipped to the window (at most 100, `regions_truncated`). From the YAMNet classification (`split-video analyze`). |
-| `loudness` | `mean_db`, `max_db`, `min_db` over the 1 s RMS values overlapping the window, `window_seconds`, `curve [{t,db}]` (at most 60 points, thinned by keeping the loudest of each group). Only if the curve is stored; it is never computed here. |
+| `loudness` | `mean_db`, `max_db`, `min_db` over the 1 s RMS values overlapping the window, `window_seconds`, `curve [{t,db}]` (at most 60 points, thinned by keeping the loudest of each group). Only if the curve is stored; it is never computed here (`split-video report <target> --prepare` makes it without the editor, see [media-report.md](media-report.md)). |
 | `silence` | `threshold_db` (the stored scan closest to -35), `inside` (is `time` in a silence), `intervals [{start,end}]` of at least 0.5 s clipped to the window (at most 50, `truncated`). From `split-video propose`. |
 | `speech` | `words [{start,end,word}]` (at most 200), `text`, `word_count` (all words in the window), `words_per_minute`, `truncated`. From the transcript. |
 | `visual.scene_change` | `{time, score}` of the cut nearest `time` inside the window, or null |
