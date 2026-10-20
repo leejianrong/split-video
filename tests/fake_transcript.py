@@ -79,3 +79,27 @@ def store_transcript(media, path: str = "talk.wav", **kwargs) -> tuple[assets.As
     document = make_document(asset.id, **kwargs)
     transcribe.save(media, asset, document)
     return asset, document
+
+
+def document_from_words(asset_id: str, words: list[tuple[float, float, str]]) -> dict:
+    """A transcript with exactly these `(start, end, word)` words, in one segment per sentence-less run of 8."""
+    stored = [{"start": a, "end": b, "word": w, "probability": 0.9} for a, b, w in words]
+    segments = [
+        {
+            "start": chunk[0]["start"],
+            "end": chunk[-1]["end"],
+            "text": " ".join(w["word"] for w in chunk),
+            "words": chunk,
+        }
+        for chunk in (stored[i : i + 8] for i in range(0, len(stored), 8))
+    ]
+    return {
+        "version": transcribe.VERSION,
+        "asset": asset_id,
+        "model": "base.en",
+        "language": "en",
+        "language_probability": 1.0,
+        "duration": stored[-1]["end"] if stored else 0.0,
+        "vad": True,
+        "segments": segments,
+    }

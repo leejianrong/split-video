@@ -498,6 +498,149 @@
         "title": "BrowseResponse",
         "type": "object"
       },
+      "CaptionRange": {
+        "properties": {
+          "end": {
+            "title": "End",
+            "type": "number"
+          },
+          "start": {
+            "title": "Start",
+            "type": "number"
+          }
+        },
+        "required": [
+          "start",
+          "end"
+        ],
+        "title": "CaptionRange",
+        "type": "object"
+      },
+      "CaptionStyleOut": {
+        "properties": {
+          "bold": {
+            "title": "Bold",
+            "type": "boolean"
+          },
+          "box": {
+            "title": "Box",
+            "type": "boolean"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "font_size": {
+            "title": "Font Size",
+            "type": "number"
+          },
+          "highlight": {
+            "title": "Highlight",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "margin_v": {
+            "title": "Margin V",
+            "type": "number"
+          },
+          "max_chars": {
+            "title": "Max Chars",
+            "type": "integer"
+          },
+          "max_lines": {
+            "title": "Max Lines",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "outline": {
+            "title": "Outline",
+            "type": "string"
+          },
+          "outline_width": {
+            "title": "Outline Width",
+            "type": "number"
+          },
+          "position": {
+            "title": "Position",
+            "type": "string"
+          },
+          "primary": {
+            "title": "Primary",
+            "type": "string"
+          },
+          "shadow": {
+            "title": "Shadow",
+            "type": "number"
+          },
+          "uppercase": {
+            "title": "Uppercase",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "label",
+          "description",
+          "font_size",
+          "primary",
+          "highlight",
+          "outline",
+          "outline_width",
+          "shadow",
+          "box",
+          "bold",
+          "position",
+          "margin_v",
+          "max_chars",
+          "max_lines",
+          "uppercase"
+        ],
+        "title": "CaptionStyleOut",
+        "type": "object"
+      },
+      "CaptionStylesOut": {
+        "properties": {
+          "default_style": {
+            "title": "Default Style",
+            "type": "string"
+          },
+          "font_size_range": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Font Size Range",
+            "type": "array"
+          },
+          "positions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Positions",
+            "type": "array"
+          },
+          "styles": {
+            "items": {
+              "$ref": "#/components/schemas/CaptionStyleOut"
+            },
+            "title": "Styles",
+            "type": "array"
+          }
+        },
+        "required": [
+          "styles",
+          "positions",
+          "font_size_range",
+          "default_style"
+        ],
+        "title": "CaptionStylesOut",
+        "type": "object"
+      },
       "ClassificationRegionOut": {
         "properties": {
           "bucket": {
@@ -2816,6 +2959,77 @@
       },
       "RenderRequest": {
         "properties": {
+          "caption_font_size": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Caption Font Size"
+          },
+          "caption_highlight_color": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Caption Highlight Color"
+          },
+          "caption_position": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Caption Position"
+          },
+          "caption_range": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CaptionRange"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "caption_tracks": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Caption Tracks"
+          },
+          "captions": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Captions"
+          },
           "fit": {
             "anyOf": [
               {
@@ -2895,6 +3109,18 @@
       },
       "RenderStatusOut": {
         "properties": {
+          "captions": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Captions"
+          },
           "duration": {
             "anyOf": [
               {
@@ -7355,6 +7581,35 @@
           }
         },
         "summary": "Browse"
+      }
+    },
+    "/api/v1/caption-styles": {
+      "get": {
+        "description": "Every caption style with all its fields. Pass a `name` as `captions` when starting a render.",
+        "operationId": "list_caption_styles_api_v1_caption_styles_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaptionStylesOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedOut"
+                }
+              }
+            },
+            "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
+          }
+        },
+        "summary": "List Caption Styles"
       }
     },
     "/api/v1/classification": {

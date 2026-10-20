@@ -496,6 +496,9 @@ split-video compose render mix --size 1080x1920 --overwrite       # a 9:16 short
 split-video presets                                                # named export destinations
 split-video compose render mix --preset vertical-1080 --overwrite  # 1080x1920, 30 fps, tuned encoder
 split-video compose render mix --preset youtube-1080p --fit crop --overwrite  # cover the frame instead of black bars
+split-video caption-styles                                         # classic, shorts, minimal
+split-video compose render mix --preset vertical-1080 --captions shorts --overwrite   # burn in word-highlighted captions
+split-video compose render mix --captions classic --caption-range 10-40 --overwrite   # only part of the timeline
 ```
 
 **Export presets** name a destination instead of codec flags: `youtube-1080p` (1920x1080, 30 fps),
@@ -507,6 +510,21 @@ scales it to fit and pads with black bars, `--fit crop` scales it to cover the f
 clip with its own `compose crop` region keeps that crop either way. The same options are `preset` and `fit` on
 `POST /api/v1/compose/projects/{name}/render` (list: `GET /api/v1/presets`) and on the MCP tool `render_timeline`
 (list: `list_export_presets`). Presets are about how to export, so they are not part of an edit plan.
+
+**Captions** (`--captions <style>`) burn the spoken words into the picture, on top of everything else, with the word
+being spoken highlighted. They come from the transcripts of the clips' assets (run `split-video transcribe` first; a clip
+whose asset has none is simply not captioned and is listed in the result's `captions.clips_without`), for the main video
+track's unmuted clips (`--caption-tracks 1,2` picks other tracks by number), mapped to where each clip sits on the
+timeline, crossfades included. Styles are `classic` (white on a dark box, lower third, yellow highlight), `shorts` (large
+bold upper-case with an outline, centre-lower inside the safe area of a vertical frame, green highlight) and `minimal`
+(small, thin outline); sizes are fractions of the output height, so they scale across presets. `--caption-font-size`
+(0.01..0.2 of the height), `--caption-highlight #RRGGBB` and `--caption-position top|middle|bottom` override a style,
+`--caption-range START-END` (timeline seconds) limits where captions appear. The same are `captions`, `caption_range`
+(`{start, end}`), `caption_font_size`, `caption_highlight_color`, `caption_position` and `caption_tracks` on the render
+request and on `render_timeline`; the styles are `GET /api/v1/caption-styles` and `list_caption_styles`, and the render
+result gains `captions: {style, clips_with_transcript, clips_without, words, lines, events}`. Captions are not part of an
+edit plan or the project file. Rules (line breaking, how a word cut by a clip edge is treated, the highlight events) are in
+the docstring of `src/split_video/captions.py`.
 
 Clips reference media by asset id, so a renamed or moved file is found again
 (an id comes from hashing the file's size and its first, middle and last MiB).
@@ -610,7 +628,7 @@ the visual editor afterward. Tools: `list_videos`, `list_segments`,
 `trim_timeline_clip`, `move_timeline_clip`, `remove_timeline_clip`,
 `set_timeline_transition`, `add_timeline_track`, `remove_timeline_track`,
 `move_timeline_track`, `place_timeline_clip`, `set_timeline_clip`,
-`add_timeline_text`, `set_timeline_text`, `render_timeline` (with `preset` and `fit`), `list_export_presets`.
+`add_timeline_text`, `set_timeline_text`, `render_timeline` (with `preset`, `fit` and `captions`), `list_export_presets`, `list_caption_styles`.
 
 Tools only touch files under `--root` (default: the current directory):
 

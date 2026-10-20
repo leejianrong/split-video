@@ -12,7 +12,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from split_video import library, media_report, ocr, project, proxy, scenes, timeline_service, transcribe
+from split_video import captions, library, media_report, ocr, project, proxy, scenes, timeline_service, transcribe
 from split_video.editor import classify
 from split_video.editor.cache import ClassificationCache
 from split_video.jobs import PROXY, JobContext, JobQueue
@@ -115,17 +115,19 @@ def render_work(
     preset: str | None = None,
     fit: str | None = None,
     name: str | None = None,
+    caption_request: captions.CaptionRequest | None = None,
 ) -> Callable[[JobContext], dict[str, Any]]:
     """Render the timeline to `out_id`. Progress is `RENDER_STEPS` thousandths; the result is
-    `timeline_service.render_result` (name, output, duration and the preset, fit, size and fps used)."""
+    `timeline_service.render_result` (name, output, duration and the preset, fit, size, fps and captions report)."""
 
     def work(ctx: JobContext) -> dict[str, Any]:
         def on_progress(fraction: float) -> None:
             ctx.progress(round(fraction * RENDER_STEPS), RENDER_STEPS)
 
         used = timeline_service.run_render(
-            timeline, media, out_id, on_progress, cancel=ctx, width=width, height=height, preset=preset, fit=fit
-        )
+            timeline, media, out_id, on_progress, cancel=ctx, width=width, height=height, preset=preset, fit=fit,
+            caption_request=caption_request,
+        )  # fmt: skip
         return timeline_service.render_result(name or filename, filename, timeline, used)
 
     return work
