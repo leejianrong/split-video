@@ -30,6 +30,7 @@ from split_video.ffmpeg import ExtractError, FfmpegNotFoundError, ProbeError
 from split_video.local_media_store import LocalMediaStore
 from split_video.local_store import LocalProjectStore
 from split_video.media_store import MediaStore
+from split_video.render import parse_size
 from split_video.store import ProjectStore
 from split_video.timefmt import format_timestamp, parse_time
 from split_video.timeline import Project, TimelineError
@@ -119,6 +120,9 @@ def _show(media: MediaStore, name: str, project: Project, as_json: bool, **extra
                 details.append(f"gain {c['gain']:g}")
             if c["opacity"] != 1.0:
                 details.append(f"opacity {c['opacity']:g}")
+            if c["crop"]:
+                box = c["crop"]
+                details.append(f"crop x{box['x']:.3g} y{box['y']:.3g} w{box['w']:.3g} h{box['h']:.3g}")
             table.add_row(
                 f"{track['index']} {track['kind']}",
                 str(c["index"]),
@@ -458,6 +462,57 @@ def set_cmd(
     _show(media, name, project, as_json)
 
 
+def crop_cmd(
+    name: str = _Name,
+    clip: int = _Clip,
+    track: int | None = _Track,
+    x: float | None = typer.Option(None, "--x", help="Left edge of the region, 0..1 of the source frame width."),
+    y: float | None = typer.Option(None, "--y", help="Top edge of the region, 0..1 of the source frame height."),
+    w: float | None = typer.Option(None, "--w", help="Region width, 0.02..1 of the source frame width."),
+    h: float | None = typer.Option(None, "--h", help="Region height, 0.02..1 of the source frame height."),
+    aspect: str | None = typer.Option(
+        None, "--aspect", help="Instead of --x/--y/--w/--h: the largest region of this shape, e.g. 9:16."
+    ),
+    center_x: float = typer.Option(0.5, "--center-x", help="With --aspect: where to centre it, 0..1 across."),
+    center_y: float = typer.Option(0.5, "--center-y", help="With --aspect: where to centre it, 0..1 down."),
+    zoom: float = typer.Option(1.0, "--zoom", help="With --aspect: zoom in by this factor (1 = the largest region)."),
+    clear: bool = typer.Option(False, "--clear", help="Remove the crop (show the whole frame)."),
+    base_revision: int | None = _BaseRevision,
+    root: Path = _Root,
+    as_json: bool = _Json,
+) -> None:
+    """Crop a clip to a region of its source frame, e.g. a 9:16 slice of a 16:9 recording for a vertical short.
+
+    Either explicit --x --y --w --h (fractions of the source frame, origin top-left), or --aspect 9:16 with
+    optional --center-x/--center-y/--zoom, which computes the region from the clip's source size. Render the
+    result at the same aspect with `render --size 1080x1920` to fill the frame."""
+    explicit = [v is not None for v in (x, y, w, h)]
+    if any(explicit) and not all(explicit):
+        raise typer.BadParameter("give all of --x --y --w --h together")
+    if sum([all(explicit), aspect is not None, clear]) != 1:
+        raise typer.BadParameter("give exactly one of --x/--y/--w/--h, --aspect, or --clear")
+    root = root.resolve()
+    store = LocalProjectStore(root)
+    media = LocalMediaStore(root)
+    try:
+        project = timeline_service.set_clip_crop(
+            store,
+            name,
+            _clip_id(store, name, clip, track, base_revision),
+            media=media,
+            crop={"x": x, "y": y, "w": w, "h": h} if all(explicit) else None,  # type: ignore[dict-item]
+            aspect=aspect,
+            center_x=center_x,
+            center_y=center_y,
+            zoom=zoom,
+            clear=clear,
+            base_revision=base_revision,
+        )
+    except _EXPECTED_ERRORS as exc:
+        raise _fail(exc, as_json)
+    _show(media, name, project, as_json)
+
+
 def add_text_cmd(
     name: str = _Name,
     text: str = typer.Argument(..., help="The words to show."),
@@ -578,6 +633,9 @@ def render_cmd(
     name: str = _Name,
     output: str | None = typer.Option(None, "--output", help="Output filename (default: <name>-render.mp4)."),
     overwrite: bool = typer.Option(False, "--overwrite", help="Replace the output if it exists."),
+    size: str | None = typer.Option(
+        None, "--size", help="Output frame size WxH in pixels, e.g. 1080x1920 (even, 64..4096). Default: first clip's."
+    ),
     root: Path = _Root,
     as_json: bool = _Json,
 ) -> None:
@@ -586,8 +644,9 @@ def render_cmd(
     store = LocalProjectStore(root)
     media = LocalMediaStore(root)
     try:
-        project, filename, out_id = timeline_service.plan_render(store, media, name, output, overwrite)
-        timeline_service.run_render(project, media, out_id)
+        width, height = parse_size(size)
+        project, filename, out_id = timeline_service.plan_render(store, media, name, output, overwrite, width, height)
+        timeline_service.run_render(project, media, out_id, width=width, height=height)
     except _EXPECTED_ERRORS as exc:
         raise _fail(exc, as_json)
     if as_json:
@@ -611,6 +670,7 @@ def register(app: typer.Typer) -> None:
         ("move-track", move_track_cmd),
         ("place", place_cmd),
         ("set", set_cmd),
+        ("crop", crop_cmd),
         ("add-text", add_text_cmd),
         ("set-text", set_text_cmd),
         ("assets", assets_cmd),

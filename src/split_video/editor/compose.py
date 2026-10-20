@@ -15,7 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from starlette.responses import Response
 
-from split_video import assets, ocr, proxy, scenes, timeline_service, transcribe
+from split_video import assets, ocr, proxy, scenes, timeline_ops, timeline_service, transcribe
 from split_video.editor.context import RequestContext, make_context_dependency
 from split_video.editor.job_routes import cancel_job, job_of_kind
 from split_video.editor.media_response import media_response
@@ -39,6 +39,15 @@ from split_video.timeline import (
 )
 
 
+class CropBox(BaseModel):
+    """A crop rectangle as fractions of the source frame, origin at its top-left."""
+
+    x: float
+    y: float
+    w: float
+    h: float
+
+
 class ClipOut(BaseModel):
     id: str
     asset: str  # the clip's asset id (see /assets); "" for a text clip or a media clip not yet linked
@@ -60,6 +69,7 @@ class ClipOut(BaseModel):
     brightness: float
     contrast: float
     saturation: float
+    crop: CropBox | None = None  # the part of the source frame shown; None = the full frame
     kind: str
     text: str
     font_size: float
@@ -152,6 +162,8 @@ class PropertiesRequest(BaseModel):
     brightness: float | None = None
     contrast: float | None = None
     saturation: float | None = None
+    # The part of the source frame to show; `null` removes the crop. Absent = unchanged.
+    crop: CropBox | None = None
 
 
 class AddTextRequest(BaseModel):
@@ -187,6 +199,9 @@ class TransitionRequest(BaseModel):
 class RenderRequest(BaseModel):
     output: str | None = None  # filename in the browse root; default "<name>-render.mp4"
     overwrite: bool = False
+    # Output frame size in pixels (both or neither; even, 64..4096). Default: the first clip's size.
+    width: int | None = None
+    height: int | None = None
 
 
 class RenderStartOut(BaseModel):
@@ -239,6 +254,7 @@ def make_router(provider: StoreProvider, jobs: JobQueue) -> APIRouter:
             brightness=c.brightness,
             contrast=c.contrast,
             saturation=c.saturation,
+            crop=CropBox(**c.crop) if c.crop else None,
             kind=c.kind,
             text=c.text,
             font_size=c.font_size,
@@ -304,6 +320,32 @@ def make_router(provider: StoreProvider, jobs: JobQueue) -> APIRouter:
                 return asset_out(book, book.register(request.path))
         except (TimelineError, MediaError, ProbeError) as exc:
             raise asset_error(exc) from None
+
+    @router.get("/assets/{asset_id}/reframe", response_model=CropBox)
+    def reframe_asset(
+        asset_id: str,
+        aspect: str = "9:16",
+        center_x: float = 0.5,
+        center_y: float = 0.5,
+        zoom: float = 1.0,
+        ctx: RequestContext = ctx_dep,
+    ) -> CropBox:
+        """The crop rectangle (fractions of the frame) of the largest `aspect` region of the asset's picture,
+        centred on (`center_x`, `center_y`) and zoomed in by `zoom`: what to pass as a clip's `crop`."""
+        try:
+            with assets.open_book(ctx.media) as book:
+                row = book.require(asset_id)
+        except TimelineError as exc:
+            raise asset_error(exc) from None
+        try:
+            if not row.width or not row.height:
+                raise TimelineError(f"asset {asset_id} has no picture to crop")
+            aspect_w, aspect_h = timeline_ops.parse_aspect(aspect)
+            return CropBox(
+                **timeline_ops.crop_for_aspect(row.width, row.height, aspect_w, aspect_h, center_x, center_y, zoom)
+            )
+        except TimelineError as exc:
+            raise _http(exc) from None
 
     @router.get("/assets/{asset_id}", response_model=AssetOut)
     def get_asset(asset_id: str, ctx: RequestContext = ctx_dep) -> AssetOut:
@@ -419,7 +461,9 @@ def make_router(provider: StoreProvider, jobs: JobQueue) -> APIRouter:
         base: int | None = Depends(base_revision),
         ctx: RequestContext = ctx_dep,
     ) -> ProjectOut:
-        changes = request.model_dump(exclude_none=True)
+        changes = request.model_dump(exclude_none=True, exclude={"crop"})
+        if "crop" in request.model_fields_set:  # an explicit null removes the crop
+            changes["crop"] = None if request.crop is None else request.crop.model_dump()
         return respond(
             ctx,
             name,
@@ -462,7 +506,9 @@ def make_router(provider: StoreProvider, jobs: JobQueue) -> APIRouter:
         base: int | None = Depends(base_revision),
         ctx: RequestContext = ctx_dep,
     ) -> ProjectOut:
-        changes = request.model_dump(exclude_none=True)
+        changes = request.model_dump(exclude_none=True, exclude={"crop"})
+        if "crop" in request.model_fields_set:  # an explicit null removes the crop
+            changes["crop"] = None if request.crop is None else request.crop.model_dump()
         return respond(
             ctx,
             name,
@@ -539,12 +585,12 @@ def make_router(provider: StoreProvider, jobs: JobQueue) -> APIRouter:
     def start_render(name: str, request: RenderRequest, ctx: RequestContext = ctx_dep) -> RenderStartOut:
         try:
             project, filename, out_id = timeline_service.plan_render(
-                ctx.store, ctx.media, name, request.output, request.overwrite
+                ctx.store, ctx.media, name, request.output, request.overwrite, request.width, request.height
             )
         except TimelineError as exc:
             raise _http(exc) from None
 
-        work = render_work(project, ctx.media, out_id, filename)
+        work = render_work(project, ctx.media, out_id, filename, request.width, request.height)
         job_id = jobs.submit(RENDER, work, label=filename, total=RENDER_STEPS, owner=ctx.principal.id)
         return RenderStartOut(job_id=job_id)
 

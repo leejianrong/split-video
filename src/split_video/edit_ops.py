@@ -105,6 +105,13 @@ _TO_INDEX = Field(
 _PROPERTY_FIELDS = tuple(
     _clip_field(n, default=None)
     for n in ("gain", "muted", "x", "y", "scale", "opacity", "brightness", "contrast", "saturation")
+) + (
+    # An absent `crop` leaves the crop alone; `null` removes it.
+    _clip_field(
+        "crop",
+        nullable=True,
+        description=next(f for f in CLIP_FIELDS if f.name == "crop").description + " `null` removes the crop.",
+    ),
 )
 _TEXT_FIELDS = (
     Field("text", "string", "The title's words (not blank).", max_length=MAX_TEXT_LENGTH),
@@ -184,7 +191,7 @@ OPS: dict[str, OpSpec] = {
         ),
         _spec(
             "set_clip_properties",
-            "Change gain, mute, overlay placement or colour of a clip (`timeline_service.set_clip_properties`).",
+            "Change gain, mute, overlay placement, colour or crop of a clip (`timeline_service.set_clip_properties`).",
             _ref("clip"),
             *_PROPERTY_FIELDS,
             any_of=tuple(f.name for f in _PROPERTY_FIELDS),
@@ -537,6 +544,16 @@ _RULES: dict[str, tuple[str, str | None, str]] = {
         "plan.clip.text_on_main_track",
         "track",
         'put titles on a video track with "magnetic": false (add_track makes one)',
+    ),
+    "crop_invalid": (
+        "plan.clip.crop_invalid",
+        "crop",
+        "use x,y in 0..1, w,h from 0.02 to 1, x+w and y+h at most 1; crop_for_aspect computes one",
+    ),
+    "crop_not_applicable": (
+        "plan.clip.field_not_applicable",
+        "crop",
+        "only media clips on video tracks have a picture to crop",
     ),
     "not_text_clip": ("ops.clip.not_text", "clip", "only clips created by add_text_clip have text properties"),
     "last_video_track": ("ops.track.last_video", "track", "a project keeps at least one video track"),

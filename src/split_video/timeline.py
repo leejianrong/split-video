@@ -29,6 +29,11 @@ from split_video.media_store import MediaOutsideRootError, MediaStore
 # only) still load; their clips come back with an empty `asset` and are linked
 # by `assets.link_project`, which the service layer runs on load and before
 # every edit, so the next save writes version 2.
+#
+# Clip crop (SPL-51) is an additive optional field, so the version stays 2: a clip's `crop`
+# object `{"x","y","w","h"}` (fractions of the source frame, top-left origin) is written only
+# when it is not the full frame, and a file without it loads with the full-frame default
+# (an older build ignores the key it doesn't know). No migration is needed in either direction.
 FORMAT_VERSION = 2
 
 TRACK_KINDS = ("video", "audio")
@@ -70,12 +75,29 @@ class Clip:
     brightness: float = 0.0
     contrast: float = 1.0
     saturation: float = 1.0
+    # Crop: the part of the source frame shown, as fractions of the source frame with the origin at
+    # its top-left. The default is the full frame (no crop). Validated by `timeline_ops.check_crop`.
+    crop_x: float = 0.0
+    crop_y: float = 0.0
+    crop_w: float = 1.0
+    crop_h: float = 1.0
     # A text clip ("text" kind) has no source file: it draws `text` for its
     # duration, `font_size` as a fraction of the frame height, in `color`.
     kind: str = "media"
     text: str = ""
     font_size: float = 0.08
     color: str = "#ffffff"
+
+    @property
+    def cropped(self) -> bool:
+        return (self.crop_x, self.crop_y, self.crop_w, self.crop_h) != (0.0, 0.0, 1.0, 1.0)
+
+    @property
+    def crop(self) -> dict[str, float] | None:
+        """The crop as `{"x","y","w","h"}`, or None for the full frame."""
+        if not self.cropped:
+            return None
+        return {"x": self.crop_x, "y": self.crop_y, "w": self.crop_w, "h": self.crop_h}
 
     @property
     def duration(self) -> float:
@@ -172,6 +194,7 @@ def to_dict(project: Project) -> dict[str, Any]:
                         "brightness": c.brightness,
                         "contrast": c.contrast,
                         "saturation": c.saturation,
+                        **({"crop": c.crop} if c.cropped else {}),
                         "kind": c.kind,
                         "text": c.text,
                         "font_size": c.font_size,
@@ -182,6 +205,18 @@ def to_dict(project: Project) -> dict[str, Any]:
             }
             for t in project.tracks
         ],
+    }
+
+
+def _crop_from_dict(raw: Any) -> dict[str, float]:
+    """The `crop_*` fields of a clip from its optional `crop` object (full frame when absent)."""
+    if not isinstance(raw, dict):
+        return {}
+    return {
+        "crop_x": float(raw.get("x", 0.0)),
+        "crop_y": float(raw.get("y", 0.0)),
+        "crop_w": float(raw.get("w", 1.0)),
+        "crop_h": float(raw.get("h", 1.0)),
     }
 
 
@@ -210,6 +245,7 @@ def from_dict(data: dict[str, Any]) -> Project:
                 brightness=float(c.get("brightness", 0.0)),
                 contrast=float(c.get("contrast", 1.0)),
                 saturation=float(c.get("saturation", 1.0)),
+                **_crop_from_dict(c.get("crop")),
                 kind=str(c.get("kind", "media")),
                 text=str(c.get("text", "")),
                 font_size=float(c.get("font_size", 0.08)),

@@ -71,6 +71,8 @@ class Field:
     nullable: bool = False
     # Fixed to one value by the version (`schema_version`).
     const: Any = None
+    # An object field with known members (`crop`): their types are checked here, their VALUES by the owning rule.
+    properties: tuple[Field, ...] | None = None
 
 
 def _range(name: str) -> dict[str, float]:
@@ -177,6 +179,24 @@ CLIP_FIELDS: tuple[Field, ...] = (
     Field("brightness", "number", "Brightness adjustment (ffmpeg `eq`).", default=0.0, **_range("brightness")),
     Field("contrast", "number", "Contrast multiplier.", default=1.0, **_range("contrast")),
     Field("saturation", "number", "Saturation multiplier.", default=1.0, **_range("saturation")),
+    Field(
+        "crop",
+        "object",
+        "Media clips on video tracks: the part of the source frame to show, as fractions of the frame with the "
+        "origin at its top-left. Absent = the whole frame. x, y in 0..1; w, h from "
+        f"{timeline_ops.CROP_MIN:g} to 1; x+w and y+h at most 1. Applied before the clip is scaled to fit the "
+        "output frame, so for a vertical short compute it with the `crop_for_aspect` helper (CLI `compose crop "
+        "--aspect 9:16`, MCP `set_clip_crop`, GET /api/v1/assets/{id}/reframe) rather than by hand.",
+        properties=tuple(
+            Field(name, "number", f"{what} (fraction of the source {dim}).", required=True)
+            for name, what, dim in (
+                ("x", "Left edge", "width"),
+                ("y", "Top edge", "height"),
+                ("w", "Width", "width"),
+                ("h", "Height", "height"),
+            )
+        ),
+    ),
     Field("text", "string", "The title's words (text clips only).", max_length=MAX_TEXT_LENGTH),
     Field(
         "font_size",
@@ -192,7 +212,7 @@ CLIP_FIELDS: tuple[Field, ...] = (
 )
 
 _TEXT_ONLY = ("text", "font_size", "color")
-_MEDIA_ONLY = ("asset", "source")
+_MEDIA_ONLY = ("asset", "source", "crop")
 
 
 def _field_schema(f: Field) -> dict[str, Any]:
@@ -211,6 +231,9 @@ def _field_schema(f: Field) -> dict[str, Any]:
     ):
         if value is not None:
             body[key] = value
+    if f.properties is not None:
+        body.update(_object_schema(f.properties))
+        body["type"] = [f.type, "null"] if f.nullable else f.type
     return body
 
 
@@ -388,7 +411,12 @@ _TYPE_CHECKS: dict[str, Callable[[Any], bool]] = {
 
 
 def _check_object(
-    obj: dict[str, Any], fields: tuple[Field, ...], path: str, report: PlanReport, ns: str = "plan"
+    obj: dict[str, Any],
+    fields: tuple[Field, ...],
+    path: str,
+    report: PlanReport,
+    ns: str = "plan",
+    ranges: bool = True,
 ) -> dict[str, Any]:
     """Check `obj` against `fields`: unknown names, required ones, types, enums, ranges, patterns and lengths.
     Problem codes are `<ns>.field.*` (`edit_ops.py` passes its own namespace). Returns the fields that
@@ -419,6 +447,11 @@ def _check_object(
             shown = "a non-finite number" if isinstance(value, float) else type(value).__name__
             report.error(where, f"{ns}.field.type", f"{f.name!r} must be a {f.type}, not {shown}", f"send a {f.type}")
             continue
+        if f.properties is not None:
+            before = len(report.errors)
+            _check_object(value, f.properties, where, report, ns, ranges=False)
+            if len(report.errors) > before:
+                continue
         if f.const is not None and value != f.const:
             report.error(where, f"{ns}.field.value", f"{f.name!r} must be {f.const!r}", "")
             continue
@@ -430,7 +463,7 @@ def _check_object(
                 f"use one of: {', '.join(f.enum)}",
             )
             continue
-        if f.type in ("number", "integer") and _out_of_range(value, f):
+        if ranges and f.type in ("number", "integer") and _out_of_range(value, f):
             report.error(where, f"{ns}.field.range", f"{f.name!r} {_range_text(f)}, not {value:g}", "")
             continue
         if f.pattern is not None and not re.match(f.pattern, value):
@@ -924,6 +957,22 @@ def _compile_clip(
                 hint = f"the asset is {limit:g}s long" if exc.reason == "out_past_end" else ""
                 report.error(path + where, code, str(exc), hint)
 
+    crop: dict[str, float] = {}
+    if "crop" in spec and not is_text:
+        if track_kind == "audio":
+            report.error(
+                path + "/crop", "plan.clip.field_not_applicable", "an audio clip has no picture to crop", "drop 'crop'"
+            )
+        else:
+            try:
+                box = timeline_ops.check_crop(*(spec["crop"][k] for k in "xywh"))
+                crop = {"crop_x": box["x"], "crop_y": box["y"], "crop_w": box["w"], "crop_h": box["h"]}
+            except timeline_ops.RuleViolation as exc:
+                report.error(
+                    path + "/crop", "plan.clip.crop_invalid", str(exc),
+                    "use x,y in 0..1, w,h from 0.02 to 1, x+w and y+h at most 1; crop_for_aspect computes one",
+                )  # fmt: skip
+
     transition = spec.get("transition", "cut")
     fade = float(spec.get("transition_duration", 0.0))
     item.transition, item.fade = transition, fade
@@ -976,6 +1025,7 @@ def _compile_clip(
             brightness=float(spec.get("brightness", 0.0)),
             contrast=float(spec.get("contrast", 1.0)),
             saturation=float(spec.get("saturation", 1.0)),
+            **crop,
             kind=kind,
             text=spec.get("text", "") if is_text else "",
             font_size=float(spec.get("font_size", 0.08)),

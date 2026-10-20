@@ -14,6 +14,7 @@ in list order: a later video track draws over an earlier one.
 
 from __future__ import annotations
 
+import math
 import re
 from dataclasses import replace
 
@@ -42,7 +43,7 @@ class RuleViolation(TimelineError):
     `in_negative`, `out_past_end`, `too_short`, `crossfade_first`, `crossfade_duration`,
     `crossfade_room`, `start_negative`, `overlap`, `magnetic_start`, `free_index`, `index_range`,
     `move_on_free`, `crossfade_free_track`, `text_target`, `not_text_clip`, `last_video_track`,
-    `kind_mismatch`, `main_track_dest`."""
+    `kind_mismatch`, `main_track_dest`, `crop_invalid`, `crop_not_applicable`."""
 
     def __init__(self, reason: str, message: str) -> None:
         super().__init__(message)
@@ -259,27 +260,135 @@ CLIP_PROPERTY_RANGES: dict[str, tuple[float, float]] = {
 }
 
 
-def set_clip_properties(project: Project, clip_id: str, **properties: float | bool) -> Project:
-    """Change a clip's gain/mute, overlay placement or colour adjustment.
+# --- crop (SPL-51) -----------------------------------------------------------
 
-    Only the names in `CLIP_PROPERTY_RANGES` plus `muted` are accepted, and a
-    value outside its range is an error rather than being clamped.
+# Smallest width or height of a crop, as a fraction of the source frame: below this the picture is a
+# few pixels and the render would be scaling noise.
+CROP_MIN = 0.02
+_CROP_TOLERANCE = 1e-6  # float rounding allowed when x+w or y+h reaches the frame edge
+CROP_ERROR = (
+    f"crop must have x and y between 0 and 1, w and h between {CROP_MIN:g} and 1, "
+    "and x+w and y+h at most 1 (fractions of the source frame, origin top-left)"
+)
+
+
+def check_crop(x: object, y: object, w: object, h: object) -> dict[str, float]:
+    """The one crop validator. Returns the crop as `{"x","y","w","h"}` floats, or raises `RuleViolation`
+    (`crop_invalid`) with the stable message `CROP_ERROR`. An overshoot of up to 1e-6 past the frame edge
+    (float rounding) is accepted and trimmed to the edge."""
+    values = (x, y, w, h)
+    if any(isinstance(v, bool) or not isinstance(v, int | float) or not math.isfinite(v) for v in values):
+        raise RuleViolation("crop_invalid", CROP_ERROR)
+    fx, fy, fw, fh = (float(v) for v in values)  # type: ignore[arg-type]
+    tol = _CROP_TOLERANCE
+    if not (
+        -tol <= fx <= 1 and -tol <= fy <= 1 and CROP_MIN - tol <= fw <= 1 + tol and CROP_MIN - tol <= fh <= 1 + tol
+    ):
+        raise RuleViolation("crop_invalid", CROP_ERROR)
+    fx, fy = max(fx, 0.0), max(fy, 0.0)
+    fw, fh = max(fw, CROP_MIN), max(fh, CROP_MIN)
+    if fx + fw > 1 + tol or fy + fh > 1 + tol:
+        raise RuleViolation("crop_invalid", CROP_ERROR)
+    return {"x": fx, "y": fy, "w": min(fw, 1 - fx), "h": min(fh, 1 - fy)}
+
+
+def crop_for_aspect(
+    source_w: float,
+    source_h: float,
+    aspect_w: float,
+    aspect_h: float,
+    center_x: float = 0.5,
+    center_y: float = 0.5,
+    zoom: float = 1.0,
+) -> dict[str, float]:
+    """The largest crop of a `source_w` x `source_h` frame with the aspect ratio `aspect_w`:`aspect_h`
+    (for a 9:16 short from a 16:9 recording: 9, 16), centred on (`center_x`, `center_y`) (fractions of the
+    frame) and moved inside the frame if it would stick out. `zoom` >= 1 shrinks the rectangle by that factor.
+    Returns `{"x","y","w","h"}` as fractions of the source frame, rounded to 6 places, ready for `set_clip_crop`.
+    Rendering a clip with this crop at an output of the same aspect fills the frame with no bars."""
+    for name, value in (
+        ("source size", source_w),
+        ("source size", source_h),
+        ("aspect", aspect_w),
+        ("aspect", aspect_h),
+    ):
+        if isinstance(value, bool) or not math.isfinite(value) or value <= 0:
+            raise TimelineError(f"{name} must be above zero")
+    for name, value in (("center_x", center_x), ("center_y", center_y)):
+        if isinstance(value, bool) or not 0 <= value <= 1:
+            raise TimelineError(f"{name} must be between 0 and 1")
+    if isinstance(zoom, bool) or not math.isfinite(zoom) or zoom < 1:
+        raise TimelineError("zoom must be 1 or more (1 = the largest rectangle, 2 = half as wide)")
+    target = aspect_w / aspect_h
+    if source_w / source_h > target:  # the source is wider than the target: full height, narrower
+        h, w = 1.0, source_h * target / source_w
+    else:  # taller than the target: full width, shorter
+        w, h = 1.0, source_w / target / source_h
+    w, h = w / zoom, h / zoom
+    x = min(max(center_x - w / 2, 0.0), 1 - w)
+    y = min(max(center_y - h / 2, 0.0), 1 - h)
+    w, h = round(w, 6), round(h, 6)
+    x, y = round(min(x, 1 - w), 6), round(min(y, 1 - h), 6)
+    try:
+        return check_crop(x, y, w, h)
+    except RuleViolation:
+        raise TimelineError(
+            f"zoom {zoom:g} makes the crop smaller than the minimum ({CROP_MIN:g} of the frame)"
+        ) from None
+
+
+def parse_aspect(text: str) -> tuple[float, float]:
+    """`"9:16"` (or `"1.5:1"`) as (9.0, 16.0); `TimelineError` for anything else."""
+    parts = text.strip().split(":") if isinstance(text, str) else []
+    try:
+        a, b = (float(p) for p in parts)
+    except ValueError:
+        a = b = 0.0
+    if len(parts) != 2 or not (math.isfinite(a) and math.isfinite(b)) or a <= 0 or b <= 0:
+        raise TimelineError(f"aspect must look like 9:16, not {text!r}")
+    return a, b
+
+
+def _crop_changes(track: Track, clip: Clip, crop: object) -> dict[str, float]:
+    """The `Clip` field changes for `crop` (a dict, or None for the full frame) on `clip`."""
+    if clip.kind == "text":
+        raise RuleViolation("crop_not_applicable", "a text clip has no picture to crop")
+    if track.kind == "audio":
+        raise RuleViolation("crop_not_applicable", "an audio clip has no picture to crop")
+    if crop is None:
+        return {"crop_x": 0.0, "crop_y": 0.0, "crop_w": 1.0, "crop_h": 1.0}
+    if not isinstance(crop, dict) or set(crop) != {"x", "y", "w", "h"}:
+        raise RuleViolation("crop_invalid", CROP_ERROR)
+    c = check_crop(crop["x"], crop["y"], crop["w"], crop["h"])
+    return {"crop_x": c["x"], "crop_y": c["y"], "crop_w": c["w"], "crop_h": c["h"]}
+
+
+def set_clip_properties(
+    project: Project, clip_id: str, **properties: float | bool | dict[str, float] | None
+) -> Project:
+    """Change a clip's gain/mute, overlay placement, colour adjustment or crop.
+
+    Only the names in `CLIP_PROPERTY_RANGES` plus `muted` and `crop` are accepted, and a
+    value outside its range is an error rather than being clamped. `crop` is a dict
+    `{"x","y","w","h"}` (see `check_crop`) or None to remove the crop.
     """
     if not properties:
         raise TimelineError("no properties given")
+    track, i = find_clip(project, clip_id)
     changes: dict[str, float | bool] = {}
     for name, value in properties.items():
         if name == "muted":
             changes[name] = bool(value)
+        elif name == "crop":
+            changes.update(_crop_changes(track, track.clips[i], value))
         elif name in CLIP_PROPERTY_RANGES:
             low, high = CLIP_PROPERTY_RANGES[name]
             if isinstance(value, bool) or not low <= value <= high:
                 raise TimelineError(f"{name} must be between {low:g} and {high:g}")
             changes[name] = float(value)
         else:
-            valid = ", ".join(["muted", *CLIP_PROPERTY_RANGES])
+            valid = ", ".join(["muted", "crop", *CLIP_PROPERTY_RANGES])
             raise TimelineError(f"unknown clip property {name!r}; choose from {valid}")
-    track, i = find_clip(project, clip_id)
     clips = list(track.clips)
     clips[i] = replace(clips[i], **changes)
     return _with_clips(project, track, clips)

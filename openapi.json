@@ -604,6 +604,16 @@
             "title": "Contrast",
             "type": "number"
           },
+          "crop": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CropBox"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "duration": {
             "title": "Duration",
             "type": "number"
@@ -750,6 +760,35 @@
           "name"
         ],
         "title": "CreateProjectRequest",
+        "type": "object"
+      },
+      "CropBox": {
+        "description": "A crop rectangle as fractions of the source frame, origin at its top-left.",
+        "properties": {
+          "h": {
+            "title": "H",
+            "type": "number"
+          },
+          "w": {
+            "title": "W",
+            "type": "number"
+          },
+          "x": {
+            "title": "X",
+            "type": "number"
+          },
+          "y": {
+            "title": "Y",
+            "type": "number"
+          }
+        },
+        "required": [
+          "x",
+          "y",
+          "w",
+          "h"
+        ],
+        "title": "CropBox",
         "type": "object"
       },
       "DetectRequest": {
@@ -2444,6 +2483,16 @@
             ],
             "title": "Contrast"
           },
+          "crop": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CropBox"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "gain": {
             "anyOf": [
               {
@@ -2655,6 +2704,17 @@
       },
       "RenderRequest": {
         "properties": {
+          "height": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Height"
+          },
           "output": {
             "anyOf": [
               {
@@ -2670,6 +2730,17 @@
             "default": false,
             "title": "Overwrite",
             "type": "boolean"
+          },
+          "width": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Width"
           }
         },
         "title": "RenderRequest",
@@ -5794,6 +5865,96 @@
           }
         },
         "summary": "Make Proxy"
+      }
+    },
+    "/api/v1/assets/{asset_id}/reframe": {
+      "get": {
+        "description": "The crop rectangle (fractions of the frame) of the largest `aspect` region of the asset's picture,\ncentred on (`center_x`, `center_y`) and zoomed in by `zoom`: what to pass as a clip's `crop`.",
+        "operationId": "reframe_asset_api_v1_assets__asset_id__reframe_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "asset_id",
+            "required": true,
+            "schema": {
+              "title": "Asset Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "aspect",
+            "required": false,
+            "schema": {
+              "default": "9:16",
+              "title": "Aspect",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "center_x",
+            "required": false,
+            "schema": {
+              "default": 0.5,
+              "title": "Center X",
+              "type": "number"
+            }
+          },
+          {
+            "in": "query",
+            "name": "center_y",
+            "required": false,
+            "schema": {
+              "default": 0.5,
+              "title": "Center Y",
+              "type": "number"
+            }
+          },
+          {
+            "in": "query",
+            "name": "zoom",
+            "required": false,
+            "schema": {
+              "default": 1.0,
+              "title": "Zoom",
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CropBox"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedOut"
+                }
+              }
+            },
+            "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reframe Asset"
       }
     },
     "/api/v1/assets/{asset_id}/report": {

@@ -913,7 +913,7 @@ def create_server(root: Path, store: ProjectStore | None = None, media: MediaSto
         `dry_run=true`, which writes nothing and returns the resulting project as `timeline`). `ops` is the document
         `{"schema_version": 1, "project": "<name>", "ops": [{"op": "add_clip", "id": "c1", "asset": "a_...", "in": 0,
         "out": 10}, {"op": "set_transition", "clip": "c1", "transition": "crossfade", "duration": 1}, ...]}`; the ops
-        are add_clip, trim_clip, move_clip, remove_clip, set_transition, set_clip_properties, add_text_clip,
+        are add_clip, trim_clip, move_clip, remove_clip, set_transition, set_clip_properties (incl. `crop`), add_text_clip,
         set_text_properties, add_track, remove_track, move_track, place_clip; call get_edit_ops_schema for every field
         (strict: unknown ops and fields are errors). Clips and tracks are addressed by id (show_timeline lists them);
         give a creating op (add_clip, add_text_clip, add_track) an `id` and later ops in the batch can use it. Indexes
@@ -1150,6 +1150,52 @@ def create_server(root: Path, store: ProjectStore | None = None, media: MediaSto
         return timeline_result(name, project_)
 
     @server.tool(annotations=_EDITS_PROJECT)
+    async def set_clip_crop(
+        name: str,
+        clip: int,
+        track: int | None = None,
+        x: float | None = None,
+        y: float | None = None,
+        w: float | None = None,
+        h: float | None = None,
+        aspect: str | None = None,
+        center_x: float = 0.5,
+        center_y: float = 0.5,
+        zoom: float = 1.0,
+        clear: bool = False,
+        base_revision: int | None = None,
+    ) -> dict[str, Any]:
+        """Crop clip number `clip` on `track` (default the main video track) to a region of its source frame,
+        e.g. a 9:16 slice of a 16:9 recording for a vertical short. Give ONE of: `x`,`y`,`w`,`h` together (fractions
+        of the source frame, origin top-left; x,y 0..1, w,h 0.02..1, x+w and y+h <= 1); or `aspect` such as "9:16"
+        (the largest region of that shape, centred on `center_x`/`center_y`, 0..1, and zoomed in by `zoom` >= 1;
+        computed from the clip's source size, so you never do the arithmetic); or `clear=true` to remove the crop.
+        Render at the same aspect (render_timeline width/height, e.g. 1080x1920) and the cropped picture fills the
+        frame. Text and audio clips can't be cropped. `base_revision` (optional): fail with revision_conflict
+        instead of editing if the timeline has changed since that revision."""
+        explicit = [v is not None for v in (x, y, w, h)]
+        if any(explicit) and not all(explicit):
+            raise ToolError("give all of x, y, w, h together")
+        if sum([all(explicit), aspect is not None, clear]) != 1:
+            raise ToolError("give exactly one of x/y/w/h, aspect, or clear")
+        project_ = await run(
+            lambda: timeline_service.set_clip_crop(
+                store,
+                name,
+                timeline_clip(name, clip, track, base_revision),
+                media=media,
+                crop={"x": x, "y": y, "w": w, "h": h} if all(explicit) else None,  # type: ignore[dict-item]
+                aspect=aspect,
+                center_x=center_x,
+                center_y=center_y,
+                zoom=zoom,
+                clear=clear,
+                base_revision=base_revision,
+            )
+        )
+        return timeline_result(name, project_)
+
+    @server.tool(annotations=_EDITS_PROJECT)
     async def add_timeline_text(
         name: str,
         text: str,
@@ -1220,13 +1266,23 @@ def create_server(root: Path, store: ProjectStore | None = None, media: MediaSto
         return timeline_result(name, project_)
 
     @server.tool(annotations=_REPLACES_PROJECT)
-    async def render_timeline(name: str, output: str | None = None, overwrite: bool = False) -> dict[str, Any]:
+    async def render_timeline(
+        name: str,
+        output: str | None = None,
+        overwrite: bool = False,
+        width: int | None = None,
+        height: int | None = None,
+    ) -> dict[str, Any]:
         """Render the timeline to an mp4 in the root (default '<name>-render.mp4'). Refuses to replace an
-        existing file unless overwrite=true. Re-encodes, so it can take a while for long clips."""
+        existing file unless overwrite=true. Re-encodes, so it can take a while for long clips. `width` and
+        `height` (both or neither; even whole numbers 64..4096, e.g. 1080 x 1920 for a vertical short) set the
+        output frame; by default it is the first clip's size."""
 
         def work() -> dict[str, Any]:
-            project_, filename, out_id = timeline_service.plan_render(store, media, name, output, overwrite)
-            timeline_service.run_render(project_, media, out_id)
+            project_, filename, out_id = timeline_service.plan_render(
+                store, media, name, output, overwrite, width, height
+            )
+            timeline_service.run_render(project_, media, out_id, width=width, height=height)
             return {"name": name, "output": filename, "duration": project_.duration}
 
         return await run(work)

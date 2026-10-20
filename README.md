@@ -491,6 +491,8 @@ split-video compose set mix 1 --track 3 --gain 0.4
 split-video compose set mix 1 --brightness 0.1 --saturation 1.2   # colour, main track
 split-video compose show mix
 split-video compose render mix                                     # writes mix-render.mp4
+split-video compose crop mix 1 --aspect 9:16 --center-x 0.3       # vertical crop of a 16:9 clip (or --x --y --w --h)
+split-video compose render mix --size 1080x1920 --overwrite       # a 9:16 short; the crop then fills the frame
 ```
 
 Clips reference media by asset id, so a renamed or moved file is found again

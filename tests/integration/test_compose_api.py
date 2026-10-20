@@ -186,3 +186,54 @@ def test_clip_properties_and_text_clips(client):
     # trimming a text clip stretches it (no source to run out of)
     body = client.patch(f"{_base()}/clips/{text['id']}", json={"out_point": 6}).json()
     assert body["tracks"][1]["clips"][0]["duration"] == 6
+
+
+def test_crop_is_set_cleared_validated_and_reported_over_http(client):
+    _new(client)
+    body = client.post(f"{_base()}/clips", json={"path": "a.mp4"}).json()
+    clip = body["tracks"][0]["clips"][0]
+    assert clip["crop"] is None
+    props = f"{_base()}/clips/{clip['id']}/properties"
+    box = {"x": 0.5, "y": 0.0, "w": 0.5, "h": 1.0}
+    got = client.patch(props, json={"crop": box, "gain": 0.5}).json()["tracks"][0]["clips"][0]
+    assert got["crop"] == box and got["gain"] == 0.5
+    assert client.get(_base()).json()["tracks"][0]["clips"][0]["crop"] == box
+    assert client.patch(props, json={"gain": 0.7}).json()["tracks"][0]["clips"][0]["crop"] == box  # absent: unchanged
+    bad = client.patch(props, json={"crop": {"x": 0.9, "y": 0, "w": 0.5, "h": 1}})
+    assert bad.status_code == 422 and "crop must have" in bad.json()["detail"]
+    assert client.patch(props, json={"crop": {"x": 0.9}}).status_code == 422
+    assert client.patch(props, json={"crop": None}).json()["tracks"][0]["clips"][0]["crop"] is None
+
+
+def test_reframe_returns_the_crop_for_an_aspect(client):
+    _new(client)
+    asset = client.post(f"{_base()}/clips", json={"path": "a.mp4"}).json()["tracks"][0]["clips"][0]["asset"]  # 320x240
+    got = client.get(f"/api/v1/assets/{asset}/reframe", params={"aspect": "9:16", "center_x": 0.25}).json()
+    assert (
+        got["h"] == 1.0
+        and got["w"] == pytest.approx(0.421875, abs=1e-6)
+        and got["x"] == pytest.approx(0.039063, abs=1e-5)
+    )
+    zoomed = client.get(f"/api/v1/assets/{asset}/reframe", params={"aspect": "1:1", "zoom": 2}).json()
+    assert zoomed["h"] == pytest.approx(0.5) and zoomed["w"] == pytest.approx(0.375)
+    assert client.get(f"/api/v1/assets/{asset}/reframe", params={"aspect": "nine"}).status_code == 422
+    assert client.get(f"/api/v1/assets/{asset}/reframe", params={"zoom": 0.5}).status_code == 422
+    assert client.get("/api/v1/assets/a_0000000000000000/reframe").status_code == 404
+
+
+def test_render_at_an_explicit_size_over_http(client, tmp_path):
+    _new(client)
+    client.post(f"{_base()}/clips", json={"path": "a.mp4", "out_point": 1})
+    assert client.post(f"{_base()}/render", json={"width": 361, "height": 640}).status_code == 422
+    assert client.post(f"{_base()}/render", json={"width": 360}).status_code == 422
+    job = client.post(f"{_base()}/render", json={"width": 180, "height": 320, "output": "v.mp4"}).json()["job_id"]
+    for _ in range(100):
+        status = client.get(f"/api/v1/compose/render/{job}").json()
+        if status["status"] in ("done", "error"):
+            break
+        time.sleep(0.1)
+    assert status["status"] == "done", status
+    from split_video.ffmpeg import probe_media
+
+    info = probe_media(tmp_path / "v.mp4")
+    assert (info.width, info.height) == (180, 320)

@@ -32,6 +32,7 @@ NO_LEGACY_ALIAS = {
     "/api/v1/assets/{asset_id}/report/prepare",
     "/api/v1/assets/{asset_id}/highlights",
     "/api/v1/assets/{asset_id}/frame",
+    "/api/v1/assets/{asset_id}/reframe",
     "/api/v1/assets/{asset_id}/contact-sheet",
     "/api/v1/assets/{asset_id}/contact-sheet/info",
     "/api/v1/compose/projects/{name}/ops",
