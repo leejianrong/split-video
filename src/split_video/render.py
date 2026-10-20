@@ -133,17 +133,23 @@ def _main_chain(clips: list[Clip], first_input: int, infos: dict[str, MediaInfo]
 
     vlabel, alabel = "v0", "a0"
     length = clips[0].duration
+    joined_by_cut = False  # concat outputs picture in ffmpeg's 1/1000000 timebase, not the clips' 1/FPS
     for n in range(1, len(clips)):
         clip = clips[n]
         nv, na = f"vj{n}", f"aj{n}"
         if clip.transition == "crossfade" and clip.transition_duration > 0:
             d = clip.transition_duration
+            if joined_by_cut:
+                # xfade refuses inputs with different timebases ("Error reinitializing filters").
+                parts.append(f"[{vlabel}]settb=1/{FPS}[vt{n}]")
+                vlabel, joined_by_cut = f"vt{n}", False
             parts.append(f"[{vlabel}][v{n}]xfade=transition=fade:duration={d:.3f}:offset={length - d:.3f}[{nv}]")
             parts.append(f"[{alabel}][a{n}]acrossfade=d={d:.3f}[{na}]")
             length += clip.duration - d
         else:
             parts.append(f"[{vlabel}][v{n}]concat=n=2:v=1:a=0[{nv}]")
             parts.append(f"[{alabel}][a{n}]concat=n=2:v=0:a=1[{na}]")
+            joined_by_cut = True
             length += clip.duration
         vlabel, alabel = nv, na
     return parts, vlabel, alabel
