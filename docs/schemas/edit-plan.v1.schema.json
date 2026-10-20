@@ -1,0 +1,268 @@
+{
+  "$defs": {
+    "clip": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "else": {
+            "anyOf": [
+              {
+                "required": [
+                  "asset"
+                ]
+              },
+              {
+                "required": [
+                  "source"
+                ]
+              }
+            ]
+          },
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "text"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "required": [
+              "text",
+              "out"
+            ]
+          }
+        }
+      ],
+      "properties": {
+        "asset": {
+          "description": "Asset id (`a_` + 16 hex digits, see list_assets). Preferred over `source`.",
+          "type": "string"
+        },
+        "brightness": {
+          "default": 0.0,
+          "description": "Brightness adjustment (ffmpeg `eq`).",
+          "maximum": 1.0,
+          "minimum": -1.0,
+          "type": "number"
+        },
+        "color": {
+          "default": "#ffffff",
+          "description": "Text colour as #rrggbb (text clips only).",
+          "pattern": "^#[0-9a-fA-F]{6}$",
+          "type": "string"
+        },
+        "contrast": {
+          "default": 1.0,
+          "description": "Contrast multiplier.",
+          "maximum": 3.0,
+          "minimum": 0.0,
+          "type": "number"
+        },
+        "font_size": {
+          "default": 0.08,
+          "description": "Text height as a fraction of the frame height (text clips only).",
+          "maximum": 0.5,
+          "minimum": 0.01,
+          "type": "number"
+        },
+        "gain": {
+          "default": 1.0,
+          "description": "Volume multiplier.",
+          "maximum": 4.0,
+          "minimum": 0.0,
+          "type": "number"
+        },
+        "id": {
+          "description": "Clip id; generated deterministically from the plan when absent.",
+          "maxLength": 64,
+          "type": "string"
+        },
+        "in": {
+          "default": 0.0,
+          "description": "Seconds into the source where the clip starts (text clips: 0).",
+          "minimum": 0.0,
+          "type": "number"
+        },
+        "kind": {
+          "default": "media",
+          "description": "`media` (a piece of an asset) or `text` (a title).",
+          "enum": [
+            "media",
+            "text"
+          ],
+          "type": "string"
+        },
+        "muted": {
+          "default": false,
+          "description": "Silence the clip's audio.",
+          "type": "boolean"
+        },
+        "opacity": {
+          "default": 1.0,
+          "description": "Overlay opacity.",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "type": "number"
+        },
+        "out": {
+          "description": "Seconds into the source where the clip ends (default: the end of the asset). Required for text clips, where `out - in` is how long the title shows.",
+          "exclusiveMinimum": 0.0,
+          "type": "number"
+        },
+        "saturation": {
+          "default": 1.0,
+          "description": "Saturation multiplier.",
+          "maximum": 3.0,
+          "minimum": 0.0,
+          "type": "number"
+        },
+        "scale": {
+          "default": 1.0,
+          "description": "Overlay width as a fraction of the frame width.",
+          "maximum": 4.0,
+          "minimum": 0.05,
+          "type": "number"
+        },
+        "source": {
+          "description": "A file path relative to the workspace root that is already an asset; used when `asset` is absent.",
+          "type": "string"
+        },
+        "start": {
+          "description": "Where the clip begins on the timeline, in seconds. Only on non-magnetic tracks; default: right after the previous clip on the track.",
+          "minimum": 0.0,
+          "type": "number"
+        },
+        "text": {
+          "description": "The title's words (text clips only).",
+          "maxLength": 1000,
+          "type": "string"
+        },
+        "transition": {
+          "default": "cut",
+          "description": "How this clip joins the one before it. `crossfade` only on magnetic tracks, never on the first clip.",
+          "enum": [
+            "cut",
+            "crossfade"
+          ],
+          "type": "string"
+        },
+        "transition_duration": {
+          "default": 0.0,
+          "description": "Crossfade length in seconds; required (above 0) with `crossfade`.",
+          "minimum": 0.0,
+          "type": "number"
+        },
+        "x": {
+          "default": 0.5,
+          "description": "Overlay centre, as a fraction of the frame width.",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "type": "number"
+        },
+        "y": {
+          "default": 0.5,
+          "description": "Overlay centre, as a fraction of the frame height (text: 0.85).",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "type": "number"
+        }
+      },
+      "required": [],
+      "type": "object"
+    },
+    "track": {
+      "additionalProperties": false,
+      "properties": {
+        "clips": {
+          "default": [],
+          "description": "The clips, in list order.",
+          "items": {
+            "$ref": "#/$defs/clip"
+          },
+          "type": "array"
+        },
+        "id": {
+          "description": "Track id; generated deterministically from the plan when absent.",
+          "maxLength": 64,
+          "type": "string"
+        },
+        "kind": {
+          "description": "`video` or `audio`.",
+          "enum": [
+            "video",
+            "audio"
+          ],
+          "type": "string"
+        },
+        "magnetic": {
+          "description": "A magnetic track keeps its clips back to back in list order (the main track); clips on other tracks are placed with `start` and may not overlap. Default: true for the first video track, false for the others.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "urn:split-video:edit-plan:1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "One JSON document that creates or replaces a whole timeline project atomically. Strict: unknown fields are rejected. Constraints this schema cannot express (asset ids exist, in/out within the asset, no overlaps, crossfade room, at most 2000 clips in total) are checked by the server and reported with stable codes; see docs/edit-plan.md.",
+  "properties": {
+    "base_revision": {
+      "description": "Mode `replace`: the revision of the project this plan was written against; the write fails with a 409 / revision conflict if it has moved on. null or absent in mode `create`.",
+      "minimum": 0,
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "meta": {
+      "description": "Free-form notes for the caller; echoed in the response, never stored or validated.",
+      "type": "object"
+    },
+    "mode": {
+      "default": "create",
+      "description": "`create` fails if the project exists; `replace` rewrites an existing project and needs `base_revision` or `replace_unconditionally`.",
+      "enum": [
+        "create",
+        "replace"
+      ],
+      "type": "string"
+    },
+    "project": {
+      "description": "Name of the timeline project to create or replace (no path, no extension).",
+      "type": "string"
+    },
+    "replace_unconditionally": {
+      "default": false,
+      "description": "Mode `replace` only: overwrite whatever revision is stored, losing any edit made since you last looked. The explicit alternative to `base_revision`.",
+      "type": "boolean"
+    },
+    "schema_version": {
+      "const": 1,
+      "description": "Version of this plan format. Additive optional fields keep the version; a breaking change bumps it.",
+      "type": "integer"
+    },
+    "tracks": {
+      "description": "The tracks, bottom to top: a later video track draws over an earlier one.",
+      "items": {
+        "$ref": "#/$defs/track"
+      },
+      "maxItems": 16,
+      "minItems": 1,
+      "type": "array"
+    }
+  },
+  "required": [
+    "schema_version",
+    "project",
+    "tracks"
+  ],
+  "title": "split-video edit plan, schema_version 1",
+  "type": "object"
+}

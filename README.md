@@ -507,6 +507,20 @@ Other commands: `list`, `assets`, `migrate`, `trim`, `move` (reorder the main tr
 elsewhere install e.g. `fonts-dejavu-core` or point `SPLIT_VIDEO_FONT` at a
 `.ttf` file.
 
+### Edit plans: a whole timeline from one JSON document (`apply-plan`)
+
+Instead of many single edits, write one plan (clips with asset ids and in/out seconds, order, crossfades, titles,
+extra tracks) and apply it atomically; a plan with any problem changes nothing and reports every error at once:
+
+```
+split-video apply-plan plan.json --root /data [--dry-run] [--base-revision N] [--json]   # or `-` for stdin
+split-video plan-schema                                                                 # the JSON Schema
+```
+
+Over HTTP it is `PUT /api/v1/compose/projects/{name}/plan` (schema at `GET /api/v1/schemas/edit-plan`); MCP has
+`apply_plan` and `get_edit_plan_schema`. The format, error codes and examples are in
+[docs/edit-plan.md](docs/edit-plan.md).
+
 ### Revisions: editing the same project from two places
 
 Every project (split points and compose timelines) carries a revision

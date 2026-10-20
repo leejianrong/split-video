@@ -25,6 +25,8 @@ GUARDED = [
     "highlights_cli.py",
     "frames_cli.py",
     "contact_sheet_cli.py",
+    "plan_cli.py",
+    "edit_plan.py",
     "mcp_server.py",
     "editor/app.py",
     "editor/compose.py",
@@ -39,6 +41,7 @@ GUARDED = [
     "editor/highlights.py",
     "editor/frames.py",
     "editor/contact_sheet.py",
+    "editor/plan.py",
 ]
 FORBIDDEN = re.compile(
     r"_project_path|project_path|FILE_SUFFIX|\.split-video-project\.json|\.split-video-timeline\.json"
@@ -68,6 +71,7 @@ ENGINE = [
     "time_index.py",
     "media_report.py",
     "highlights.py",
+    "edit_plan.py",
     "frames.py",
     "contact_sheet.py",
     "render.py",
@@ -95,6 +99,7 @@ ADAPTERS = [
     "editor/highlights.py",
     "editor/frames.py",
     "editor/contact_sheet.py",
+    "editor/plan.py",
     "project_cli.py",
     "compose_cli.py",
     "library_cli.py",
@@ -106,6 +111,7 @@ ADAPTERS = [
     "highlights_cli.py",
     "frames_cli.py",
     "contact_sheet_cli.py",
+    "plan_cli.py",
 ]
 MEDIA_FORBIDDEN = re.compile(
     r"\.split-video-cache|CACHE_DIR_NAME|cache_store|resolve_within_root|resolve_source|relative_source"

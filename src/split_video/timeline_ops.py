@@ -32,6 +32,20 @@ _COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 # Shortest clip the editor allows, so a trim can't produce a zero-length clip.
 MIN_CLIP = 0.1
 
+# Text size as a fraction of the frame height.
+FONT_SIZE_RANGE = (0.01, 0.5)
+
+
+class RuleViolation(TimelineError):
+    """A `TimelineError` that also says which rule it broke, so a caller that reports many
+    problems at once (`edit_plan.py`) can give each a stable code. `reason` is one of
+    `in_negative`, `out_past_end`, `too_short`, `crossfade_first`, `crossfade_duration`,
+    `crossfade_room`."""
+
+    def __init__(self, reason: str, message: str) -> None:
+        super().__init__(message)
+        self.reason = reason
+
 
 # --- lookup -----------------------------------------------------------------
 
@@ -129,7 +143,7 @@ def add_clip(
     project and the new clip."""
     track = find_track(project, track_id)
     out = source_duration if out_point is None else out_point
-    _check_range(in_point, out, source_duration)
+    check_range(in_point, out, source_duration)
     clip = Clip(id=new_id(), source=source, in_point=in_point, out_point=out, asset=asset)
     clips = list(track.clips)
     if track.magnetic:
@@ -165,7 +179,7 @@ def trim_clip(
     clip = track.clips[i]
     new_in = clip.in_point if in_point is None else in_point
     new_out = clip.out_point if out_point is None else out_point
-    _check_range(new_in, new_out, source_duration)
+    check_range(new_in, new_out, source_duration)
     clips = list(track.clips)
     # On a free track, moving the left edge keeps the content where it is in
     # time, so the clip's start follows the in point.
@@ -205,21 +219,28 @@ def set_transition(project: Project, clip_id: str, transition: str, duration: fl
     if transition == "cut":
         duration = 0.0
     else:
-        if i == 0:
-            raise TimelineError("the first clip on a track has nothing to crossfade from")
-        if duration <= 0:
-            raise TimelineError("a crossfade needs a duration above zero")
-        prev = track.clips[i - 1]
-        room_before = prev.duration - prev.transition_duration
-        room_after = clip.duration - (track.clips[i + 1].transition_duration if i + 1 < len(track.clips) else 0.0)
-        if duration > min(room_before, room_after) + 1e-9:
-            raise TimelineError(
-                f"crossfade of {duration:g}s is longer than the room the neighbouring clips leave "
-                f"({min(room_before, room_after):g}s)"
-            )
+        prev_room = None if i == 0 else track.clips[i - 1].duration - track.clips[i - 1].transition_duration
+        next_fade = track.clips[i + 1].transition_duration if i + 1 < len(track.clips) else 0.0
+        check_crossfade(duration, clip.duration, prev_room, next_fade)
     clips = list(track.clips)
     clips[i] = replace(clip, transition=transition, transition_duration=duration)
     return _with_clips(project, track, clips)
+
+
+def check_crossfade(duration: float, clip_duration: float, prev_room: float | None, next_fade: float) -> None:
+    """Raise `RuleViolation` unless a crossfade of `duration` seconds can join a clip (`clip_duration` long,
+    whose own next-clip fade is `next_fade`) to the one before it. `prev_room` is how much of that previous
+    clip is not already spent on its own fade, or None for the first clip on the track."""
+    if prev_room is None:
+        raise RuleViolation("crossfade_first", "the first clip on a track has nothing to crossfade from")
+    if duration <= 0:
+        raise RuleViolation("crossfade_duration", "a crossfade needs a duration above zero")
+    room = min(prev_room, clip_duration - next_fade)
+    if duration > room + 1e-9:
+        raise RuleViolation(
+            "crossfade_room",
+            f"crossfade of {duration:g}s is longer than the room the neighbouring clips leave ({room:g}s)",
+        )
 
 
 # Settable per-clip properties and their allowed (low, high) range. Everything
@@ -295,7 +316,7 @@ def _text_properties(
             raise TimelineError("text can't be empty")
         changes["text"] = text
     if font_size is not None:
-        if not 0.01 <= font_size <= 0.5:
+        if not FONT_SIZE_RANGE[0] <= font_size <= FONT_SIZE_RANGE[1]:
             raise TimelineError("font_size must be between 0.01 and 0.5 (a fraction of the frame height)")
         changes["font_size"] = float(font_size)
     if color is not None:
@@ -368,10 +389,13 @@ def place_clip(project: Project, clip_id: str, *, start: float | None = None, tr
     return _with_clips(project, dest, [*dest.clips, moved])
 
 
-def _check_range(in_point: float, out_point: float, source_duration: float) -> None:
+def check_range(in_point: float, out_point: float, source_duration: float) -> None:
+    """Raise `RuleViolation` unless `in_point`..`out_point` is a legal part of a source `source_duration` long."""
     if in_point < 0:
-        raise TimelineError("in point can't be negative")
+        raise RuleViolation("in_negative", "in point can't be negative")
     if out_point > source_duration + 1e-6:
-        raise TimelineError(f"out point {out_point:g}s is past the end of the source ({source_duration:g}s)")
+        raise RuleViolation(
+            "out_past_end", f"out point {out_point:g}s is past the end of the source ({source_duration:g}s)"
+        )
     if out_point - in_point < MIN_CLIP:
-        raise TimelineError(f"a clip must be at least {MIN_CLIP:g}s long")
+        raise RuleViolation("too_short", f"a clip must be at least {MIN_CLIP:g}s long")
