@@ -156,3 +156,14 @@ def test_text_clip_needs_a_font():
     p, _ = ops.add_text_clip(p, overlay.id, "x", 1.0)
     with pytest.raises(TimelineError, match="font"):
         build_plan(p, _infos(p), 320, 240)
+
+
+def test_crossfade_after_a_cut_resets_the_picture_timebase():
+    # concat outputs picture in a 1/1000000 timebase; xfade needs both inputs to share one (SPL-109).
+    p, _ = _main([5, 4, 3])
+    p = ops.set_transition(p, p.tracks[0].clips[2].id, "crossfade", 1)
+    graph = build_plan(p, _infos(p), 320, 240).graph
+    assert "[vj1]settb=1/30[vt2];[vt2][v2]xfade" in graph
+    p, _ = _main([5, 4])
+    p = ops.set_transition(p, p.tracks[0].clips[1].id, "crossfade", 1)
+    assert "settb" not in build_plan(p, _infos(p), 320, 240).graph  # nothing to fix without a cut before
