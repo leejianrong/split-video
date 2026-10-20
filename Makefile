@@ -30,5 +30,6 @@ test: ## Run the test suite locally via uv
 openapi: ## Regenerate openapi.json (the committed /api/v1 schema)
 	uv run python scripts/export_openapi.py
 
-schemas: ## Regenerate docs/schemas/edit-plan.v1.schema.json (the published edit plan schema)
+schemas: ## Regenerate docs/schemas/*.schema.json (the published edit plan and edit ops schemas)
 	uv run python scripts/export_edit_plan_schema.py
+	uv run python scripts/export_edit_ops_schema.py

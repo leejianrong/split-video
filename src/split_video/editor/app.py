@@ -41,6 +41,7 @@ from split_video.editor.library import make_router as make_library_router
 from split_video.editor.media_report import make_router as make_media_report_router
 from split_video.editor.media_response import media_response
 from split_video.editor.ocr import make_router as make_ocr_router
+from split_video.editor.ops import make_router as make_ops_router
 from split_video.editor.plan import make_router as make_plan_router
 from split_video.editor.proxies import make_router as make_proxies_router
 from split_video.editor.revisions import WRITE_RESPONSES, base_revision, conflict_response
@@ -187,7 +188,8 @@ def create_app(
         description=(
             "The split-video editor API. Whole timelines are built from one JSON edit plan with "
             "`PUT /api/v1/compose/projects/{name}/plan`; its JSON Schema is served at `GET /api/v1/schemas/edit-plan` "
-            "and documented in docs/edit-plan.md."
+            "and documented in docs/edit-plan.md. Incremental edits are batched, atomically and with dry-run, with "
+            "`POST /api/v1/compose/projects/{name}/ops` (schema at `GET /api/v1/schemas/edit-ops`, docs/edit-ops.md)."
         ),
         lifespan=lifespan,
     )
@@ -572,6 +574,7 @@ def create_app(
     app.include_router(make_frames_router(provider), prefix=API_PREFIX, **guard)
     app.include_router(make_contact_sheet_router(provider), prefix=API_PREFIX, **guard)
     app.include_router(make_plan_router(provider), prefix=API_PREFIX, **guard)
+    app.include_router(make_ops_router(provider), prefix=API_PREFIX, **guard)
     # Deprecated aliases for one release: /api/... and /media/... as they were
     # before versioning. Not in the OpenAPI schema; responses carry a
     # `Deprecation` header (set by the middleware above). Registered after /api/v1 so it can't shadow it.

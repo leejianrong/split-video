@@ -42,6 +42,9 @@ jobs:
       - name: edit plan schema is up to date
         run: uv run python scripts/export_edit_plan_schema.py --check
 
+      - name: edit ops schema is up to date
+        run: uv run python scripts/export_edit_ops_schema.py --check
+
   test:
     runs-on: ubuntu-latest
     steps:

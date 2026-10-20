@@ -34,7 +34,9 @@ NO_LEGACY_ALIAS = {
     "/api/v1/assets/{asset_id}/frame",
     "/api/v1/assets/{asset_id}/contact-sheet",
     "/api/v1/assets/{asset_id}/contact-sheet/info",
+    "/api/v1/compose/projects/{name}/ops",
     "/api/v1/compose/projects/{name}/plan",
+    "/api/v1/schemas/edit-ops",
     "/api/v1/schemas/edit-plan",
 }
 REPO_ROOT = Path(__file__).resolve().parents[2]

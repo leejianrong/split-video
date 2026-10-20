@@ -36,6 +36,7 @@ from mcp_types import ToolAnnotations
 from split_video import (
     assets,
     contact_sheet,
+    edit_ops,
     edit_plan,
     frames,
     highlights,
@@ -900,6 +901,41 @@ def create_server(root: Path, store: ProjectStore | None = None, media: MediaSto
         its type, range and default. Constraints a schema cannot express (assets exist, in/out within the asset,
         no overlaps) are checked by apply_plan and reported with stable `plan.*` codes."""
         return edit_plan.schema()
+
+    @server.tool(annotations=_REPLACES_PROJECT)
+    async def apply_ops(
+        ops: dict[str, Any],
+        dry_run: bool = False,
+        base_revision: int | None = None,
+        continue_on_error: bool = False,
+    ) -> dict[str, Any]:
+        """Edit an EXISTING timeline with a BATCH of operations, all or none, in one call (and try it first with
+        `dry_run=true`, which writes nothing and returns the resulting project as `timeline`). `ops` is the document
+        `{"schema_version": 1, "project": "<name>", "ops": [{"op": "add_clip", "id": "c1", "asset": "a_...", "in": 0,
+        "out": 10}, {"op": "set_transition", "clip": "c1", "transition": "crossfade", "duration": 1}, ...]}`; the ops
+        are add_clip, trim_clip, move_clip, remove_clip, set_transition, set_clip_properties, add_text_clip,
+        set_text_properties, add_track, remove_track, move_track, place_clip; call get_edit_ops_schema for every field
+        (strict: unknown ops and fields are errors). Clips and tracks are addressed by id (show_timeline lists them);
+        give a creating op (add_clip, add_text_clip, add_track) an `id` and later ops in the batch can use it. Indexes
+        are zero-based. The ops run in order on an in-memory copy and are saved once only if every one succeeds; the
+        first op the project refuses stops the batch. `continue_on_error=true` (dry run only) keeps going to report
+        every independent problem (ops that use an id from a failed op are `ops.skipped_dependency`).
+        `base_revision` (from show_timeline) fails with revision_conflict, writing nothing, if the timeline has moved
+        on. A tool error for an invalid batch carries the report as JSON `{"error": "ops_invalid", "errors":
+        [{"path": "/ops/3", "code": "ops.clip.not_found", "message", "hint"}], "applied", "results"}`. Returns project,
+        revision, applied, per-op results with the ids they touched, the per-track summary and warnings."""
+        return await run(
+            lambda: edit_ops.apply_ops(
+                media, store, ops, dry_run=dry_run, base_revision=base_revision, continue_on_error=continue_on_error
+            )
+        )
+
+    @server.tool(annotations=_READ_ONLY)
+    async def get_edit_ops_schema() -> dict[str, Any]:
+        """The JSON Schema (draft 2020-12) of the operations document apply_ops takes, `schema_version` 1: every op
+        and its fields. Constraints a schema cannot express (ids exist, assets exist, in/out within the asset, no
+        overlaps) are checked by apply_ops and reported with stable `ops.*` / `plan.*` codes."""
+        return edit_ops.schema()
 
     @server.tool(annotations=_EDITS_PROJECT)
     async def add_clip_to_timeline(

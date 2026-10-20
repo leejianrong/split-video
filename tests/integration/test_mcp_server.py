@@ -85,7 +85,9 @@ async def test_exposes_the_documented_tools(root):
         "set_timeline_clip",
         "add_timeline_text",
         "set_timeline_text",
+        "apply_ops",
         "apply_plan",
+        "get_edit_ops_schema",
         "get_edit_plan_schema",
     }
 

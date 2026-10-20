@@ -158,7 +158,10 @@ def test_http_cli_and_engine_agree_on_apply_dry_run_and_schema(media_dir, tmp_pa
     http = client.put("/api/v1/compose/projects/reel/plan", params={"dry_run": "true"}, json=plan_for(ids))
     cli = cli_apply(root, plan_for(ids), "--dry-run", tmp_path=tmp_path)
     assert http.status_code == 200 and cli.exit_code == 0
-    assert http.json() == json.loads(cli.stdout) == {**first, "dry_run": True}
+    dry = http.json()
+    assert dry == json.loads(cli.stdout)
+    assert dry.pop("timeline")["name"] == "reel"  # a dry run also shows the whole project (SPL-50, additive)
+    assert dry == {**first, "dry_run": True}
     assert client.get("/api/v1/compose/projects").json()["projects"] == []
 
     # The schema: one document everywhere.
@@ -256,6 +259,7 @@ async def test_mcp_returns_the_same_json_in_memory(media_dir, tmp_path, anyio_ba
         assert {"apply_plan", "get_edit_plan_schema"} <= {t.name for t in (await mcp.list_tools()).tools}
         assert await mcp_call(mcp, "get_edit_plan_schema") == edit_plan.schema()
         dry = await mcp_call(mcp, "apply_plan", plan=plan_for(ids), dry_run=True)
+        assert dry.pop("timeline")["revision"] == dry["revision"]
         assert dry == {**expected, "dry_run": True}
         assert await mcp_call(mcp, "apply_plan", plan=plan_for(ids)) == expected
         # Invalid: a tool error whose text is the compact report with every problem.

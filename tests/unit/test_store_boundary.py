@@ -26,7 +26,9 @@ GUARDED = [
     "frames_cli.py",
     "contact_sheet_cli.py",
     "plan_cli.py",
+    "ops_cli.py",
     "edit_plan.py",
+    "edit_ops.py",
     "mcp_server.py",
     "editor/app.py",
     "editor/compose.py",
@@ -72,6 +74,7 @@ ENGINE = [
     "media_report.py",
     "highlights.py",
     "edit_plan.py",
+    "edit_ops.py",
     "frames.py",
     "contact_sheet.py",
     "render.py",
@@ -100,6 +103,7 @@ ADAPTERS = [
     "editor/frames.py",
     "editor/contact_sheet.py",
     "editor/plan.py",
+    "editor/ops.py",
     "project_cli.py",
     "compose_cli.py",
     "library_cli.py",
@@ -112,6 +116,7 @@ ADAPTERS = [
     "frames_cli.py",
     "contact_sheet_cli.py",
     "plan_cli.py",
+    "ops_cli.py",
 ]
 MEDIA_FORBIDDEN = re.compile(
     r"\.split-video-cache|CACHE_DIR_NAME|cache_store|resolve_within_root|resolve_source|relative_source"

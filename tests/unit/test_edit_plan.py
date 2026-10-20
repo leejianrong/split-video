@@ -409,7 +409,9 @@ def test_dry_run_writes_nothing_and_predicts_the_result(world):
     assert spy.calls == [] and world.store.list_timelines() == []
     assert result["dry_run"] is True and result["revision"] == 1 and result["clips"] == 30
     real = edit_plan.apply_plan(world.media, spy, thirty_clip_plan(world.ids))
-    assert {**result, "dry_run": False} == real  # the same document, as promised
+    timeline_view = result.pop("timeline")  # a dry run also carries the whole project (SPL-50, additive)
+    assert timeline_view["revision"] == 1 and len(timeline_view["tracks"]) == 4
+    assert {**result, "dry_run": False} == real  # the rest is the same document, as promised
     replace = {**thirty_clip_plan(world.ids), "mode": "replace", "base_revision": 1}
     assert edit_plan.apply_plan(world.media, spy, replace, dry_run=True)["revision"] == 2
     with pytest.raises(RevisionConflictError):

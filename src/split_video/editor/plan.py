@@ -47,6 +47,7 @@ class PlanResultOut(BaseModel):
     tracks: list[PlanTrackOut]
     warnings: list[PlanIssueOut]
     plan_hash: str  # sha256 of the canonical plan, `meta` excluded
+    timeline: dict[str, Any] | None = None  # dry run only: the whole resulting project, as `show_timeline`
     meta: dict[str, Any] | None = None  # the plan's own `meta`, echoed
 
 

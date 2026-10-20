@@ -19,6 +19,7 @@ from split_video import (
     library_cli,
     media_report_cli,
     ocr_cli,
+    ops_cli,
     plan_cli,
     project_cli,
     scenes_cli,
@@ -270,5 +271,6 @@ time_index_cli.register(app)
 media_report_cli.register(app)
 highlights_cli.register(app)
 plan_cli.register(app)
+ops_cli.register(app)
 app.command("frame")(frames_cli.frame_cmd)
 app.command("contact-sheet")(contact_sheet_cli.contact_sheet_cmd)
