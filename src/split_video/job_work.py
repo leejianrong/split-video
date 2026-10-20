@@ -112,15 +112,21 @@ def render_work(
     filename: str,
     width: int | None = None,
     height: int | None = None,
+    preset: str | None = None,
+    fit: str | None = None,
+    name: str | None = None,
 ) -> Callable[[JobContext], dict[str, Any]]:
-    """Render the timeline to `out_id`. Progress is `RENDER_STEPS` thousandths; the result is `{"output": filename}`."""
+    """Render the timeline to `out_id`. Progress is `RENDER_STEPS` thousandths; the result is
+    `timeline_service.render_result` (name, output, duration and the preset, fit, size and fps used)."""
 
     def work(ctx: JobContext) -> dict[str, Any]:
         def on_progress(fraction: float) -> None:
             ctx.progress(round(fraction * RENDER_STEPS), RENDER_STEPS)
 
-        timeline_service.run_render(timeline, media, out_id, on_progress, cancel=ctx, width=width, height=height)
-        return {"output": filename}
+        used = timeline_service.run_render(
+            timeline, media, out_id, on_progress, cancel=ctx, width=width, height=height, preset=preset, fit=fit
+        )
+        return timeline_service.render_result(name or filename, filename, timeline, used)
 
     return work
 

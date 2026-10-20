@@ -28,14 +28,15 @@ import subprocess
 from collections.abc import Callable
 from contextlib import ExitStack
 from dataclasses import dataclass
+from typing import Any
 
-from split_video import assets
+from split_video import assets, presets
 from split_video.ffmpeg import ExtractError, MediaInfo, _require_binary, stop_on_cancel
 from split_video.jobs import CancelToken, JobCancelledError
 from split_video.media_store import MediaStore
 from split_video.timeline import Clip, Project, TimelineError, Track
 
-FPS = 30
+FPS = presets.DEFAULT_FPS
 AUDIO_RATE = 48000
 DEFAULT_SIZE = (1280, 720)  # canvas when the project has no video file to take a size from
 
@@ -77,6 +78,7 @@ class Plan:
     audio_label: str
     width: int
     height: int
+    fps: int = FPS
 
 
 def _main_track(project: Project) -> Track | None:
@@ -130,10 +132,13 @@ def _crop(clip: Clip, info: MediaInfo) -> tuple[str, int, int]:
     return f",crop={cw}:{ch}:{cx}:{cy}", cw, ch
 
 
-def _fit(cw: int, ch: int, width: int, height: int, cropped: bool) -> str:
-    """The scale-to-fit filter. A cropped picture whose aspect matches the frame to within the rounding of
+def _fit(cw: int, ch: int, width: int, height: int, cropped: bool, fit: str = "letterbox") -> str:
+    """The scale-to-fit filter. With `fit="crop"` an uncropped picture is scaled to cover the frame and the overflow
+    is cut off, centered, so there are no bars. A cropped picture whose aspect matches the frame to within the rounding of
     the crop (2 source pixels: it was rounded to even sizes) fills it exactly, a barely visible stretch,
     instead of leaving a bar a pixel or two wide."""
+    if fit == "crop" and not cropped:
+        return f"scale={width}:{height}:force_original_aspect_ratio=increase,crop={width}:{height}"
     if cropped and cw and ch:
         ratio = min(width / cw, height / ch)
         if abs(cw - width / ratio) <= 2 and abs(ch - height / ratio) <= 2:
@@ -145,15 +150,17 @@ def _gain(clip: Clip) -> str:
     return "0" if clip.muted else f"{clip.gain:g}"
 
 
-def _main_chain(clips: list[Clip], first_input: int, infos: dict[str, MediaInfo], width: int, height: int):
+def _main_chain(
+    clips: list[Clip], first_input: int, infos: dict[str, MediaInfo], width: int, height: int, fps: int, fit: str
+):
     """Filter parts joining the main track's clips; returns (parts, vlabel, alabel)."""
     parts: list[str] = []
     for n, clip in enumerate(clips):
         i = first_input + n
         crop, cw, ch = _crop(clip, infos[clip.source])
         parts.append(
-            f"[{i}:v]setpts=PTS-STARTPTS,fps={FPS}{crop},"
-            f"{_fit(cw, ch, width, height, clip.cropped)}{_eq(clip)},"
+            f"[{i}:v]setpts=PTS-STARTPTS,fps={fps}{crop},"
+            f"{_fit(cw, ch, width, height, clip.cropped, fit)}{_eq(clip)},"
             f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,setsar=1,format=yuv420p[v{n}]"
         )
         if infos[clip.source].has_audio:
@@ -165,7 +172,7 @@ def _main_chain(clips: list[Clip], first_input: int, infos: dict[str, MediaInfo]
 
     vlabel, alabel = "v0", "a0"
     length = clips[0].duration
-    joined_by_cut = False  # concat outputs picture in ffmpeg's 1/1000000 timebase, not the clips' 1/FPS
+    joined_by_cut = False  # concat outputs picture in ffmpeg's 1/1000000 timebase, not the clips' 1/fps
     for n in range(1, len(clips)):
         clip = clips[n]
         nv, na = f"vj{n}", f"aj{n}"
@@ -173,7 +180,7 @@ def _main_chain(clips: list[Clip], first_input: int, infos: dict[str, MediaInfo]
             d = clip.transition_duration
             if joined_by_cut:
                 # xfade refuses inputs with different timebases ("Error reinitializing filters").
-                parts.append(f"[{vlabel}]settb=1/{FPS}[vt{n}]")
+                parts.append(f"[{vlabel}]settb=1/{fps}[vt{n}]")
                 vlabel, joined_by_cut = f"vt{n}", False
             parts.append(f"[{vlabel}][v{n}]xfade=transition=fade:duration={d:.3f}:offset={length - d:.3f}[{nv}]")
             parts.append(f"[{alabel}][a{n}]acrossfade=d={d:.3f}[{na}]")
@@ -187,7 +194,15 @@ def _main_chain(clips: list[Clip], first_input: int, infos: dict[str, MediaInfo]
     return parts, vlabel, alabel
 
 
-def build_plan(project: Project, infos: dict[str, MediaInfo], width: int, height: int, font: str | None = None) -> Plan:
+def build_plan(
+    project: Project,
+    infos: dict[str, MediaInfo],
+    width: int,
+    height: int,
+    font: str | None = None,
+    fps: int = FPS,
+    fit: str = "letterbox",
+) -> Plan:
     main = _main_track(project)
     main_clips = list(main.clips) if main else []
     layers = _overlay_clips(project, main)  # picture clips and text, in stacking order
@@ -198,13 +213,13 @@ def build_plan(project: Project, infos: dict[str, MediaInfo], width: int, height
 
     parts: list[str] = []
     if main_clips:
-        chain, vmain, alabel = _main_chain(main_clips, 0, infos, width, height)
+        chain, vmain, alabel = _main_chain(main_clips, 0, infos, width, height, fps, fit)
         parts += chain
     else:
         alabel = "asilent"
         parts.append(f"anullsrc=r={AUDIO_RATE}:cl=stereo,atrim=0:{total:.3f},asetpts=PTS-STARTPTS[{alabel}]")
 
-    parts.append(f"color=c=black:s={width}x{height}:r={FPS}:d={total:.3f},format=yuv420p[canvas]")
+    parts.append(f"color=c=black:s={width}x{height}:r={fps}:d={total:.3f},format=yuv420p[canvas]")
     vlabel = "canvas"
     if main_clips:
         parts.append(f"[canvas][{vmain}]overlay=0:0:eof_action=pass[vbase]")
@@ -228,8 +243,14 @@ def build_plan(project: Project, infos: dict[str, MediaInfo], width: int, height
         media_seen += 1
         w = max(2, int(width * clip.scale) // 2 * 2)
         crop = _crop(clip, infos[clip.source])[0]
+        if fit == "crop" and not clip.cropped:
+            # Cover a box with the frame's aspect (like main-track clips cover the frame), cutting the overflow.
+            box_h = max(2, round(w * height / width / 2) * 2)
+            scaled = f"scale={w}:{box_h}:force_original_aspect_ratio=increase,crop={w}:{box_h}"
+        else:
+            scaled = f"scale={w}:-2"
         parts.append(
-            f"[{i}:v]setpts=PTS-STARTPTS+{clip.start:.3f}/TB,fps={FPS}{crop},scale={w}:-2{_eq(clip)},"
+            f"[{i}:v]setpts=PTS-STARTPTS+{clip.start:.3f}/TB,fps={fps}{crop},{scaled}{_eq(clip)},"
             f"format=yuva420p,colorchannelmixer=aa={clip.opacity:g}[ov{n}]"
         )
         nxt = f"vo{n}"
@@ -256,7 +277,7 @@ def build_plan(project: Project, infos: dict[str, MediaInfo], width: int, height
         parts.append(f"{sources}amix=inputs={len(mix)}:normalize=0:duration=longest,alimiter=limit=0.95[amixed]")
         alabel = "amixed"
 
-    return Plan(ordered, ";".join(parts), vlabel, alabel, width, height)
+    return Plan(ordered, ";".join(parts), vlabel, alabel, width, height, fps)
 
 
 MIN_SIZE, MAX_SIZE = 64, 4096
@@ -303,18 +324,24 @@ def render(
     *,
     width: int | None = None,
     height: int | None = None,
-) -> None:
-    """Write the project to `out_id` (an mp4 in `media`). `progress` gets 0.0..1.0.
+    preset: str | None = None,
+    fit: str | None = None,
+) -> dict[str, Any]:
+    """Write the project to `out_id` (an mp4 in `media`). `progress` gets 0.0..1.0. Returns what was used:
+    `{"preset", "fit", "width", "height", "fps"}`.
 
-    The picture is the first clip's size unless `width` and `height` (see `check_size`) say otherwise,
-    e.g. 1080x1920 for a vertical short; every clip then fits that frame.
+    The picture is the first clip's size unless `width` and `height` (see `check_size`) or an export `preset`
+    (see `presets.py`, which also sets frame rate and encoder) say otherwise; explicit size beats the preset's.
+    Every clip then fits that frame: `fit="letterbox"` (default) scales it to fit and pads, `"crop"` scales it to
+    cover and cuts the overflow (clips with their own crop are not affected).
 
     With a `cancel` token (a job's `JobContext`), cancelling terminates ffmpeg at once, deletes
     the partial output and raises `JobCancelledError`.
 
     Clips are found by asset id (relinked if their file moved); a clip that can't be found
     is a `SourceNotFoundError` naming the asset and its last known path."""
-    size = check_size(width, height)
+    settings = presets.resolve_export(preset, width, height, fit)
+    size = settings.size
     project = assets.resolve_project(media, project)  # every clip's `source` is now its file's current media id
     video_clips = [c for t in project.tracks if t.kind == "video" for c in t.clips]
     if not video_clips:
@@ -341,7 +368,7 @@ def render(
     else:
         width, height = infos[first.source].width // 2 * 2, infos[first.source].height // 2 * 2
     font = find_font() if any(c.kind == "text" for c in video_clips) else None
-    plan = build_plan(project, infos, width, height, font)
+    plan = build_plan(project, infos, width, height, font, settings.fps, settings.fit)
     total = project.duration
 
     try:
@@ -349,10 +376,28 @@ def render(
             # Every input, and the output, as real paths for ffmpeg for the whole run.
             inputs = [str(stack.enter_context(media.local_path(c.source))) for c in plan.clips]
             out_path = stack.enter_context(media.write_local(out_id))
-            _run_ffmpeg(plan, inputs, str(out_path), total, progress, cancel)
+            _run_ffmpeg(plan, inputs, str(out_path), total, progress, cancel, settings.preset)
     except JobCancelledError:
         media.delete(out_id)  # never leave a half-written file behind
         raise
+    return {
+        "preset": settings.preset.name if settings.preset else None,
+        "fit": settings.fit,
+        "width": width,
+        "height": height,
+        "fps": settings.fps,
+    }
+
+
+def _encode_args(preset: presets.ExportPreset | None) -> list[str]:
+    """The ffmpeg output options. Without a preset these are what renders always used."""
+    if preset is None:
+        return ["-c:v", "libx264", "-preset", presets.DEFAULT_X264_PRESET, "-c:a", "aac", "-movflags", "+faststart"]
+    return [
+        "-c:v", preset.video_codec, "-preset", preset.x264_preset, "-crf", str(preset.crf), "-pix_fmt", preset.pix_fmt,
+        "-c:a", preset.audio_codec, "-b:a", preset.audio_bitrate, "-ar", str(preset.audio_sample_rate),
+        *(["-movflags", "+faststart"] if preset.faststart else []),
+    ]  # fmt: skip
 
 
 def _run_ffmpeg(
@@ -362,6 +407,7 @@ def _run_ffmpeg(
     total: float,
     progress: Callable[[float], None] | None,
     cancel: CancelToken | None = None,
+    preset: presets.ExportPreset | None = None,
 ) -> None:
     cmd = [
         _require_binary("ffmpeg"),
@@ -378,14 +424,7 @@ def _run_ffmpeg(
         f"[{plan.audio_label}]",
         "-t",
         f"{total:.3f}",
-        "-c:v",
-        "libx264",
-        "-preset",
-        "veryfast",
-        "-c:a",
-        "aac",
-        "-movflags",
-        "+faststart",
+        *_encode_args(preset),
         out_path,
     ]
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)

@@ -202,6 +202,11 @@ class RenderRequest(BaseModel):
     # Output frame size in pixels (both or neither; even, 64..4096). Default: the first clip's size.
     width: int | None = None
     height: int | None = None
+    # Export preset name (GET /presets): sets size, frame rate and encoder. An explicit width and height beat the
+    # preset's size; precedence is explicit > preset > the first clip's size.
+    preset: str | None = None
+    # How a picture whose aspect differs from the frame is fitted: "letterbox" (default) or "crop".
+    fit: str | None = None
 
 
 class RenderStartOut(BaseModel):
@@ -213,6 +218,14 @@ class RenderStatusOut(BaseModel):
     progress: float
     output: str | None = None
     error: str | None = None
+    # What was used, once the render has finished (the same JSON as the CLI and MCP).
+    name: str | None = None
+    duration: float | None = None
+    preset: str | None = None
+    fit: str | None = None
+    width: int | None = None
+    height: int | None = None
+    fps: int | None = None
 
 
 def _http(exc: TimelineError) -> HTTPException:
@@ -585,12 +598,22 @@ def make_router(provider: StoreProvider, jobs: JobQueue) -> APIRouter:
     def start_render(name: str, request: RenderRequest, ctx: RequestContext = ctx_dep) -> RenderStartOut:
         try:
             project, filename, out_id = timeline_service.plan_render(
-                ctx.store, ctx.media, name, request.output, request.overwrite, request.width, request.height
+                ctx.store,
+                ctx.media,
+                name,
+                request.output,
+                request.overwrite,
+                request.width,
+                request.height,
+                request.preset,
+                request.fit,
             )
         except TimelineError as exc:
             raise _http(exc) from None
 
-        work = render_work(project, ctx.media, out_id, filename, request.width, request.height)
+        work = render_work(
+            project, ctx.media, out_id, filename, request.width, request.height, request.preset, request.fit, name
+        )
         job_id = jobs.submit(RENDER, work, label=filename, total=RENDER_STEPS, owner=ctx.principal.id)
         return RenderStartOut(job_id=job_id)
 
@@ -602,6 +625,13 @@ def make_router(provider: StoreProvider, jobs: JobQueue) -> APIRouter:
             status="running" if job.state == "queued" else job.state,
             progress=job.fraction,
             output=summary.get("output"),
+            name=summary.get("name"),
+            duration=summary.get("duration"),
+            preset=summary.get("preset"),
+            fit=summary.get("fit"),
+            width=summary.get("width"),
+            height=summary.get("height"),
+            fps=summary.get("fps"),
             error="cancelled" if job.state == "cancelled" else job.error,
         )
 

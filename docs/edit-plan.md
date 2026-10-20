@@ -201,6 +201,16 @@ is the usual **409** / exit code **3** / `revision_conflict` tool error with `cu
 Warnings (never block): `plan.track.empty`, `plan.clip.source_mismatch`, `plan.clip.transition_duration_ignored`
 (a duration on a cut), `plan.project.replaces_existing` (what the replace overwrites).
 
+## Rendering is not part of the plan
+
+A plan says *what to cut*: which clips, in which order, with which crop. *How to export it* (the size, frame rate and
+encoder of an export preset such as `vertical-1080`, and whether a picture of another aspect is letterboxed or
+cropped to fill the frame) is chosen when you render: `split-video compose render <project> --preset vertical-1080
+[--fit crop] [--size WxH]`, the `preset`, `fit`, `width` and `height` fields of the render request, or the same
+arguments of the MCP tool `render_timeline`. Precedence for the frame size: explicit size, then preset, then the first
+clip's size. `split-video presets` / `GET /api/v1/presets` / `list_export_presets` list the presets. The same plan can
+be rendered to several destinations without changing it.
+
 ## Examples
 
 **Minimal.** One clip, one track:

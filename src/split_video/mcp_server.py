@@ -43,6 +43,7 @@ from split_video import (
     library,
     media_report,
     ocr,
+    presets,
     project,
     proxy,
     scenes,
@@ -1272,19 +1273,34 @@ def create_server(root: Path, store: ProjectStore | None = None, media: MediaSto
         overwrite: bool = False,
         width: int | None = None,
         height: int | None = None,
+        preset: str | None = None,
+        fit: str | None = None,
     ) -> dict[str, Any]:
         """Render the timeline to an mp4 in the root (default '<name>-render.mp4'). Refuses to replace an
         existing file unless overwrite=true. Re-encodes, so it can take a while for long clips. `width` and
         `height` (both or neither; even whole numbers 64..4096, e.g. 1080 x 1920 for a vertical short) set the
-        output frame; by default it is the first clip's size."""
+        output frame; by default it is the first clip's size. `preset` (see list_export_presets: youtube-1080p,
+        vertical-1080, square-1080, draft-720) sets size, frame rate and encoder in one go; an explicit width and
+        height beat the preset's size (explicit > preset > first clip). `fit` chooses what happens when a picture's
+        aspect differs from the frame: "letterbox" (default: scale to fit, black bars) or "crop" (scale to cover and
+        cut the overflow, centered); a clip with its own crop is not affected. Returns name, output, duration and the
+        preset, fit, width, height and fps used."""
 
         def work() -> dict[str, Any]:
             project_, filename, out_id = timeline_service.plan_render(
-                store, media, name, output, overwrite, width, height
+                store, media, name, output, overwrite, width, height, preset, fit
             )
-            timeline_service.run_render(project_, media, out_id, width=width, height=height)
-            return {"name": name, "output": filename, "duration": project_.duration}
+            used = timeline_service.run_render(
+                project_, media, out_id, width=width, height=height, preset=preset, fit=fit
+            )
+            return timeline_service.render_result(name, filename, project_, used)
 
         return await run(work)
+
+    @server.tool(annotations=_READ_ONLY)
+    async def list_export_presets() -> dict[str, Any]:
+        """The export presets render_timeline takes by name (`preset`), each with label, description, width,
+        height, fps, codecs, quality (crf), audio settings and container, plus the valid `fits`."""
+        return presets.listing()
 
     return server

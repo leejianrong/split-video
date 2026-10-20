@@ -636,21 +636,29 @@ def render_cmd(
     size: str | None = typer.Option(
         None, "--size", help="Output frame size WxH in pixels, e.g. 1080x1920 (even, 64..4096). Default: first clip's."
     ),
+    preset: str | None = typer.Option(
+        None, "--preset", help="Export preset (see `split-video presets`): sets size, frame rate and encoder."
+    ),
+    fit: str | None = typer.Option(
+        None, "--fit", help="Aspect mismatch: letterbox (default, black bars) or crop (cover the frame)."
+    ),
     root: Path = _Root,
     as_json: bool = _Json,
 ) -> None:
-    """Render the project to an mp4 in the root."""
+    """Render the project to an mp4 in the root. Size: --size beats the --preset's, which beats the first clip's."""
     root = root.resolve()
     store = LocalProjectStore(root)
     media = LocalMediaStore(root)
     try:
         width, height = parse_size(size)
-        project, filename, out_id = timeline_service.plan_render(store, media, name, output, overwrite, width, height)
-        timeline_service.run_render(project, media, out_id, width=width, height=height)
+        project, filename, out_id = timeline_service.plan_render(
+            store, media, name, output, overwrite, width, height, preset, fit
+        )
+        used = timeline_service.run_render(project, media, out_id, width=width, height=height, preset=preset, fit=fit)
     except _EXPECTED_ERRORS as exc:
         raise _fail(exc, as_json)
     if as_json:
-        typer.echo(json.dumps({"name": name, "output": filename, "duration": project.duration}, indent=2))
+        typer.echo(json.dumps(timeline_service.render_result(name, filename, project, used), indent=2))
     else:
         console.print(f"[green]Rendered[/green] {filename}")
 
