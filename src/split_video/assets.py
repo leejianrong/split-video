@@ -461,6 +461,16 @@ def lookup(book: AssetBook, asset_id: str, source: str) -> Located | None:
     return None
 
 
+def peek(book: AssetBook, asset_id: str, source: str) -> Located | None:
+    """Like `lookup`, but read-only: the table's row for the asset (or, with no asset id, for the file at
+    `source`), never registering, relinking or re-hashing anything, so it never marks the table dirty. The
+    path is the row's recorded one. Used where a dry run must not write (`edit_ops.py`)."""
+    row = book.get(asset_id) if asset_id else None
+    if row is None and not asset_id and source:
+        row = next((r for r in book.list() if source == r.path or source in r.copies), None)
+    return None if row is None else Located(row, row.path)
+
+
 def link_project(media: MediaStore, project: Project) -> Project:
     """The project with every media clip linked to its asset, never raising for a missing file.
 

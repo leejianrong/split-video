@@ -119,7 +119,9 @@ is not magnetic; at most 2000 clips in the whole plan. The numeric limits and th
 `action` is `created` or `replaced`. `plan_hash` is the sha256 of the canonical plan (after migration, keys sorted, no
 spaces, without `meta`): the same plan always gives the same hash and the same generated ids, so applying a plan twice
 is detectable. With `dry_run` nothing is written and `revision` is the one the write would produce (a prediction, not a
-reservation); the rest of the document is exactly what the real call returns.
+reservation); the rest of the document is exactly what the real call returns, plus `timeline`: the whole resulting
+project (what `show_timeline` returns: tracks, clips with their asset, in/out, start, transition, text and
+properties), so an agent can inspect it before committing. A real call omits `timeline` (it can be large).
 
 ### Errors
 

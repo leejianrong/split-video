@@ -1737,6 +1737,48 @@
         "title": "OnScreenTextOut",
         "type": "object"
       },
+      "OpResultOut": {
+        "properties": {
+          "code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code"
+          },
+          "ids": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Ids",
+            "type": "object"
+          },
+          "index": {
+            "title": "Index",
+            "type": "integer"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "summary": {
+            "title": "Summary",
+            "type": "string"
+          }
+        },
+        "required": [
+          "index",
+          "ok",
+          "summary",
+          "ids"
+        ],
+        "title": "OpResultOut",
+        "type": "object"
+      },
       "OpenRequest": {
         "properties": {
           "path": {
@@ -1748,6 +1790,188 @@
           "path"
         ],
         "title": "OpenRequest",
+        "type": "object"
+      },
+      "OpsInvalidOut": {
+        "properties": {
+          "applied": {
+            "title": "Applied",
+            "type": "integer"
+          },
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "dry_run": {
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "error": {
+            "default": "ops_invalid",
+            "title": "Error",
+            "type": "string"
+          },
+          "errors": {
+            "items": {
+              "$ref": "#/components/schemas/PlanIssueOut"
+            },
+            "title": "Errors",
+            "type": "array"
+          },
+          "ok": {
+            "default": false,
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "ops_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ops Hash"
+          },
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/OpResultOut"
+            },
+            "title": "Results",
+            "type": "array"
+          },
+          "timeline": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timeline"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/PlanIssueOut"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "detail",
+          "errors",
+          "warnings",
+          "ops_hash",
+          "dry_run",
+          "applied",
+          "results"
+        ],
+        "title": "OpsInvalidOut",
+        "type": "object"
+      },
+      "OpsResultOut": {
+        "properties": {
+          "action": {
+            "title": "Action",
+            "type": "string"
+          },
+          "applied": {
+            "title": "Applied",
+            "type": "integer"
+          },
+          "clips": {
+            "title": "Clips",
+            "type": "integer"
+          },
+          "dry_run": {
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "duration": {
+            "title": "Duration",
+            "type": "number"
+          },
+          "meta": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Meta"
+          },
+          "ops": {
+            "title": "Ops",
+            "type": "integer"
+          },
+          "ops_hash": {
+            "title": "Ops Hash",
+            "type": "string"
+          },
+          "project": {
+            "title": "Project",
+            "type": "string"
+          },
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/OpResultOut"
+            },
+            "title": "Results",
+            "type": "array"
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "integer"
+          },
+          "timeline": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timeline"
+          },
+          "tracks": {
+            "items": {
+              "$ref": "#/components/schemas/PlanTrackOut"
+            },
+            "title": "Tracks",
+            "type": "array"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/PlanIssueOut"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "project",
+          "revision",
+          "action",
+          "dry_run",
+          "applied",
+          "ops",
+          "clips",
+          "duration",
+          "tracks",
+          "results",
+          "warnings",
+          "ops_hash"
+        ],
+        "title": "OpsResultOut",
         "type": "object"
       },
       "PlaceRequest": {
@@ -1898,6 +2122,18 @@
           "revision": {
             "title": "Revision",
             "type": "integer"
+          },
+          "timeline": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timeline"
           },
           "tracks": {
             "items": {
@@ -4189,7 +4425,7 @@
     }
   },
   "info": {
-    "description": "The split-video editor API. Whole timelines are built from one JSON edit plan with `PUT /api/v1/compose/projects/{name}/plan`; its JSON Schema is served at `GET /api/v1/schemas/edit-plan` and documented in docs/edit-plan.md.",
+    "description": "The split-video editor API. Whole timelines are built from one JSON edit plan with `PUT /api/v1/compose/projects/{name}/plan`; its JSON Schema is served at `GET /api/v1/schemas/edit-plan` and documented in docs/edit-plan.md. Incremental edits are batched, atomically and with dry-run, with `POST /api/v1/compose/projects/{name}/ops` (schema at `GET /api/v1/schemas/edit-ops`, docs/edit-ops.md).",
     "title": "split-video editor",
     "version": "1"
   },
@@ -7731,6 +7967,105 @@
         "summary": "Set Transition"
       }
     },
+    "/api/v1/compose/projects/{name}/ops": {
+      "post": {
+        "description": "Apply a batch of timeline edits (add_clip, trim_clip, move_clip, remove_clip, set_transition,\nset_clip_properties, add_text_clip, set_text_properties, add_track, remove_track, move_track, place_clip) to the\nexisting project `name`, atomically: every op or none, saved once. Clips and tracks are addressed by id; a\ncreating op may be given an `id` that later ops in the batch use. The body is validated against\n`GET /api/v1/schemas/edit-ops` (strict). With `dry_run=true` nothing is written and the result carries the\nresulting project as `timeline`. The first op the project refuses stops the batch; `continue_on_error: true`\nin the body (dry run only) collects every independent problem. 422 carries the report, 409 a stale\nrevision (`If-Match`).",
+        "operationId": "apply_ops_api_v1_compose_projects__name__ops_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "dry_run",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Dry Run",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "The project revision this change is based on, as an integer, bare or quoted (`If-Match: \"3\"`). If the project has moved on, the request fails with 409 `revision_conflict` and nothing is written. Omit it to apply the change to the latest version.",
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The project revision this change is based on, as an integer, bare or quoted (`If-Match: \"3\"`). If the project has moved on, the request fails with 409 `revision_conflict` and nothing is written. Omit it to apply the change to the latest version.",
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "description": "An ops document; GET /api/v1/schemas/edit-ops is its JSON Schema.",
+                "title": "Ops"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpsResultOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedOut"
+                }
+              }
+            },
+            "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RevisionConflictOut"
+                }
+              }
+            },
+            "description": "`If-Match` didn't match the project's current revision (`error` is `revision_conflict`). Other 409s on some routes (output file or project already exists) have only `detail`."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpsInvalidOut"
+                }
+              }
+            },
+            "description": "The batch has problems; they are in `errors`. Nothing was written."
+          }
+        },
+        "summary": "Apply Ops"
+      }
+    },
     "/api/v1/compose/projects/{name}/plan": {
       "put": {
         "description": "Create or replace the timeline project `name` from ONE JSON edit plan (sources, in/out, order, transitions,\ntext, tracks), atomically: the whole project is built in memory and saved once, and a plan with any problem\nchanges nothing. The body is validated against the plan schema served at `GET /api/v1/schemas/edit-plan`\n(strict: unknown fields are errors). Mode `create` (the default) fails if the project exists; mode `replace`\nneeds `If-Match` (or `base_revision` in the plan), or `replace_unconditionally: true`. With `dry_run=true`\nnothing is written and the result shows what would happen. 422 carries every problem at once.",
@@ -9200,6 +9535,37 @@
           }
         },
         "summary": "Save Current Project"
+      }
+    },
+    "/api/v1/schemas/edit-ops": {
+      "get": {
+        "description": "The JSON Schema (draft 2020-12) of an ops document, `schema_version` 1. The same document is committed as\ndocs/schemas/edit-ops.v1.schema.json; docs/edit-ops.md explains the format and the error codes.",
+        "operationId": "edit_ops_schema_api_v1_schemas_edit_ops_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Edit Ops Schema Api V1 Schemas Edit Ops Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedOut"
+                }
+              }
+            },
+            "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
+          }
+        },
+        "summary": "Edit Ops Schema"
       }
     },
     "/api/v1/schemas/edit-plan": {

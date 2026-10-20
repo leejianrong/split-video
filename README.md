@@ -521,6 +521,20 @@ Over HTTP it is `PUT /api/v1/compose/projects/{name}/plan` (schema at `GET /api/
 `apply_plan` and `get_edit_plan_schema`. The format, error codes and examples are in
 [docs/edit-plan.md](docs/edit-plan.md).
 
+### Edit operations: batches of edits with dry-run (`apply-ops`)
+
+To change a timeline that exists, send a list of single edits (`add_clip`, `trim_clip`, `set_transition`,
+`add_text_clip`, ...). They apply all or none, in one save; `--dry-run` shows the resulting project and every error
+without writing anything:
+
+```
+split-video apply-ops edit.json --root /data [--dry-run] [--continue-on-error] [--base-revision N] [--json]
+split-video ops-schema                                                                   # the JSON Schema
+```
+
+Over HTTP it is `POST /api/v1/compose/projects/{name}/ops?dry_run=` (schema at `GET /api/v1/schemas/edit-ops`); MCP has
+`apply_ops` and `get_edit_ops_schema`. The ops, error codes and examples are in [docs/edit-ops.md](docs/edit-ops.md).
+
 ### Revisions: editing the same project from two places
 
 Every project (split points and compose timelines) carries a revision

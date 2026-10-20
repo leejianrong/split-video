@@ -380,15 +380,17 @@ def run_render(
 # --- describing ---------------------------------------------------------------
 
 
-def describe(media: MediaStore, name: str, project: Project) -> dict[str, Any]:
+def describe(media: MediaStore, name: str, project: Project, *, read_only: bool = False) -> dict[str, Any]:
     """JSON-friendly view of a project, with clips numbered from 1 per track.
 
     Each media clip shows its `asset` id and its file's current path as `source` (found by
-    asset id, so a renamed file shows where it is now); an unresolvable clip shows its hint."""
+    asset id, so a renamed file shows where it is now); an unresolvable clip shows its hint.
+
+    With `read_only` the asset table is only read (`assets.peek`): no file is relocated, hashed or registered,
+    so the table is never written; the path shown is the recorded one. Dry runs use it."""
+    find = assets.peek if read_only else assets.lookup
     with assets.open_book(media) as book:
-        rows = {
-            c.id: assets.lookup(book, c.asset, c.source) for t in project.tracks for c in t.clips if c.kind == "media"
-        }
+        rows = {c.id: find(book, c.asset, c.source) for t in project.tracks for c in t.clips if c.kind == "media"}
     return {
         "name": name,
         "revision": project.revision,
