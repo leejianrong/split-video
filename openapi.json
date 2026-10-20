@@ -1778,6 +1778,184 @@
         "title": "PlaceRequest",
         "type": "object"
       },
+      "PlanInvalidOut": {
+        "properties": {
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "error": {
+            "default": "plan_invalid",
+            "title": "Error",
+            "type": "string"
+          },
+          "errors": {
+            "items": {
+              "$ref": "#/components/schemas/PlanIssueOut"
+            },
+            "title": "Errors",
+            "type": "array"
+          },
+          "ok": {
+            "default": false,
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "plan_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plan Hash"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/PlanIssueOut"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "detail",
+          "errors",
+          "warnings",
+          "plan_hash"
+        ],
+        "title": "PlanInvalidOut",
+        "type": "object"
+      },
+      "PlanIssueOut": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "hint": {
+            "title": "Hint",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "code",
+          "message",
+          "hint"
+        ],
+        "title": "PlanIssueOut",
+        "type": "object"
+      },
+      "PlanResultOut": {
+        "properties": {
+          "action": {
+            "title": "Action",
+            "type": "string"
+          },
+          "clips": {
+            "title": "Clips",
+            "type": "integer"
+          },
+          "dry_run": {
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "duration": {
+            "title": "Duration",
+            "type": "number"
+          },
+          "meta": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Meta"
+          },
+          "plan_hash": {
+            "title": "Plan Hash",
+            "type": "string"
+          },
+          "project": {
+            "title": "Project",
+            "type": "string"
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "integer"
+          },
+          "tracks": {
+            "items": {
+              "$ref": "#/components/schemas/PlanTrackOut"
+            },
+            "title": "Tracks",
+            "type": "array"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/PlanIssueOut"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "project",
+          "revision",
+          "action",
+          "dry_run",
+          "clips",
+          "duration",
+          "tracks",
+          "warnings",
+          "plan_hash"
+        ],
+        "title": "PlanResultOut",
+        "type": "object"
+      },
+      "PlanTrackOut": {
+        "properties": {
+          "clips": {
+            "title": "Clips",
+            "type": "integer"
+          },
+          "end": {
+            "title": "End",
+            "type": "number"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "clips",
+          "end"
+        ],
+        "title": "PlanTrackOut",
+        "type": "object"
+      },
       "PointOut": {
         "properties": {
           "activity": {
@@ -4011,6 +4189,7 @@
     }
   },
   "info": {
+    "description": "The split-video editor API. Whole timelines are built from one JSON edit plan with `PUT /api/v1/compose/projects/{name}/plan`; its JSON Schema is served at `GET /api/v1/schemas/edit-plan` and documented in docs/edit-plan.md.",
     "title": "split-video editor",
     "version": "1"
   },
@@ -7552,6 +7731,105 @@
         "summary": "Set Transition"
       }
     },
+    "/api/v1/compose/projects/{name}/plan": {
+      "put": {
+        "description": "Create or replace the timeline project `name` from ONE JSON edit plan (sources, in/out, order, transitions,\ntext, tracks), atomically: the whole project is built in memory and saved once, and a plan with any problem\nchanges nothing. The body is validated against the plan schema served at `GET /api/v1/schemas/edit-plan`\n(strict: unknown fields are errors). Mode `create` (the default) fails if the project exists; mode `replace`\nneeds `If-Match` (or `base_revision` in the plan), or `replace_unconditionally: true`. With `dry_run=true`\nnothing is written and the result shows what would happen. 422 carries every problem at once.",
+        "operationId": "apply_plan_api_v1_compose_projects__name__plan_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "dry_run",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Dry Run",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "The project revision this change is based on, as an integer, bare or quoted (`If-Match: \"3\"`). If the project has moved on, the request fails with 409 `revision_conflict` and nothing is written. Omit it to apply the change to the latest version.",
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The project revision this change is based on, as an integer, bare or quoted (`If-Match: \"3\"`). If the project has moved on, the request fails with 409 `revision_conflict` and nothing is written. Omit it to apply the change to the latest version.",
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "description": "An edit plan; GET /api/v1/schemas/edit-plan is its JSON Schema.",
+                "title": "Plan"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanResultOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedOut"
+                }
+              }
+            },
+            "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RevisionConflictOut"
+                }
+              }
+            },
+            "description": "`If-Match` didn't match the project's current revision (`error` is `revision_conflict`). Other 409s on some routes (output file or project already exists) have only `detail`."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanInvalidOut"
+                }
+              }
+            },
+            "description": "The plan has problems; every one is in `errors`. Nothing was written."
+          }
+        },
+        "summary": "Apply Plan"
+      }
+    },
     "/api/v1/compose/projects/{name}/render": {
       "post": {
         "operationId": "start_render_api_v1_compose_projects__name__render_post",
@@ -8922,6 +9200,37 @@
           }
         },
         "summary": "Save Current Project"
+      }
+    },
+    "/api/v1/schemas/edit-plan": {
+      "get": {
+        "description": "The JSON Schema (draft 2020-12) of an edit plan, `schema_version` 1. The same document is committed as\ndocs/schemas/edit-plan.v1.schema.json; docs/edit-plan.md explains the format and the error codes.",
+        "operationId": "edit_plan_schema_api_v1_schemas_edit_plan_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Edit Plan Schema Api V1 Schemas Edit Plan Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedOut"
+                }
+              }
+            },
+            "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
+          }
+        },
+        "summary": "Edit Plan Schema"
       }
     },
     "/api/v1/segments": {

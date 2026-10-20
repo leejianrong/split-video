@@ -36,6 +36,7 @@ from mcp_types import ToolAnnotations
 from split_video import (
     assets,
     contact_sheet,
+    edit_plan,
     frames,
     highlights,
     library,
@@ -872,6 +873,33 @@ def create_server(root: Path, store: ProjectStore | None = None, media: MediaSto
             min_gap_seconds=min_gap_seconds,
             snap=snap,
         )
+
+    @server.tool(annotations=_REPLACES_PROJECT)
+    async def apply_plan(
+        plan: dict[str, Any], dry_run: bool = False, base_revision: int | None = None
+    ) -> dict[str, Any]:
+        """Build a WHOLE timeline from ONE JSON edit plan instead of dozens of single edits (a highlights reel: one
+        call). `plan` is `{"schema_version": 1, "project": "<name>", "mode": "create"|"replace", "tracks": [{"kind":
+        "video", "clips": [{"asset": "a_...", "in": 12.5, "out": 41, "transition": "crossfade",
+        "transition_duration": 1}, {"kind": "text", "text": "Title", "out": 3}]}]}`; call get_edit_plan_schema for
+        the full format (it is strict: unknown fields are errors). Clip `in`/`out` are seconds of the asset, so a
+        suggest_highlights candidate's `start`/`end` go straight in. The first video track is the magnetic main
+        track (clips back to back); tracks with `"magnetic": false` place clips with `start`. Mode `create` (the
+        default) fails if the project exists; mode `replace` needs `base_revision` (from show_timeline; also
+        allowed inside the plan) or `"replace_unconditionally": true`. It is atomic: the project is built in memory
+        and saved once, and a plan with ANY problem creates and changes nothing. `dry_run=true` only validates and
+        describes the result. A tool error for an invalid plan carries EVERY problem as JSON
+        `{"error": "plan_invalid", "errors": [{"path": "/tracks/0/clips/3/out", "code": "plan.clip.out_of_range",
+        "message", "hint"}]}`: fix them all and call again. A stale `base_revision` is a revision_conflict error.
+        Returns project, revision, action, clips, duration, per-track summary, warnings and plan_hash."""
+        return await run(lambda: edit_plan.apply_plan(media, store, plan, dry_run=dry_run, base_revision=base_revision))
+
+    @server.tool(annotations=_READ_ONLY)
+    async def get_edit_plan_schema() -> dict[str, Any]:
+        """The JSON Schema (draft 2020-12) of the edit plan that apply_plan takes, `schema_version` 1: every field,
+        its type, range and default. Constraints a schema cannot express (assets exist, in/out within the asset,
+        no overlaps) are checked by apply_plan and reported with stable `plan.*` codes."""
+        return edit_plan.schema()
 
     @server.tool(annotations=_EDITS_PROJECT)
     async def add_clip_to_timeline(
