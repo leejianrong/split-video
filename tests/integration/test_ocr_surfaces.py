@@ -121,7 +121,10 @@ def test_api_errors(workspace):
     assert client.post(f"/api/v1/assets/{song.id}/ocr").status_code == 422
     assert client.post("/api/v1/assets/a_0000000000000000/ocr").status_code == 404
     assert client.get("/api/v1/assets/a_0000000000000000/ocr").status_code == 404
-    assert client.get(f"/api/v1/assets/{song.id}/ocr").status_code == 404
+    for path in ("ocr", "ocr/search?q=x"):  # nothing will ever make it: not "POST to make it"
+        audio = client.get(f"/api/v1/assets/{song.id}/{path}")
+        assert audio.status_code == 404 and "audio-only" in audio.json()["detail"]
+        assert "POST" not in audio.json()["detail"]
     for body in ({"interval": 0}, {"max_frames": 0}, {"max_frames": 10**6}):
         assert client.post(f"/api/v1/assets/{asset.id}/ocr", json=body).status_code == 422
     assert client.get("/api/v1/jobs").json()["jobs"] == []

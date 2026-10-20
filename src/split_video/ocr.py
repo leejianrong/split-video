@@ -60,7 +60,7 @@ mtime and is stale when the file changes (`VERSION` is bumped if the shape chang
                  "reused_from": 12.0}, ...]}
 
 (`time` is the time of the frame actually decoded.) Text is normalised: control characters dropped, trailing
-whitespace removed, blank lines dropped, at most `MAX_TEXT_CHARS` = 4000 characters per frame. A small second entry
+whitespace removed, blank lines and blinking-cursor junk lines (just `L`, `I`, `l`, `|`, `||` or `[|`) dropped, at most `MAX_TEXT_CHARS` = 4000 characters per frame. A small second entry
 "ocr_info" holds the counts (the dict `recognize` returns) so listings can say whether an asset has text without
 reading it. `recognize` is idempotent: a current document made with the same `interval`, `max_frames` and scenes
 availability is reused.
@@ -350,17 +350,21 @@ def schedule(
 # --- text ---------------------------------------------------------------------------------------
 
 _CONTROL = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]")
+# A blinking text cursor is read as a line of its own: "L", "I", "l", "|", "||" or "[|". Real short lines ("ok", "$",
+# "[" of a JSON file) are kept.
+_CURSOR = re.compile(r"(?:[LlI]|\|{1,2}|\[\|)")
 
 
 def normalise(raw: str) -> tuple[str, list[str]]:
-    """`(text, lines)`: control characters dropped, trailing whitespace and blank lines removed, at most
+    """`(text, lines)`: control characters dropped, trailing whitespace, blank lines and blinking-cursor junk lines
+    (a line that is just "L", "I", "l", "|", "||" or "[|") removed, at most
     `MAX_TEXT_CHARS` characters (cut at a line)."""
     cleaned = _CONTROL.sub("", raw.replace("\r", "").replace("\x0c", "\n").replace("\t", "    "))
     lines: list[str] = []
     size = 0
     for line in cleaned.split("\n"):
         line = line.rstrip()
-        if not line:
+        if not line or _CURSOR.fullmatch(line.strip()):
             continue
         if size + len(line) + (1 if lines else 0) > MAX_TEXT_CHARS:
             if not lines:

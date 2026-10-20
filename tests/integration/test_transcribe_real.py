@@ -107,6 +107,14 @@ def test_a_short_clip_transcribes_with_word_times_that_line_up(workspace, monkey
     assert transcribe.text_between(doc, 0, GAP_AT).split()[-1].lower().startswith("gospel")
 
 
+def test_the_model_accepts_an_audio_file_path(workspace):
+    """What av 19 broke (`TypeError: open() got an unexpected keyword argument 'metadata_errors'`): the app passes
+    numpy arrays, but the file-path call must work too (the `transcribe` extra pins `av<19`)."""
+    model = transcribe.load_model("base.en", str(workspace / ".split-video-models"))
+    segments, info = model.transcribe(str(workspace / "clip.ogg"))
+    assert "gospel" in " ".join(s.text for s in segments).lower() and info.language == "en"
+
+
 def test_search_finds_a_real_word_at_its_real_time(workspace):
     media = LocalMediaStore(workspace)
     asset = assets.register_path(media, "clip.ogg")

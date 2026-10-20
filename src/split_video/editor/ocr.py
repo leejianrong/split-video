@@ -123,6 +123,8 @@ def make_router(provider: StoreProvider, jobs: JobQueue) -> APIRouter:
 
     def read(call, asset_id: str, ctx: RequestContext, *args, **kwargs):
         asset = asset_of(ctx, asset_id)
+        if not asset.has_video:  # nothing will ever make it: the same 404 as the proxy's GETs
+            raise HTTPException(status_code=404, detail=AUDIO_ONLY)
         try:
             return call(ctx.media, asset.id, *args, **kwargs)
         except ocr.OcrNotFoundError as exc:

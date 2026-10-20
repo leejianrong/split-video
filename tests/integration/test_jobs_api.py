@@ -161,6 +161,8 @@ def test_already_analyzed_is_a_job_that_is_done_on_submit(three_songs_clip, monk
     second = client.post("/api/v1/analyze", params=_q(three_songs_clip)).json()["job_id"]
     job = client.get(f"/api/v1/jobs/{second}").json()
     assert job["state"] == "done" and job["kind"] == "analysis" and job["started_at"] is not None
+    assert job["result"] == {"regions": 0, "duration": 1.0}  # not null: what the analysis found, as for the first job
+    assert client.get(f"/api/v1/jobs/{first}").json()["result"] == job["result"]
     assert client.get(f"/api/v1/analyze/{second}").json() == {
         "status": "done",
         "completed": 0,

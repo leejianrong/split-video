@@ -4,14 +4,17 @@ the stored format, currency, and the missing-dependency hint."""
 import itertools
 import os
 import sys
+import threading
+import time
 
 import numpy as np
 import pytest
 from fake_whisper import SAMPLE_RATE, FakeModel, speech, write_wav
 
-from split_video import assets, transcribe
+from split_video import assets, job_work, transcribe
+from split_video.editor.job_routes import cancel_job
 from split_video.ffmpeg import MediaInfo
-from split_video.jobs import JobCancelledError
+from split_video.jobs import InProcessJobQueue, JobCancelledError
 from split_video.local_media_store import LocalMediaStore
 from split_video.media_store import InMemoryMediaStore
 
@@ -347,3 +350,70 @@ def test_load_model_failure_says_what_to_do(monkeypatch):
     monkeypatch.setitem(sys.modules, "faster_whisper", type("M", (), {"WhisperModel": staticmethod(broken)}))
     with pytest.raises(transcribe.TranscriptionError, match="no route to host.*internet access once"):
         transcribe.load_model("base.en", "/ws/models")
+
+
+# --- cancelling a model that cannot be interrupted (SPL-108) ------------------------------------------------
+
+
+def _fire_after(cancel, seconds):
+    threading.Timer(seconds, lambda: setattr(cancel, "flag", True)).start()
+
+
+@pytest.mark.parametrize("model_kwargs", [{"segment_delay": 5.0}, {"call_delay": 5.0}])
+def test_cancel_is_seen_while_the_model_is_busy(model_kwargs):
+    """The model blocks for 5 s inside a segment (or inside `transcribe()` itself): the run still stops at once."""
+    pcm, _ = speech(STARTS, 62.0)
+    cancel = Cancel()
+    _fire_after(cancel, 0.3)
+    started = time.monotonic()
+    with pytest.raises(JobCancelledError):
+        transcribe.run(chunks(pcm), FakeModel(per_segment=1, **model_kwargs), window_seconds=10, cancel=cancel)
+    assert time.monotonic() - started < 1.5
+
+
+def test_a_slow_model_without_a_cancel_token_still_works_inline():
+    pcm, _ = speech([0.5, 2.0], 4.0)
+    done = transcribe.run(chunks(pcm), FakeModel(per_segment=1, segment_delay=0.05))
+    assert len(done["segments"]) == 2
+
+
+def test_an_error_in_the_model_reaches_the_job():
+    class Broken:
+        def transcribe(self, audio, **kwargs):
+            raise ValueError("model exploded")
+
+    pcm, _ = speech([0.5], 3.0)
+    with pytest.raises(ValueError, match="model exploded"):
+        transcribe.run(chunks(pcm), Broken(), cancel=Cancel())
+
+
+def test_a_transcription_job_is_cancelled_within_a_second_or_two(store, monkeypatch):
+    """Through the job queue, as the HTTP cancel route does: the job state is `cancelled`, not `running`."""
+    media, asset, _ = store
+    slow = FakeModel(per_segment=1, segment_delay=5.0)
+    monkeypatch.setattr(transcribe, "require_available", lambda: None)
+    monkeypatch.setattr(transcribe, "load_model", lambda name, models_dir: slow)
+    queue = InProcessJobQueue()
+    job_id = queue.submit("transcription", job_work.transcribe_work(media, asset.id))
+    time.sleep(0.5)
+    assert queue.status(job_id).state == "running"
+    started = time.monotonic()
+    info = cancel_job(queue, job_id)
+    assert info.state == "cancelled" and time.monotonic() - started < 2.0
+    assert transcribe.load(media, asset.id) is None
+    queue.shutdown()
+
+
+def test_cancel_is_seen_while_the_model_loads(store):
+    media, asset, _ = store
+    cancel = Cancel()
+    _fire_after(cancel, 0.3)
+
+    def slow_factory(name, models_dir):
+        time.sleep(5.0)
+        return FakeModel()
+
+    started = time.monotonic()
+    with pytest.raises(JobCancelledError):
+        transcribe.transcribe(media, asset.id, model_factory=slow_factory, cancel=cancel)
+    assert time.monotonic() - started < 1.5

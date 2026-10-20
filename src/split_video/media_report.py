@@ -56,13 +56,19 @@ Keys are never added or removed within a version; a part without data is `null`.
                  "screen_text": [...]},                # first line of the new text, 60 characters, only on a change
                 # every column is one value per bucket, or null as a whole when its signal is missing or dropped
      "loudness": {"mean_db", "p95_db", "max_db", "curve_seconds", "curve": [60 whole dB values]},
-     "regions": {"min_seconds": 10, "seconds_by_class": {...}, "count", "truncated", "items": [[start, end, class]]},
+     "regions": {"min_seconds": 10, "seconds_by_class": {...}, "count", "truncated",
+                 "items": [[start, end, class]]},           # + a 4th element "silence_other" on other_sound items
      "silence_gaps": {"min_seconds": 2, "threshold_db", "count", "truncated", "items": [[start, end]]},
      "scene_changes": {"count", "truncated", "items": [[time, score]]},   # the strongest 40, in time order
      "transcript": {"words", "language", "words_per_minute", "top_keywords": [[word, count]]}}  # 12, plain frequency
 
-`regions` merges touching regions of one class and keeps the longest 60 of those of 10 s or more; `silence_gaps` keeps
-the longest 40 of 2 s or more. A keyword is a word of 3 letters or more that is not an English stopword; this is a
+`regions` merges regions of one class that are at most 2 s apart (`MERGE_GAP_SECONDS`; YAMNet cuts speech on a 0.5 s
+pause, and the pause is a region of its own, which is absorbed), then keeps the longest 60 of those of 10 s or more;
+`seconds_by_class` counts classified seconds, not the absorbed pauses. Loud sound that YAMNet filed as `silence_other`
+is reported as `other_sound` (the loudness curve decides, see docs/time-index.md) in `buckets.audio_class` and in
+`regions`, where such an item has a fourth element, the raw class `"silence_other"` (other items have three). The
+classes are music, singing, speech, applause_crowd, laughter, silence_other and other_sound. No key changed, so
+`version` stays 1. `silence_gaps` keeps the longest 40 of 2 s or more. A keyword is a word of 3 letters or more that is not an English stopword; this is a
 count, not a ranking of moments. There is no per-bucket list of cut times: `scene_changes` has the strongest cuts.
 
 Staying under `max_bytes`
@@ -88,7 +94,7 @@ from split_video.editor import classify
 from split_video.editor.cache import ClassificationCache, SilenceCache, WaveformCache
 from split_video.jobs import CancelToken
 from split_video.media_store import MediaStore
-from split_video.time_index import SIGNALS, SILENCE_THRESHOLD_DB, TimeIndex
+from split_video.time_index import OTHER_SOUND, SIGNALS, SILENCE_THRESHOLD_DB, TimeIndex
 
 VERSION = 1
 DEFAULT_MAX_BYTES = 40_000
@@ -99,6 +105,7 @@ MIN_BUCKET_SECONDS = 5.0
 MAX_BUCKET_SECONDS = 600.0  # what TimeIndex.window accepts
 MAX_BUCKETS = 720
 MIN_REGION_SECONDS = 10.0
+MERGE_GAP_SECONDS = 2.0  # same-class regions this close are one region (YAMNet splits speech on a 0.5 s pause)
 MIN_GAP_SECONDS = 2.0
 CURVE_POINTS = 60
 KEYWORDS = 12
@@ -356,7 +363,14 @@ def _regions(index: TimeIndex, cap: int) -> dict[str, Any] | None:
     merged: list[list[Any]] = []
     for r in found:
         seconds[r.bucket] = seconds.get(r.bucket, 0.0) + (r.end - r.start)
-        if merged and merged[-1][2] == r.bucket and r.start - merged[-1][1] <= 0.5:
+        if merged and merged[-1][2] == r.bucket and r.start - merged[-1][1] <= MERGE_GAP_SECONDS:
+            merged[-1][1] = r.end
+        elif (
+            len(merged) >= 2
+            and merged[-2][2] == r.bucket
+            and r.start - merged[-2][1] <= MERGE_GAP_SECONDS  # a pause is its own (silence_other) region: absorb it
+        ):
+            merged.pop()
             merged[-1][1] = r.end
         else:
             merged.append([r.start, r.end, r.bucket])
@@ -367,7 +381,7 @@ def _regions(index: TimeIndex, cap: int) -> dict[str, Any] | None:
         "seconds_by_class": {k: _r(v) for k, v in sorted(seconds.items())},
         "count": len(long),
         "truncated": len(long) - len(kept),
-        "items": [[_r(a), _r(b), c] for a, b, c in kept],
+        "items": [[_r(a), _r(b), c, *([classify.SILENCE_BUCKET] if c == OTHER_SOUND else [])] for a, b, c in kept],
     }
 
 

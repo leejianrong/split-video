@@ -769,8 +769,9 @@ def create_server(root: Path, store: ProjectStore | None = None, media: MediaSto
     @server.tool(annotations=_READ_ONLY)
     async def what_is_happening(asset: str, time: float, window: float | None = None) -> dict[str, Any]:
         """Everything known about the library asset `asset` around `time` (seconds from the start), in one call:
-        `audio` (dominant `class`: music, singing, speech, applause_crowd, laughter or silence_other, plus `share`,
-        `secondary` and the `regions` in the window), `loudness` (`mean_db`, `max_db`, `min_db`, a `curve`),
+        `audio` (dominant `class`: music, singing, speech, applause_crowd, laughter, silence_other or other_sound,
+        which is loud sound YAMNet filed as silence_other, then `raw_class` says so; plus `share`, `secondary` and
+        the `regions` in the window), `loudness` (`mean_db`, `max_db`, `min_db`, a `curve`),
         `silence` (`inside` a silence and no word being spoken, `inside_exact`, `intervals`), `speech` (the `words` spoken, `text`, `word_count`,
         `words_per_minute`), and `visual` (the nearest `scene_change`, `scene_index`, `shot_start`, screen `activity`,
         the on-screen `text` with its `lines`, `age_seconds` and `stale` (true when it was read long before `time` or the

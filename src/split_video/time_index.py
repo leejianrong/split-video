@@ -28,10 +28,13 @@ Times are seconds, rounded to 3 decimals; levels are dBFS.
     {"version": 1, "asset": "a_...", "time": 205.0, "window": {"start": 200.0, "end": 210.0}, "duration": 3600.0,
      "audio": {                      # null without the audio classification
         "class": "applause_crowd",   # the class with the most seconds in the window (null if none covers it):
-                                     # music, singing, speech, applause_crowd, laughter or silence_other
+                                     # music, singing, speech, applause_crowd, laughter, silence_other or other_sound
+                                     # (silence_other over loud sound, see `other_sound` below)
+        "raw_class": null,           # "silence_other" when `class` is other_sound, else null
         "share": 1.0,                # that class's fraction of the window
         "secondary": null,           # the class with the second most seconds, or null
-        "regions": [{"start", "end", "class", "score"}],  # clipped to the window, at most 100
+        "regions": [{"start", "end", "class", "score"}],  # clipped to the window, at most 100; an other_sound one
+                                     # also has "raw_class": "silence_other"
         "regions_truncated": false},
      "loudness": {                   # null without a stored loudness curve
         "mean_db", "max_db", "min_db",  # over the 1 s RMS values that overlap the window (mean of the dB values)
@@ -80,6 +83,12 @@ transcribed word is being spoken at `time` (`word.start - SPEECH_ONSET_SLACK <= 
 being 0.5 s: word starts run late); `silence.inside_exact` is the raw
 test against the intervals. Without a transcript the two are equal and `intervals` are never trimmed.
 
+other_sound: the audio classification has no "loud but none of the five" class: YAMNet files pink noise or a
+synthesised tone under `silence_other`, and that must not be described as silence. Where the stored loudness curve
+shows a `silence_other` stretch above `LOUD_DB` (-45 dBFS, judged per 1 s value) the class is reported as
+`other_sound`, with the raw class kept in `raw_class`; quiet stretches stay `silence_other`. This is applied on
+read (the stored classification and classify.py are unchanged); without a loudness curve nothing is relabelled.
+
 Within version 1, keys may be added (never removed or renamed); the two additions above (`inside_exact`, and
 `age_seconds` / `stale` / `note` in `visual.text`) are of that kind.
 
@@ -108,8 +117,10 @@ Same values as the matching `window(t, t + step)` call, minus the lists.
 
 from __future__ import annotations
 
+import itertools
 import math
 from bisect import bisect_left, bisect_right
+from dataclasses import replace
 from typing import Any
 
 from split_video import assets, ocr, scenes, transcribe
@@ -139,6 +150,13 @@ MAX_POINTS = 500
 DEFAULT_STEP = 60.0
 MIN_STEP = 1.0
 _EPS = 1e-9
+
+# A `silence_other` classification (YAMNet's "none of the five classes") over a stretch that is loud is not silence:
+# pink noise, a sine tone, a fan. Where the stored loudness curve has the stretch's 1 s values above this level the
+# class is reported as `other_sound` (the raw class stays in `raw_class`). Done here, on read: classify.py and the
+# cached classification are untouched.
+OTHER_SOUND = "other_sound"
+LOUD_DB = -45.0
 
 SIGNALS = ("audio", "loudness", "silence", "speech", "scenes", "ocr")
 
@@ -190,6 +208,36 @@ def _thin(points: list[tuple[float, float]], cap: int = MAX_CURVE) -> list[tuple
     return [(points[i][0], max(v for _, v in points[i : i + size])) for i in range(0, len(points), size)]
 
 
+def _relabel_loud(regions: list[classify.ClassificationRegion], loudness: Any) -> list[classify.ClassificationRegion]:
+    """`silence_other` regions split at the loudness curve's 1 s values: the stretches above `LOUD_DB` become
+    `other_sound`, the quiet ones stay as they are. Without a curve nothing changes."""
+    if loudness is None or not loudness.db:
+        return regions
+    step, db = loudness.window_seconds, loudness.db
+    out: list[classify.ClassificationRegion] = []
+    for r in regions:
+        if r.bucket != classify.SILENCE_BUCKET:
+            out.append(r)
+            continue
+        cuts = [r.start]
+        k = int(r.start // step) + 1
+        while k * step < r.end - _EPS:
+            cuts.append(k * step)
+            k += 1
+        cuts.append(r.end)
+        pieces: list[classify.ClassificationRegion] = []
+        for a, b in itertools.pairwise(cuts):
+            values = db[int(a // step) : max(int(a // step) + 1, math.ceil(b / step - _EPS))]
+            loud = bool(values) and sum(values) / len(values) > LOUD_DB
+            bucket = OTHER_SOUND if loud else r.bucket
+            if pieces and pieces[-1].bucket == bucket:
+                pieces[-1] = replace(pieces[-1], end=b)
+            else:
+                pieces.append(replace(r, start=a, end=b, bucket=bucket))
+        out.extend(pieces)
+    return out
+
+
 def _clipped_overlaps(starts: list[float], ends: list[float], lo: float, hi: float) -> range:
     """Indexes of the sorted, non-overlapping spans that overlap `[lo, hi)`."""
     return range(bisect_right(ends, lo), bisect_left(starts, hi))
@@ -213,9 +261,9 @@ class TimeIndex:
         self.duration = float(asset.duration)
         self._language = transcript.get("language") if transcript else None
         # audio classification
-        self._regions = regions
-        self._r_starts = [r.start for r in regions or []]
-        self._r_ends = [r.end for r in regions or []]
+        self._regions = None if regions is None else _relabel_loud(regions, loudness)
+        self._r_starts = [r.start for r in self._regions or []]
+        self._r_ends = [r.end for r in self._regions or []]
         # loudness
         self._loudness = loudness
         # silences
@@ -434,11 +482,15 @@ class TimeIndex:
             if b <= a:
                 continue
             seconds[r.bucket] = seconds.get(r.bucket, 0.0) + (b - a)
-            regions.append({"start": _r(a), "end": _r(b), "class": r.bucket, "score": _r(r.score)})
+            region = {"start": _r(a), "end": _r(b), "class": r.bucket, "score": _r(r.score)}
+            if r.bucket == OTHER_SOUND:
+                region["raw_class"] = classify.SILENCE_BUCKET
+            regions.append(region)
         ranked = sorted(seconds, key=lambda c: (-round(seconds[c], 6), _CLASS_ORDER.get(c, 99)))
         length = max(end - start, _EPS)
         return {
             "class": ranked[0] if ranked else None,
+            "raw_class": classify.SILENCE_BUCKET if ranked and ranked[0] == OTHER_SOUND else None,
             "share": _r(seconds[ranked[0]] / length) if ranked else 0.0,
             "secondary": ranked[1] if len(ranked) > 1 else None,
             "regions": regions[:MAX_REGIONS],

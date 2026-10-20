@@ -9,6 +9,7 @@
   "duration": 300.0,
   "audio": {
     "class": "speech",
+    "raw_class": null,
     "share": 0.9,
     "secondary": "music",
     "regions": [

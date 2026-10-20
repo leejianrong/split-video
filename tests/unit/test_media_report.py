@@ -2,6 +2,7 @@
 degradation order, and `prepare` on a real short clip. Signals are planted (tests/fake_signals.py)."""
 
 import json
+import math
 import shutil
 import subprocess
 from pathlib import Path
@@ -357,3 +358,85 @@ def test_prepare_on_an_asset_without_audio_does_nothing():
     assert result["prepared"] == [] and [s["signal"] for s in result["skipped"]] == list(media_report.PREPARABLE)
     doc = report(store, asset.id, prepare=True)
     assert [m["signal"] for m in doc["signals"]["missing"]] == ["scenes", "ocr"]  # no audio signals are listed
+
+
+# --- Checkpoint B polish (SPL-108): speech pauses and loud non-speech ----------------------------------------
+
+
+def _classified(winner_at, db, duration=120.0):
+    """A store whose classification has `winner_at(slot)` per YAMNet frame (0.48 s) and a 1 s loudness curve `db(s)`."""
+    store = make_store("memory", None, duration=duration)
+    asset = assets.register_path(store, "talk.mp4")
+    store.save_cache(
+        asset.path,
+        "waveform",
+        {"buckets": [[-0.1, 0.1]], "loudness": {"window_seconds": 1.0, "db": [db(s) for s in range(int(duration))]}},
+    )
+    slots = math.ceil(duration * classify.SAMPLE_RATE / classify.HOP_SAMPLES)
+    frames = [{b: (0.9 if b == winner_at(i) else 0.05) for b in classify.BUCKET_LABELS} for i in range(slots)]
+    regions = classify.rethreshold(frames, dict(classify.DEFAULT_THRESHOLDS), duration)
+    ClassificationCache(store, asset.path).store_result(frames, duration, regions)
+    return store, asset
+
+
+def _quiet(_s):
+    return -60.0
+
+
+def test_regions_merge_speech_pieces_across_short_gaps_before_the_minimum():
+    # 4 pieces of 8 frames (3.84 s) with a 1 frame (0.48 s) pause between them: each is under the 10 s minimum, the
+    # merged 16.8 s region is not. A second speech piece 3.84 s later is a separate region.
+    def winner(i):
+        if 10 <= i < 45 and (i - 10) % 9 != 8:
+            return "speech"
+        return "speech" if 53 <= i < 79 else "silence_other"
+
+    store, asset = _classified(winner, _quiet)
+    doc = report(store, asset.id, bucket_seconds=30)
+    regions = doc["regions"]
+    assert regions["min_seconds"] == 10.0
+    speech = [r for r in regions["items"] if r[2] == "speech"]
+    assert speech == [[4.8, 21.6, "speech"], [25.4, 37.9, "speech"]]
+    assert regions["seconds_by_class"]["speech"] == 27.8  # the merged pauses are not counted
+    assert doc["buckets"]["audio_class"][0] == "speech"  # per-bucket data is not changed by the merge
+
+
+def test_gap_merge_only_joins_the_same_class():
+    store, asset = _classified(lambda i: "speech" if i < 30 else "music" if 31 <= i < 70 else "silence_other", _quiet)
+    items = report(store, asset.id)["regions"]["items"]
+    assert [r[2] for r in items if r[2] != "silence_other"] == ["speech", "music"]
+
+
+def test_loud_silence_other_is_other_sound_and_quiet_stays_silence_other():
+    # 0-30 s quiet, 30-60 s loud noise, 60-90 s quiet again: one silence_other classification region
+    store, asset = _classified(lambda i: "silence_other", lambda s: -24.0 if 30 <= s < 60 else -60.0, duration=90.0)
+    doc = report(store, asset.id, bucket_seconds=30)
+    assert doc["buckets"]["audio_class"] == ["silence_other", "other_sound", "silence_other"]
+    assert doc["regions"]["items"] == [
+        [0.0, 30.0, "silence_other"],
+        [30.0, 60.0, "other_sound", "silence_other"],
+        [60.0, 90.0, "silence_other"],
+    ]
+    assert doc["regions"]["seconds_by_class"] == {"other_sound": 30.0, "silence_other": 60.0}
+    index = time_index.TimeIndex.load(store, asset.id)
+    loud = index.at(45, 10)["audio"]
+    assert loud["class"] == "other_sound" and loud["raw_class"] == "silence_other"
+    assert loud["regions"][0]["class"] == "other_sound" and loud["regions"][0]["raw_class"] == "silence_other"
+    quiet = index.at(15, 10)["audio"]
+    assert quiet["class"] == "silence_other" and quiet["raw_class"] is None and "raw_class" not in quiet["regions"][0]
+    assert index.timeline(0, 90, 30)["points"][1]["audio"] == "other_sound"
+
+
+def test_without_a_loudness_curve_silence_other_is_left_alone():
+    store, asset = _classified(lambda i: "silence_other", lambda s: -10.0, duration=30.0)
+    index = time_index.TimeIndex(
+        assets.get_asset(store, asset.id), regions=ClassificationCache(store, asset.path).get_regions()
+    )
+    audio = index.at(15, 10)["audio"]
+    assert audio["class"] == "silence_other" and audio["raw_class"] is None
+
+
+def test_other_classes_are_never_relabelled():
+    store, asset = _classified(lambda i: "speech", lambda s: -10.0, duration=30.0)
+    audio = time_index.TimeIndex.load(store, asset.id).at(15, 10)["audio"]
+    assert audio["class"] == "speech" and audio["raw_class"] is None

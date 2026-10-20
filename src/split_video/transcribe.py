@@ -60,13 +60,22 @@ and a cut in silence rarely lands inside a word. A window's times are offset by 
 stitched transcript is in absolute time. Voice-activity filtering (the Silero model that ships inside
 faster-whisper, so it needs no download) skips the silence and music between speech instead of letting
 the model hallucinate text there, and `condition_on_previous_text` is off so one bad passage cannot make
-the model repeat itself for the rest of the file. Progress is seconds of audio done; a cancelled job
-stops between segments and terminates the decode.
+the model repeat itself for the rest of the file. Progress is seconds of audio done.
+
+Cancelling
+----------
+The model call is not interruptible: `WhisperModel.transcribe` runs the voice-activity filter before it returns and
+then does its work lazily, one 30 s chunk per segment it yields, and one chunk takes seconds on a CPU. So with a cancel
+token the model (and loading it) runs on a helper thread and the job's own thread waits for its segments with a short
+poll (`CANCEL_POLL_SECONDS`): a cancel is seen within a fraction of a second, whatever the model is in the middle of,
+the job becomes `cancelled`, and the decode is terminated. The helper thread then stops after the chunk it is on (at most a few
+seconds of CPU, nothing is stored from it).
 """
 
 from __future__ import annotations
 
 import os
+import queue
 import threading
 import uuid
 from collections.abc import Callable, Iterable, Iterator
@@ -89,6 +98,7 @@ WINDOW_SECONDS = 300.0
 SEARCH_SECONDS = 30.0
 FRAME_SECONDS = 0.1  # the resolution of the search for a quiet place to cut
 MIN_WINDOW_SECONDS = 0.2  # a shorter tail is not worth a model call
+CANCEL_POLL_SECONDS = 0.1  # how often a job waiting for the model looks at its cancel token
 
 # Read-only folder of models baked into a Docker image (`--build-arg TRANSCRIPTION_MODEL=base.en`), tried after the
 # workspace's own and before downloading.
@@ -272,6 +282,76 @@ def _segment_dict(segment: Any, offset: float) -> dict[str, Any] | None:
     }
 
 
+def _interruptibly(fn: Callable[[], Any], cancel: CancelToken | None) -> Any:
+    """`fn()`, which cannot be interrupted (loading the model: an import and a few seconds of reading), run on a helper
+    thread when there is a `cancel` token so that a cancel is seen within `CANCEL_POLL_SECONDS`."""
+    if cancel is None:
+        return fn()
+    done: queue.Queue[tuple[bool, Any]] = queue.Queue()
+
+    def call() -> None:
+        try:
+            done.put((True, fn()))
+        except BaseException as exc:  # noqa: BLE001 - handed to the job's thread
+            done.put((False, exc))
+
+    threading.Thread(target=call, name="transcribe-load", daemon=True).start()
+    while True:
+        cancel.raise_if_cancelled()
+        try:
+            ok, value = done.get(timeout=CANCEL_POLL_SECONDS)
+        except queue.Empty:
+            continue
+        if ok:
+            return value
+        raise value
+
+
+def _model_events(
+    model: ModelLike, audio: np.ndarray, kwargs: dict[str, Any], cancel: CancelToken | None
+) -> Iterator[tuple[str, Any]]:
+    """`("info", info)` and then `("segment", segment)` for each segment of `model.transcribe(audio, **kwargs)`.
+    Without a `cancel` token it is the plain call. With one the model runs on a helper thread (see the module
+    docstring) and `JobCancelledError` is raised within `CANCEL_POLL_SECONDS` of the cancel; the helper stops after
+    the chunk it is on."""
+    if cancel is None:
+        iterator, info = model.transcribe(audio, **kwargs)
+        yield "info", info
+        for segment in iterator:
+            yield "segment", segment
+        return
+    events: queue.Queue[tuple[str, Any]] = queue.Queue()
+    stop = threading.Event()
+
+    def produce() -> None:
+        try:
+            iterator, info = model.transcribe(audio, **kwargs)
+            events.put(("info", info))
+            for segment in iterator:
+                if stop.is_set():
+                    return
+                events.put(("segment", segment))
+            events.put(("end", None))
+        except BaseException as exc:  # noqa: BLE001 - handed to the job's thread
+            events.put(("error", exc))
+
+    threading.Thread(target=produce, name="transcribe-model", daemon=True).start()
+    try:
+        while True:
+            cancel.raise_if_cancelled()
+            try:
+                kind, value = events.get(timeout=CANCEL_POLL_SECONDS)
+            except queue.Empty:
+                continue
+            if kind == "end":
+                return
+            if kind == "error":
+                raise value
+            yield kind, value
+    finally:
+        stop.set()
+
+
 def run(
     pcm_chunks: Iterable[np.ndarray],
     model: ModelLike,
@@ -285,7 +365,7 @@ def run(
 ) -> dict[str, Any]:
     """Transcribe PCM chunks (int16, 16 kHz mono) with `model`. Returns `{"language", "language_probability",
     "duration", "segments"}` (the transcript without its identity fields). `JobCancelledError` through `cancel`,
-    checked between segments."""
+    checked while the model works (see the module docstring)."""
     segments: list[dict[str, Any]] = []
     samples = 0
     found: tuple[str, float] | None = None
@@ -298,23 +378,22 @@ def run(
             continue
         offset = start / SAMPLE_RATE
         audio = data.astype(np.float32) / 32768.0
-        iterator, info = model.transcribe(
-            audio,
-            language=language or (found[0] if found else None),
-            word_timestamps=True,
-            vad_filter=True,
-            condition_on_previous_text=False,
-        )
-        if found is None and getattr(info, "language", None):
-            found = (str(info.language), float(getattr(info, "language_probability", 1.0)))
-        for segment in iterator:
-            if cancel is not None:
-                cancel.raise_if_cancelled()
-            stored = _segment_dict(segment, offset)
+        kwargs = {
+            "language": language or (found[0] if found else None),
+            "word_timestamps": True,
+            "vad_filter": True,
+            "condition_on_previous_text": False,
+        }
+        for kind, item in _model_events(model, audio, kwargs, cancel):
+            if kind == "info":
+                if found is None and getattr(item, "language", None):
+                    found = (str(item.language), float(getattr(item, "language_probability", 1.0)))
+                continue
+            stored = _segment_dict(item, offset)
             if stored is not None:
                 segments.append(stored)
             if on_progress is not None:
-                on_progress(min(offset + float(segment.end), total), total)
+                on_progress(min(offset + float(item.end), total), total)
         if on_progress is not None:
             on_progress(min(samples / SAMPLE_RATE, total), total)
     code, probability = found if found else (language or "", 1.0)
@@ -461,7 +540,8 @@ def transcribe(
         if current is not None and current["model"] == model and language in (None, current["language"]):
             return {**current, "made": False}
         with media.models_dir() as models:
-            loaded = (model_factory or load_model)(model, str(models))
+            factory = model_factory or load_model
+            loaded = _interruptibly(lambda: factory(model, str(models)), cancel)
         if on_progress is not None:
             on_progress(0.0, asset.duration)
         with media.local_path(asset.path) as source:

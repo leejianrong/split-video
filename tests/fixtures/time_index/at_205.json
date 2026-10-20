@@ -9,6 +9,7 @@
   "duration": 300.0,
   "audio": {
     "class": "applause_crowd",
+    "raw_class": null,
     "share": 0.984,
     "secondary": "speech",
     "regions": [

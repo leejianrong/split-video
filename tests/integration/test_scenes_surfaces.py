@@ -62,7 +62,11 @@ def test_api_scene_job_then_get_signals(workspace):
     _, asset = _coding(workspace)
     client = TestClient(create_app(workspace, DEFAULTS))
     base = f"/api/v1/assets/{asset.id}"
-    assert client.get(f"{base}/scenes").status_code == 404
+    missing = client.get(f"{base}/scenes")
+    assert missing.status_code == 404
+    hint = missing.json()["detail"]  # the same three-surface hint as the OCR and transcript errors
+    assert asset.id in hint and "split-video scenes <target>" in hint and "analyze_scenes" in hint
+    assert "POST /api/v1/assets/{id}/scenes" in hint
     assert client.get(base).json()["scenes"] is False
 
     job = _wait(client, client.post(f"{base}/scenes").json()["job_id"])
@@ -92,7 +96,8 @@ def test_api_errors(workspace):
     assert client.post(f"/api/v1/assets/{song.id}/scenes").status_code == 422
     assert client.post("/api/v1/assets/a_0000000000000000/scenes").status_code == 404
     assert client.get("/api/v1/assets/a_0000000000000000/scenes").status_code == 404
-    assert client.get(f"/api/v1/assets/{song.id}/scenes").status_code == 404
+    audio = client.get(f"/api/v1/assets/{song.id}/scenes")  # nothing will ever make them: not "POST to make them"
+    assert audio.status_code == 404 and "audio-only" in audio.json()["detail"] and "POST" not in audio.json()["detail"]
     _, asset = _coding(workspace)
     assert client.post(f"/api/v1/assets/{asset.id}/scenes", json={"threshold": 2}).status_code == 422
     assert client.get("/api/v1/jobs").json()["jobs"] == []

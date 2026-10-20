@@ -133,6 +133,10 @@ FULL_ACTIVITY_MAFD = 50.0
 _LOG_GAIN = 10.0
 
 AUDIO_ONLY = "audio-only asset"
+NOT_FOUND_HINT = (
+    "run `split-video scenes <target>` (CLI), the analyze_scenes tool (MCP) or POST /api/v1/assets/{id}/scenes (HTTP) "
+    "to make them"
+)
 
 ProgressFn = Callable[[float, float], None]  # (seconds of video done, seconds in all)
 

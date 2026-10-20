@@ -137,6 +137,13 @@ def test_normalise_strips_control_characters_and_trailing_space_and_blank_lines(
     assert ocr.normalise("") == ("", []) and ocr.normalise("\x00 \n") == ("", [])
 
 
+def test_normalise_drops_blinking_cursor_lines_but_keeps_real_short_ones():
+    raw = "$ pytest\nL\n|\n  [|  \nI\nl\n||\nok\n$\n[\nIf x:\nlog\n"
+    text, lines = ocr.normalise(raw)
+    assert lines == ["$ pytest", "ok", "$", "[", "If x:", "log"] and text == "\n".join(lines)
+    assert ocr.normalise("L\n|") == ("", [])
+
+
 def test_normalise_caps_the_text_at_a_line():
     raw = "\n".join(f"line {k:04d} " + "x" * 40 for k in range(500))
     text, lines = ocr.normalise(raw)

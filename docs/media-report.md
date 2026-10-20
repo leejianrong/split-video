@@ -45,10 +45,20 @@ bucket (bucket `k` covers `[k * seconds, min(duration, (k + 1) * seconds))`) or 
 | `limits`, `notices` | `max_bytes`; `coarsened`, `shrunk`, `dropped`, `truncated` say what was cut to fit |
 | `buckets` | `seconds`, `count`, then the columns `audio_class`, `audio_share`, `loudness_mean_db`, `loudness_max_db`, `silence_fraction`, `words`, `words_per_minute`, `scene_changes`, `activity_mean`, `activity_max`, `screen_text_changed` (0/1), `transcript` (snippet), `screen_text` (first line, only where it changed) |
 | `loudness` | `mean_db`, `p95_db`, `max_db`, and a coarse `curve` of at most 60 whole dB values, one per `curve_seconds` |
-| `regions` | merged audio class regions of 10 s or more: `items [[start, end, class]]` (the longest 60), `count`, `truncated`, `seconds_by_class` |
+| `regions` | audio class regions of 10 s or more, same-class regions at most 2 s apart merged first (YAMNet splits speech on a 0.5 s pause): `items [[start, end, class]]` (the longest 60), `count`, `truncated`, `seconds_by_class` (classified seconds; an absorbed pause is not counted) |
 | `silence_gaps` | silences of 2 s or more: `items [[start, end]]` (the longest 40), `count`, `truncated`, `threshold_db` |
 | `scene_changes` | `items [[time, score]]` (the strongest 40, in time order), `count`, `truncated` |
 | `transcript` | `words`, `language`, `words_per_minute`, `top_keywords [[word, count]]` (12, English stopwords left out; a frequency count, not a ranking of moments) |
+
+## Loud sound is not silence: `other_sound`
+
+YAMNet files pink noise or a synthesised tone under `silence_other`. The report (and [`what_is_happening`](time-index.md))
+relabels such a stretch as **`other_sound`** when the stored loudness curve is above **-45 dBFS** (judged per 1 s value),
+in `buckets.audio_class`, `regions` and the `at` audio summary; quiet stretches keep `silence_other`. The class list is
+`music`, `singing`, `speech`, `applause_crowd`, `laughter`, `silence_other`, `other_sound`. Nothing is lost: an
+`other_sound` item in `regions` has a fourth element, `"silence_other"` (the raw class), and the time index adds
+`raw_class`. This is applied on read; the stored classification is unchanged, and without a loudness curve nothing is
+relabelled. No key changed, so the report stays at `"version": 1`.
 
 ## Size
 
