@@ -238,9 +238,14 @@ run inline: they make the proxies before returning and report the finished
 per-asset results under `proxies`. The API's scan is a job that queues one
 `proxy` job per new video and then finishes without waiting for them: its result
 has `proxy_jobs` (`[{asset, job_id}]`), which you follow through `/jobs/{id}` or
-`/events`. And an audio-only asset has no proxy: the CLI and MCP return a result
-with `skipped: "audio-only asset"`, while the API answers `POST .../proxy` with
-422 and the `GET`s with 404 saying so.
+`/events`.
+
+Audio-only assets and the picture tools follow one rule. An audio-only asset has
+no proxy, no scene signals and no on-screen text, and nothing can make them. For
+`proxy`, `scenes` and `ocr` the CLI and MCP return a normal result with
+`skipped: "audio-only asset"`, while the API treats it as an impossible request:
+`POST` answers 422 and the `GET`s answer 404 saying the asset is audio-only (not
+"POST to make it").
 
 ### Transcription (optional)
 

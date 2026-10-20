@@ -44,7 +44,7 @@ not absent. It is pinned by golden files in `tests/fixtures/time_index/`. Times 
 | Key | Meaning |
 | --- | --- |
 | `version`, `asset`, `time`, `window {start,end}`, `duration` | what was asked, after clamping |
-| `audio` | `class` (the class with the most seconds in the window: `music`, `singing`, `speech`, `applause_crowd`, `laughter` or `silence_other`), `share`, `secondary`, `regions [{start,end,class,score}]` clipped to the window (at most 100, `regions_truncated`). From the YAMNet classification (`split-video analyze`). |
+| `audio` | `class` (the class with the most seconds in the window: `music`, `singing`, `speech`, `applause_crowd`, `laughter`, `silence_other` or `other_sound`), `raw_class` (`silence_other` when `class` is `other_sound`, else null), `share`, `secondary`, `regions [{start,end,class,score}]` clipped to the window (at most 100, `regions_truncated`; an `other_sound` region also has `raw_class`). From the YAMNet classification (`split-video analyze`). **`other_sound`**: YAMNet files loud noise or tones under `silence_other`; where the stored loudness curve is above -45 dBFS (per 1 s value) over such a stretch it is reported as `other_sound`, quiet stretches stay `silence_other`. Applied on read; the stored classification is unchanged, and without a loudness curve nothing is relabelled. |
 | `loudness` | `mean_db`, `max_db`, `min_db` over the 1 s RMS values overlapping the window, `window_seconds`, `curve [{t,db}]` (at most 60 points, thinned by keeping the loudest of each group). Only if the curve is stored; it is never computed here (`split-video report <target> --prepare` makes it without the editor, see [media-report.md](media-report.md)). |
 | `silence` | `threshold_db` (the stored scan closest to -35), `inside` (is `time` in a silence and no transcribed word being spoken then), `inside_exact` (the raw test against `intervals`: the silence scan and the transcript can disagree by a few tenths of a second at a speech onset), `intervals [{start,end}]` of at least 0.5 s clipped to the window (at most 50, `truncated`). From `split-video propose`. |
 | `speech` | `words [{start,end,word}]` (at most 200), `text`, `word_count` (all words in the window), `words_per_minute`, `truncated`. From the transcript. |
@@ -85,6 +85,7 @@ with indent 2 it is 3.7 KB):
   "duration": 300.0,
   "audio": {
     "class": "speech",
+    "raw_class": null,
     "share": 0.9,
     "secondary": "music",
     "regions": [

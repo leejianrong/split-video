@@ -71,17 +71,24 @@ def export_work(
     return work
 
 
+def analysis_summary(cache: ClassificationCache) -> dict[str, Any]:
+    """The result of an analysis job: `{regions, duration}` (classification regions found, seconds of audio)."""
+    return {"regions": len(cache.get_regions()), "duration": round(cache.total_duration, 3)}
+
+
 def analysis_work(
     media: MediaStore, source: str, cache: ClassificationCache, thresholds: dict[str, float]
-) -> Callable[[JobContext], None]:
-    """Classify `source`'s audio into `cache`. Progress counts model frames."""
+) -> Callable[[JobContext], dict[str, Any]]:
+    """Classify `source`'s audio into `cache`. Progress counts model frames. The result is `{regions, duration}`
+    (`analysis_summary`); read the regions themselves with `GET /classification`."""
 
-    def work(ctx: JobContext) -> None:
+    def work(ctx: JobContext) -> dict[str, Any]:
         # An upfront estimate from the duration alone, so the progress bar isn't stuck at 0/0 during
         # the (possibly slow) PCM decode, which happens before the real per-frame count is known.
         estimate = max(1, int(media.probe(source).duration * classify.SAMPLE_RATE) // classify.HOP_SAMPLES)
         ctx.progress(0, total=estimate)
         project.run_analysis(media, source, cache, thresholds, ctx.progress, cancel=ctx)
+        return analysis_summary(cache)
 
     return work
 

@@ -74,7 +74,7 @@ from split_video.editor.time_index import make_router as make_time_index_router
 from split_video.editor.transcripts import make_router as make_transcripts_router
 from split_video.errors import RevisionConflictError
 from split_video.identity import LOCAL_PRINCIPAL, Principal
-from split_video.job_work import analysis_work, export_work
+from split_video.job_work import analysis_summary, analysis_work, export_work
 from split_video.jobs import ANALYSIS, EXPORT, InProcessJobQueue, JobInfo, JobQueue
 from split_video.local_media_store import LocalMediaStore
 from split_video.local_store import LocalProjectStore
@@ -419,7 +419,9 @@ def create_app(
             # sidecar cache on disk. Report a job that's already "done"
             # instead of re-decoding audio and rerunning inference.
             return AnalyzeStartResponse(
-                job_id=jobs.record_done(ANALYSIS, label=media.name(project.source), owner=owner)
+                job_id=jobs.record_done(
+                    ANALYSIS, result=analysis_summary(cache), label=media.name(project.source), owner=owner
+                )
             )
         work = analysis_work(media, project.source, cache, cache.get_thresholds())
         return AnalyzeStartResponse(job_id=jobs.submit(ANALYSIS, work, label=media.name(project.source), owner=owner))

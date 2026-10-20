@@ -8,6 +8,7 @@ exactly which words and times a correct pipeline must produce, however the audio
 
 from __future__ import annotations
 
+import time
 import wave
 from dataclasses import dataclass, field
 
@@ -68,13 +69,25 @@ def write_wav(path, pcm: np.ndarray) -> None:
 class FakeModel:
     """Records every `transcribe` call; `per_segment` words go into each segment it yields."""
 
-    def __init__(self, per_segment: int = 3, language: str = "en", on_segment=None) -> None:
+    def __init__(
+        self,
+        per_segment: int = 3,
+        language: str = "en",
+        on_segment=None,
+        call_delay: float = 0.0,
+        segment_delay: float = 0.0,
+    ) -> None:
+        # call_delay: seconds `transcribe()` itself blocks (the VAD pass); segment_delay: seconds before each segment
+        # is yielded (a 30 s chunk of decoding). Neither can be interrupted, like the real model.
+        self.call_delay = call_delay
+        self.segment_delay = segment_delay
         self.calls: list[dict] = []
         self.per_segment = per_segment
         self.language = language
         self.on_segment = on_segment  # called with the index of each segment as it is yielded
 
     def transcribe(self, audio, **kwargs):
+        time.sleep(self.call_delay)
         self.calls.append({"samples": len(audio), "dtype": str(audio.dtype), **kwargs})
         # A sine crosses zero all the time, so close gaps shorter than 50 ms before looking for the edges.
         loud = np.convolve((np.abs(audio) > 0.01).astype(np.float32), np.ones(801, dtype=np.float32), "same") > 0
@@ -94,6 +107,7 @@ class FakeModel:
 
         def generate():
             for index, segment in enumerate(segments):
+                time.sleep(self.segment_delay)
                 yield segment
                 if self.on_segment is not None:
                     self.on_segment(index)

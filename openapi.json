@@ -5272,7 +5272,7 @@
     },
     "/api/v1/assets/{asset_id}/scenes": {
       "get": {
-        "description": "The stored signals, or with `start` and/or `end` (seconds) only the cuts in that span and the activity\nvalues overlapping it (`activity_start` says which second the first one covers). 404 until a\nscene_analysis job has run, or after the file changed.",
+        "description": "The stored signals, or with `start` and/or `end` (seconds) only the cuts in that span and the activity\nvalues overlapping it (`activity_start` says which second the first one covers). 404 until a\nscene_analysis job has run, or after the file changed, and for an audio-only asset (which has none).",
         "operationId": "get_scenes_api_v1_assets__asset_id__scenes_get",
         "parameters": [
           {

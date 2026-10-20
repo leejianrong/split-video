@@ -22,6 +22,9 @@ dependencies = [
 # installed), so not part of the default install or the default Docker image.
 transcribe = [
     "faster-whisper>=1.1",
+    # faster-whisper 1.2.1 opens audio FILES with av.open(metadata_errors=...), which av 19 removed. This app passes
+    # numpy arrays and was not affected, but `WhisperModel.transcribe("file.ogg")` raises a TypeError with av 19.
+    "av<19",
 ]
 
 [project.scripts]

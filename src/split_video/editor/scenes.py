@@ -100,11 +100,15 @@ def make_router(provider: StoreProvider, jobs: JobQueue) -> APIRouter:
     ) -> ScenesOut:
         """The stored signals, or with `start` and/or `end` (seconds) only the cuts in that span and the activity
         values overlapping it (`activity_start` says which second the first one covers). 404 until a
-        scene_analysis job has run, or after the file changed."""
+        scene_analysis job has run, or after the file changed, and for an audio-only asset (which has none)."""
         asset = asset_of(ctx, asset_id)
+        if not asset.has_video:  # nothing will ever make them: the same 404 as the proxy's GETs
+            raise HTTPException(status_code=404, detail=AUDIO_ONLY)
         found = scenes.load(ctx.media, asset.id)
         if found is None:
-            raise HTTPException(status_code=404, detail="no scene signals yet: POST /assets/{id}/scenes to make them")
+            raise HTTPException(
+                status_code=404, detail=f"asset {asset.id} has no scene signals yet: {scenes.NOT_FOUND_HINT}"
+            )
         return ScenesOut(**scenes.excerpt(found, start, end))
 
     return router

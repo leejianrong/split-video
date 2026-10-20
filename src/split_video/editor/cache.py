@@ -190,6 +190,12 @@ class ClassificationCache:
         with self._lock:
             return self._frame_bucket_scores is not None
 
+    @property
+    def total_duration(self) -> float:
+        """Seconds of audio that were classified (0.0 before an analysis)."""
+        with self._lock:
+            return float(self._total_duration)
+
     def get_thresholds(self) -> dict[str, float]:
         with self._lock:
             return dict(self._thresholds)
