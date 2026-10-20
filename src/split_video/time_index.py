@@ -363,6 +363,29 @@ class TimeIndex:
         return None if self._scenes is None else [(s["time"], s["score"]) for s in self._scenes["scenes"]]
 
     @property
+    def cut_kinds(self) -> list[tuple[float, float, str]] | None:
+        """The scene changes as (time, score, kind) with kind `cut` or `screen`, or None without scene signals."""
+        if self._scenes is None:
+            return None
+        return [(s["time"], s["score"], s.get("kind", scenes.KIND_CUT)) for s in self._scenes["scenes"]]
+
+    @property
+    def activity(self) -> tuple[float, list[float]] | None:
+        """The screen activity as (seconds per value, 0..1 values), or None without scene signals."""
+        return None if self._scenes is None else (self._scenes["activity_interval"], list(self._scenes["activity"]))
+
+    @property
+    def text_states(self) -> list[dict[str, Any]] | None:
+        """The on-screen text states in time order (`{time, until, text, lines, source_scene}`), or None without
+        stored text."""
+        return [dict(s) for s in self._states] if self._ocr_on else None
+
+    @property
+    def timed_words(self) -> list[tuple[float, float, str]] | None:
+        """Every transcribed word as (start, end, word) in time order, or None without a transcript."""
+        return None if self._words is None else [(w["start"], w["end"], w["word"]) for w in self._words]
+
+    @property
     def loudness_db(self) -> list[float] | None:
         """The 1 s loudness values (dBFS), or None without a stored curve."""
         return None if self._loudness is None else list(self._loudness.db)

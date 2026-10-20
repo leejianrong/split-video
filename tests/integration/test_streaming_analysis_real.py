@@ -361,9 +361,19 @@ _CHILD_CLASSIFY = textwrap.dedent(
 )
 
 
+# Linux carries the parent's peak RSS across fork + exec into the child's ru_maxrss, so a child started straight from
+# the (large, long-running) pytest process would report that process's peak, not its own. The child is therefore
+# started by a tiny launcher process instead.
+_LAUNCHER = "import subprocess, sys; sys.exit(subprocess.run([sys.executable, '-I', '-c', *sys.argv[1:]]).returncode)"
+
+
 def _child(code, *args, timeout=600):
     result = subprocess.run(
-        [sys.executable, "-I", "-c", code, *args], capture_output=True, text=True, timeout=timeout, check=False
+        [sys.executable, "-I", "-c", _LAUNCHER, code, *args],
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+        check=False,
     )
     assert result.returncode == 0, result.stderr[-2000:]
     *out, rss = result.stdout.split()
