@@ -9,6 +9,7 @@ SRC = Path(__file__).resolve().parents[2] / "src" / "split_video"
 
 # The engine, the adapters and the editor routes: everything that must go through ProjectStore.
 GUARDED = [
+    "agent_guide/__init__.py",
     "project.py",
     "timeline_service.py",
     "timeline.py",
@@ -68,6 +69,7 @@ def test_module_does_not_build_project_paths(module):
 
 # The engine proper: no pathlib at all. Every media location is an opaque id handled by the MediaStore.
 ENGINE = [
+    "agent_guide/__init__.py",
     "project.py",
     "timeline_service.py",
     "timeline.py",

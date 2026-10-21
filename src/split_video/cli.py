@@ -287,6 +287,14 @@ def mcp_cmd(
     create_server(root, render_concurrency=render_concurrency).run("stdio")
 
 
+@app.command("agent-guide")
+def agent_guide_cmd() -> None:
+    """Print the agent guide (SKILL.md): how an AI agent drives split-video from a long recording to highlights and shorts."""
+    from split_video.agent_guide import guide_text
+
+    typer.echo(guide_text(), nl=False)
+
+
 project_cli.register(app)
 compose_cli.register(app)
 app.command("presets")(presets_cli.presets_cmd)

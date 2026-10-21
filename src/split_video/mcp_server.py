@@ -37,6 +37,7 @@ from mcp_types import ToolAnnotations
 from pydantic import ValidationError
 
 from split_video import (
+    agent_guide,
     assets,
     contact_sheet,
     edit_ops,
@@ -80,6 +81,9 @@ _REPLACES_PROJECT = ToolAnnotations(read_only_hint=False, destructive_hint=True,
 
 INSTRUCTIONS = """\
 Split a long recording of back-to-back songs into one file per song.
+
+New to this server? Read the resource guide://agent (or use the prompts highlights_workflow, vertical_short,
+recover_from_error): the order of calls that works for highlights and vertical shorts, with limits and costs.
 
 Typical flow: list_videos -> propose_splits (apply=true saves them) ->
 list_segments to review -> add_split / move_split / remove_split /
@@ -215,6 +219,15 @@ def create_server(
         return lambda fn: decorate(structured_errors(fn))
 
     server.tool = tool  # type: ignore[method-assign]
+
+    @server.resource(agent_guide.GUIDE_URI, name="agent_guide", mime_type="text/markdown")
+    def agent_guide_resource() -> str:
+        """The agent guide (SKILL.md): the order of tool calls that works, limits, costs, errors, what not to do."""
+        return agent_guide.guide_text()
+
+    server.prompt(name="highlights_workflow")(agent_guide.highlights_workflow)
+    server.prompt(name="vertical_short")(agent_guide.vertical_short)
+    server.prompt(name="recover_from_error")(agent_guide.recover_from_error)
 
     def resolve(video: str) -> str:
         """A video's canonical media id (also its id in the project store)."""
