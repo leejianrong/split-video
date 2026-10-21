@@ -57,6 +57,8 @@ DEFAULT_CONTEXT = 8
 MAX_CONTEXT = 50
 MAX_QUERY_CHARS = 500
 MAX_CHARS = 200_000
+TRANSCRIPT_PAGE_SEGMENTS = 100
+TRANSCRIPT_PAGE_BYTES = 28_000  # JSON bytes of one `get_transcript` page's segments (docs/tool-response-caps.md)
 GRANULARITIES = ("segment", "word")
 
 NOT_FOUND_HINT = (
@@ -255,6 +257,61 @@ def transcript_range(
         "covered": {"start": items[0]["start"], "end": max(i["end"] for i in items)} if items else None,
         "items": items,
         "next_cursor": _encode(granularity, index, total) if index < last else None,
+    }
+
+
+def transcript_page(
+    media: MediaStore,
+    asset_id: str,
+    start: float | None = None,
+    end: float | None = None,
+    *,
+    limit: int | None = None,
+    cursor: str | None = None,
+) -> dict[str, Any]:
+    """`get_transcript` bounded for a tool result: the document of `transcribe.excerpt(start, end)` with `segments`
+    cut to one page (at most `limit`, default `TRANSCRIPT_PAGE_SEGMENTS`, and at most `TRANSCRIPT_PAGE_BYTES` of
+    JSON; at least one segment) from `cursor`. Adds `total_segments`, `total_words` and `first_start`/`last_end`
+    (of the whole range), `count`, `truncated`, `next_cursor` and `notices`. Concatenating the pages gives exactly
+    the excerpt's segments."""
+    size = _bounded("limit", limit, TRANSCRIPT_PAGE_SEGMENTS, 1, MAX_LIMIT)
+    _finite("start", start)
+    _finite("end", end)
+    found = transcribe.load(media, asset_id)
+    if found is None:
+        raise TranscriptNotFoundError(f"asset {asset_id} has no transcript yet: {NOT_FOUND_HINT}")
+    cut = transcribe.excerpt(found, start, end)
+    segments = cut["segments"]
+    total = len(segments)
+    at = _decode(cursor, "get", total) if cursor else 0
+    page: list[dict[str, Any]] = []
+    used = 0
+    index = at
+    while index < total and len(page) < size:
+        weight = len(json.dumps(segments[index], separators=(",", ":")))
+        if page and used + weight > TRANSCRIPT_PAGE_BYTES:
+            break
+        used += weight
+        page.append(segments[index])
+        index += 1
+    more = index < total
+    notices = []
+    if more:
+        notices.append(
+            f"segments {at + 1}-{index} of {total}: call again with cursor=next_cursor to read the rest, or narrow "
+            "with start/end (transcript_range and transcript_search read a long recording in small pages)"
+        )
+    return {
+        **cut,
+        "segments": page,
+        "total_segments": total,
+        "total_words": sum(len(s["words"]) for s in segments),
+        "first_start": segments[0]["start"] if segments else None,
+        "last_end": segments[-1]["end"] if segments else None,
+        "count": len(page),
+        "truncated": at > 0 or more,
+        "next_cursor": _encode("get", index, total) if more else None,
+        "notices": notices,
     }
 
 
