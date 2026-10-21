@@ -37,3 +37,4 @@ wheels/
 # Lock files that sit next to the project files while they are written
 *.split-video-project.json.lock
 *.split-video-timeline.json.lock
+.split-video-locks/

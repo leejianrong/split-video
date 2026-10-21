@@ -37,6 +37,9 @@ class ErrorSpec:
     fix: str  # template; `{name}` placeholders are filled from `details`
     status: int = 422  # the HTTP status the API answers with
     exit_code: int = 1  # the CLI exit code
+    # Fix templates for a context the default one does not fit (`describe` picks one by what failed, e.g.
+    # "highlights" for a `suggest_highlights` preset); docs/errors.md lists them after the default.
+    variants: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -63,9 +66,16 @@ class ErrorInfo:
 REGISTRY: dict[str, ErrorSpec] = {}
 
 
-def _register(code: str, meaning: str, fix: str, status: int = 422, exit_code: int = 1) -> None:
+def _register(
+    code: str,
+    meaning: str,
+    fix: str,
+    status: int = 422,
+    exit_code: int = 1,
+    variants: dict[str, str] | None = None,
+) -> None:
     assert code not in REGISTRY, code
-    REGISTRY[code] = ErrorSpec(code, meaning, fix, status, exit_code)
+    REGISTRY[code] = ErrorSpec(code, meaning, fix, status, exit_code, variants or {})
 
 
 # --- times and ranges ---------------------------------------------------------------------------------------------
@@ -222,6 +232,11 @@ _register(
     "preset.unknown",
     "The export or highlight preset name is not one of the known presets.",
     "Use one of: {choices}. `list_export_presets` (CLI `split-video presets`, HTTP GET /api/v1/presets) describes them.",
+    variants={
+        "highlights": "Use one of: {choices} (the `preset` of `suggest_highlights`, CLI `split-video highlights "
+        "--preset`); docs/highlights.md says what each weighs. These are not the export presets of "
+        "`list_export_presets`.",
+    },
 )
 _register(
     "fit.unknown",
@@ -500,6 +515,7 @@ def _roles() -> dict[str, tuple[type, ...]]:
             "job_failed": (jobs.JobFailedError,),
             "render_request": (render_queue.RenderQueueError, render_queue.RenderRequestError),
             "preset": (presets.PresetError,),
+            "highlights": (highlights.HighlightsError,),
             "caption": (captions.CaptionError,),
             "audio_only": (frames_module.FrameAudioOnlyError,),
             "timeline": (timeline.TimelineError,),
@@ -631,8 +647,23 @@ def describe(exc: BaseException) -> ErrorInfo:
             fill["reload"] = f"`show_timeline`, CLI `split-video compose show {details['project']}`"
         else:
             fill["reload"] = f"`list_segments`, CLI `split-video segments {details['project']}`"
-    fix = REGISTRY[code].fix.format_map(fill) + extra_fix
+    template = REGISTRY[code].fix
+    if code == "preset.unknown" and _is(exc, "highlights"):
+        template = REGISTRY[code].variants["highlights"]
+    fix = template.format_map(fill) + extra_fix
     return ErrorInfo(code, message, fix, details, legacy)
+
+
+def argument_error(subject: str, problems: list[dict[str, str]]) -> ErrorInfo:
+    """`request.invalid` for arguments that failed validation before the engine ran (an MCP tool's input schema, an
+    HTTP query or body). `problems` are `{"argument", "problem"}` (plus optional `type`); the first one goes into the
+    fix, all of them into `details["errors"]`."""
+    first = problems[0] if problems else {"argument": "?", "problem": "invalid"}
+    listed = "; ".join(f"{p['argument']}: {p['problem']}" for p in problems[:5])
+    more = f" (and {len(problems) - 5} more)" if len(problems) > 5 else ""
+    message = f"invalid arguments for {subject}: {listed}{more}"
+    fix = REGISTRY["request.invalid"].fix + (f" First problem, `{first['argument']}`: {first['problem']}.")
+    return ErrorInfo("request.invalid", message, fix, {"errors": problems})
 
 
 def error_dict(exc: BaseException) -> dict[str, Any]:
@@ -667,7 +698,8 @@ Every failure of the CLI, the MCP server and the HTTP API carries the same four 
 - **MCP**: the tool result has `isError: true`; its text is `Error executing tool NAME: ` followed by the payload as
   JSON (everything from the first `{`).
 - **HTTP**: the response body is `{"detail": <message>, "code", "message", "fix", "details"}`; the status is the one in
-  the table (routes keep the status they always had).
+  the table (routes keep the status they always had). For FastAPI's own argument check (`request.invalid`) `detail` stays
+  FastAPI's list of problems, and `details.errors` has one `{argument, in, problem, type}` per problem.
 - **Render queue and jobs**: a failed render's `error` is `{code, message, fix}`.
 - A rejected edit plan or op batch is `plan.invalid` / `ops.invalid`; the body also keeps its `errors` list, each
   entry with its own `path`, `code` (`plan.*` / `ops.*`, see [edit-plan.md](edit-plan.md) and
@@ -681,6 +713,9 @@ Every failure of the CLI, the MCP server and the HTTP API carries the same four 
 def render_markdown() -> str:
     rows = []
     for spec in REGISTRY.values():
-        fix = spec.fix.replace("{{", "{").replace("}}", "}").replace("|", "\\|")
+        fix = spec.fix
+        for context, variant in spec.variants.items():
+            fix += f" For a {context} preset: {variant}"
+        fix = fix.replace("{{", "{").replace("}}", "}").replace("|", "\\|")
         rows.append(f"| `{spec.code}` | {spec.status} | {spec.exit_code} | {spec.meaning} | {fix} |")
     return DOC_HEADER + "\n".join(rows) + "\n"

@@ -10,10 +10,12 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import HTTPException, Request
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from split_video.error_catalogue import ErrorInfo, describe
+from split_video.error_catalogue import ErrorInfo, argument_error, describe
 
 ERROR_RESPONSE = "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
 
@@ -44,3 +46,21 @@ def body_of(info: ErrorInfo) -> dict[str, Any]:
 
 async def api_error_handler(request: Request, exc: ApiError) -> JSONResponse:
     return JSONResponse(status_code=exc.status_code, content=body_of(exc.info), headers=exc.headers)
+
+
+async def validation_error_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+    """FastAPI's own 422 for a query, path or body that does not match the route's schema: its `detail` list stays
+    as it was; `code` (`request.invalid`), `message`, `fix` and `details` are added."""
+    problems = []
+    for item in exc.errors():
+        where, *rest = item["loc"]
+        problems.append(
+            {
+                "argument": ".".join(str(part) for part in rest) or str(where),
+                "in": str(where),
+                "problem": item["msg"],
+                "type": item["type"],
+            }
+        )
+    info = argument_error(f"{request.method} {request.url.path}", problems)
+    return JSONResponse(status_code=422, content={"detail": jsonable_encoder(exc.errors()), **info.to_dict()})

@@ -449,7 +449,7 @@ def run_render(
 
 def render_result(name: str, filename: str, project: Project, used: dict[str, Any]) -> dict[str, Any]:
     """The JSON every surface (job result, CLI --json, MCP tool) reports for a finished render."""
-    return {"name": name, "output": filename, "duration": project.duration, **used}
+    return {"name": name, "output": filename, "duration": timeline.ms(project.duration), **used}
 
 
 # --- describing ---------------------------------------------------------------
@@ -469,7 +469,7 @@ def describe(media: MediaStore, name: str, project: Project, *, read_only: bool 
     return {
         "name": name,
         "revision": project.revision,
-        "duration": project.duration,
+        "duration": timeline.ms(project.duration),
         "tracks": [
             {
                 "index": n + 1,
@@ -482,16 +482,16 @@ def describe(media: MediaStore, name: str, project: Project, *, read_only: bool 
                         "id": c.id,
                         "asset": rows[c.id].asset.id if rows.get(c.id) else c.asset,
                         "source": rows[c.id].source if rows.get(c.id) else c.source,
-                        "in": c.in_point,
-                        "out": c.out_point,
-                        "start": c.start,
-                        "end": c.end,
-                        "duration": c.duration,
+                        "in": timeline.ms(c.in_point),
+                        "out": timeline.ms(c.out_point),
+                        "start": timeline.ms(c.start),
+                        "end": timeline.ms(c.end),
+                        "duration": timeline.ms(c.duration),
                         "source_duration": rows[c.id].asset.duration if rows.get(c.id) else None,
                         "gain": c.gain,
                         "muted": c.muted,
                         "transition": c.transition,
-                        "transition_duration": c.transition_duration,
+                        "transition_duration": timeline.ms(c.transition_duration),
                         "kind": c.kind,
                         "text": c.text,
                         "font_size": c.font_size,
@@ -503,7 +503,7 @@ def describe(media: MediaStore, name: str, project: Project, *, read_only: bool 
                         "brightness": c.brightness,
                         "contrast": c.contrast,
                         "saturation": c.saturation,
-                        "crop": c.crop,
+                        "crop": timeline.shown_crop(c.crop),
                     }
                     for i, c in enumerate(t.clips)
                 ],

@@ -27,6 +27,7 @@ from split_video import (
     timeline_service,
     transcribe,
 )
+from split_video import timeline as timeline_module
 from split_video.editor.context import RequestContext, make_context_dependency
 from split_video.editor.errors import ApiError, api_error
 from split_video.editor.job_routes import cancel_job, job_of_kind
@@ -324,16 +325,16 @@ def make_router(provider: StoreProvider, jobs: JobQueue) -> APIRouter:
             id=c.id,
             asset=row.asset.id if row else c.asset,
             source=row.source if row else c.source,
-            in_point=c.in_point,
-            out_point=c.out_point,
-            start=c.start,
-            end=c.end,
-            duration=c.duration,
+            in_point=timeline_module.ms(c.in_point),
+            out_point=timeline_module.ms(c.out_point),
+            start=timeline_module.ms(c.start),
+            end=timeline_module.ms(c.end),
+            duration=timeline_module.ms(c.duration),
             source_duration=row.asset.duration if row else None,
             gain=c.gain,
             muted=c.muted,
             transition=c.transition,
-            transition_duration=c.transition_duration,
+            transition_duration=timeline_module.ms(c.transition_duration),
             x=c.x,
             y=c.y,
             scale=c.scale,
@@ -341,7 +342,7 @@ def make_router(provider: StoreProvider, jobs: JobQueue) -> APIRouter:
             brightness=c.brightness,
             contrast=c.contrast,
             saturation=c.saturation,
-            crop=CropBox(**c.crop) if c.crop else None,
+            crop=CropBox(**timeline_module.shown_crop(c.crop)) if c.crop else None,
             kind=c.kind,
             text=c.text,
             font_size=c.font_size,
@@ -369,7 +370,7 @@ def make_router(provider: StoreProvider, jobs: JobQueue) -> APIRouter:
         return ProjectOut(
             name=name,
             revision=project.revision,
-            duration=project.duration,
+            duration=timeline_module.ms(project.duration),
             tracks=[
                 TrackOut(
                     id=t.id, kind=t.kind, magnetic=t.magnetic, clips=[clip_out(c, rows.get(c.id)) for c in t.clips]

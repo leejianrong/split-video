@@ -464,11 +464,19 @@ def _check_object(
             )
             continue
         if ranges and f.type in ("number", "integer") and _out_of_range(value, f):
-            report.error(where, f"{ns}.field.range", f"{f.name!r} {_range_text(f)}, not {value:g}", "")
+            report.error(
+                where,
+                f"{ns}.field.range",
+                f"{f.name!r} {_range_text(f)}, not {value:g}",
+                f"send a value {_range_text(f).removeprefix('must be ')}",
+            )
             continue
         if f.pattern is not None and not re.match(f.pattern, value):
             report.error(
-                where, f"{ns}.field.pattern", f"{f.name!r} must look like {_pattern_hint(f)}, not {value!r}", ""
+                where,
+                f"{ns}.field.pattern",
+                f"{f.name!r} must look like {_pattern_hint(f)}, not {value!r}",
+                f"write it as {_pattern_hint(f)}" + (", for example #ffcc00" if f.name == "color" else ""),
             )
             continue
         if f.max_length is not None and len(value) > f.max_length:
@@ -753,7 +761,9 @@ def _check_mode(
         count = sum(len(t.clips) for t in old.tracks)
         report.warn(
             "/project", "plan.project.replaces_existing",
-            f"replaces {name!r} (revision {old.revision}, {count} clips) wholesale", "",
+            f"replaces {name!r} (revision {old.revision}, {count} clips) wholesale",
+            "check `show_timeline` first if that is not the version you meant to overwrite; "
+            "`dry_run` previews the result without writing",
         )  # fmt: skip
 
 
@@ -880,6 +890,8 @@ def _compile_clip(
     is_text = kind == "text"
     for name in _MEDIA_ONLY if is_text else _TEXT_ONLY:
         if name in raw:
+            # A value that cannot apply is one problem, not also a bad value: keep only the "does not apply" error.
+            report.errors[before:] = [e for e in report.errors[before:] if e.path != f"{path}/{name}"]
             report.error(
                 f"{path}/{name}", "plan.clip.field_not_applicable",
                 f"{name!r} does not apply to a {kind} clip", f"drop {name!r}" if is_text else "text clips are kind \"text\"",
@@ -954,7 +966,10 @@ def _compile_clip(
                     "out_past_end": ("plan.clip.out_of_range", "/out"),
                     "too_short": ("plan.clip.too_short", "/out"),
                 }[exc.reason]
-                hint = f"the asset is {limit:g}s long" if exc.reason == "out_past_end" else ""
+                hint = {
+                    "out_past_end": f"the asset is {limit:g}s long",
+                    "too_short": "raise 'out' (or lower 'in') so the clip is at least 0.1s long",
+                }.get(exc.reason, "")
                 report.error(path + where, code, str(exc), hint)
 
     crop: dict[str, float] = {}
@@ -1130,8 +1145,10 @@ def apply_plan(
         "action": "created" if mode == "create" else "replaced",
         "dry_run": dry_run,
         "clips": sum(len(t.clips) for t in project.tracks),
-        "duration": project.duration,
-        "tracks": [{"id": t.id, "kind": t.kind, "clips": len(t.clips), "end": t.end} for t in project.tracks],
+        "duration": timeline.ms(project.duration),
+        "tracks": [
+            {"id": t.id, "kind": t.kind, "clips": len(t.clips), "end": timeline.ms(t.end)} for t in project.tracks
+        ],
         "warnings": [w.to_dict() for w in report.warnings],
         "plan_hash": report.plan_hash,
         **({"meta": doc["meta"]} if "meta" in doc else {}),

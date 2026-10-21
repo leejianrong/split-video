@@ -23,6 +23,7 @@ from typing import Any
 
 import typer
 from rich.console import Console
+from rich.markup import escape
 from rich.table import Table
 
 from split_video import assets, cli_errors, render_queue, timeline_service
@@ -735,10 +736,20 @@ def render_queue_cmd(
                     if job["state"] in ("done", "failed", "cancelled") and job["job_id"] not in reported:
                         reported.add(job["job_id"])
                         if not as_json:
-                            detail = f": {job['error']['message']}" if job["error"] else ""
+                            error = job["error"]
+                            detail = f": {error['message']}" if error else ""
                             error_console.print(
-                                f"[{job['index']}/{status['total']}] {job['output']}: {job['state']}{detail}"
+                                f"[{job['index']}/{status['total']}] {job['output']}: {job['state']}{escape(detail)}",
+                                highlight=False,
+                                soft_wrap=True,
                             )
+                            if error:  # the same code and fix the JSON carries
+                                error_console.print(
+                                    f"    [red]{escape(error.get('code', ''))}[/red]  "
+                                    f"[yellow]Fix:[/yellow] {escape(error.get('fix', ''))}",
+                                    highlight=False,
+                                    soft_wrap=True,
+                                )
                 if status["finished"]:
                     break
                 time.sleep(0.25)

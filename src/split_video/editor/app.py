@@ -10,6 +10,7 @@ from pathlib import Path
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.staticfiles import StaticFiles
 from starlette.responses import Response
 
@@ -32,7 +33,14 @@ from split_video.editor.compose import make_media_router as make_compose_media_r
 from split_video.editor.compose import make_router as make_compose_router
 from split_video.editor.contact_sheet import make_router as make_contact_sheet_router
 from split_video.editor.context import RequestContext, make_context_dependency
-from split_video.editor.errors import ERROR_RESPONSE, ApiError, ApiErrorOut, api_error, api_error_handler
+from split_video.editor.errors import (
+    ERROR_RESPONSE,
+    ApiError,
+    ApiErrorOut,
+    api_error,
+    api_error_handler,
+    validation_error_handler,
+)
 from split_video.editor.events import EventBus, EventsConfig
 from split_video.editor.events import make_router as make_events_router
 from split_video.editor.frames import make_router as make_frames_router
@@ -231,6 +239,7 @@ def create_app(
     app.add_middleware(AuthMiddleware, authenticator=authenticator)
 
     app.add_exception_handler(ApiError, api_error_handler)  # type: ignore[arg-type]
+    app.add_exception_handler(RequestValidationError, validation_error_handler)  # type: ignore[arg-type]
 
     @app.exception_handler(RevisionConflictError)
     async def revision_conflict(request: Request, exc: RevisionConflictError) -> Response:

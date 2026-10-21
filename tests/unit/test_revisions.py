@@ -16,7 +16,7 @@ import pytest
 
 from split_video import timeline, timeline_ops, timeline_service
 from split_video.errors import ProjectError, RevisionConflictError
-from split_video.local_store import LOCK_SUFFIX, LocalProjectStore
+from split_video.local_store import LOCK_DIR, LOCK_SUFFIX, LocalProjectStore
 from split_video.store import (
     InMemoryProjectStore,
     RevisionChange,
@@ -410,13 +410,14 @@ def test_of_processes_based_on_the_same_revision_exactly_one_wins(tmp_path):
 # --- the lock file ------------------------------------------------------------------------
 
 
-def test_lock_files_sit_next_to_project_files_and_are_not_projects(tmp_path):
+def test_lock_files_sit_in_a_hidden_directory_next_to_project_files_and_are_not_projects(tmp_path):
     store = LocalProjectStore(tmp_path)
     (tmp_path / "gigs").mkdir()
     store.save_split("gigs/set.mp4", [seg(1.0)])
     store.create_timeline("show")
-    assert (tmp_path / "gigs" / f"set.mp4.split-video-project.json{LOCK_SUFFIX}").is_file()
-    assert (tmp_path / f"show.split-video-timeline.json{LOCK_SUFFIX}").is_file()
+    assert (tmp_path / "gigs" / LOCK_DIR / f"set.mp4.split-video-project.json{LOCK_SUFFIX}").is_file()
+    assert (tmp_path / LOCK_DIR / f"show.split-video-timeline.json{LOCK_SUFFIX}").is_file()
+    assert not list(tmp_path.glob("*.lock")) and not list((tmp_path / "gigs").glob("*.lock"))
     assert store.list_timelines() == ["show"]
     store.save_timeline("show", store.load_timeline("show"))  # the lock file survives writes and is reused
     assert store.list_timelines() == ["show"]

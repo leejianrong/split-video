@@ -18,11 +18,14 @@ and the process-wide table lock is not held for the whole of a long scan.
 
 from __future__ import annotations
 
+import posixpath
+import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
 from split_video import assets, ocr, proxy, scenes, transcribe
+from split_video.error_catalogue import REGISTRY, describe
 from split_video.ffmpeg import ProbeError
 from split_video.jobs import CancelToken
 from split_video.media_store import MediaError, MediaStore
@@ -41,7 +44,8 @@ class ScanReport:
     # Paths whose bytes were already in the library: a second copy of a file, or a file that moved.
     copies: list[str] = field(default_factory=list)
     unchanged: int = 0  # files already recorded, not re-probed
-    skipped: list[dict[str, str]] = field(default_factory=list)  # [{"path", "reason"}]
+    # [{"path", "reason", "code", "fix"}]: a short reason without absolute paths, the error catalogue's code and fix
+    skipped: list[dict[str, str]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -80,6 +84,39 @@ def scan(
     return report
 
 
+_ABSOLUTE_DIRS = re.compile(r"(?<![\w.])/(?:[^\s/:'\"]+/)+")
+_BRACKET_PREFIX = re.compile(r"\[[^\]]*@ 0x[0-9a-f]+\]\s*")
+MAX_REASON = 200
+
+
+def short_reason(exc: BaseException, path: str) -> str:
+    """One line saying why `exc` made the scan skip `path`: ffprobe's last line (its first lines repeat the absolute
+    file name and its internal addresses), with every absolute directory removed."""
+    lines = [ln.strip() for ln in str(exc).splitlines() if ln.strip()] or [type(exc).__name__]
+    line = lines[-1]
+    name = posixpath.basename(path)
+    cut = line.rfind(f"{name}: ")
+    if cut >= 0:
+        line = line[cut + len(name) + 2 :]
+    line = _ABSOLUTE_DIRS.sub("", _BRACKET_PREFIX.sub("", line))
+    if isinstance(exc, ProbeError):
+        line = f"could not read as media: {line}"
+    return line[:MAX_REASON]
+
+
+def skip_entry(path: str, exc: BaseException) -> dict[str, str]:
+    """The `skipped` row for a file that could not be registered (see `ScanReport`)."""
+    if isinstance(exc, (ProbeError, OSError)):
+        return {
+            "path": path,
+            "reason": short_reason(exc, path),
+            "code": "media.unreadable",
+            "fix": REGISTRY["media.unreadable"].fix,
+        }
+    info = describe(exc)
+    return {"path": path, "reason": short_reason(exc, path), "code": info.code, "fix": info.fix}
+
+
 def _scan_one(media: MediaStore, book: assets.AssetBook, path: str, report: ScanReport) -> None:
     try:
         stat = media.stat(path)
@@ -89,7 +126,7 @@ def _scan_one(media: MediaStore, book: assets.AssetBook, path: str, report: Scan
         before = len(book)
         row = book.register(path)
     except (TimelineError, MediaError, ProbeError, OSError) as exc:
-        report.skipped.append({"path": path, "reason": str(exc) or type(exc).__name__})
+        report.skipped.append(skip_entry(path, exc))
         return
     if len(book) > before:
         report.added.append(row)

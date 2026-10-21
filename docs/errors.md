@@ -23,7 +23,8 @@ Every failure of the CLI, the MCP server and the HTTP API carries the same four 
 - **MCP**: the tool result has `isError: true`; its text is `Error executing tool NAME: ` followed by the payload as
   JSON (everything from the first `{`).
 - **HTTP**: the response body is `{"detail": <message>, "code", "message", "fix", "details"}`; the status is the one in
-  the table (routes keep the status they always had).
+  the table (routes keep the status they always had). For FastAPI's own argument check (`request.invalid`) `detail` stays
+  FastAPI's list of problems, and `details.errors` has one `{argument, in, problem, type}` per problem.
 - **Render queue and jobs**: a failed render's `error` is `{code, message, fix}`.
 - A rejected edit plan or op batch is `plan.invalid` / `ops.invalid`; the body also keeps its `errors` list, each
   entry with its own `path`, `code` (`plan.*` / `ops.*`, see [edit-plan.md](edit-plan.md) and
@@ -53,7 +54,7 @@ Every failure of the CLI, the MCP server and the HTTP API carries the same four 
 | `media.unreadable` | 422 | 1 | ffprobe could not read the file as media. | Check the file plays (`ffprobe FILE`) and is not still being written; re-export or re-download it if it is damaged. |
 | `media.audio_only` | 422 | 1 | The operation needs a picture and the asset is audio-only. | Pick an asset with a video stream (`list_assets` shows has_video), or use an audio-only operation. |
 | `revision.conflict` | 409 | 3 | The project changed since the revision the write was based on; nothing was written. | Reload the project ({reload}), re-apply your change on top of it, and retry with base_revision={current_revision} (CLI `--base-revision {current_revision}`, HTTP `If-Match: {current_revision}`). |
-| `preset.unknown` | 422 | 1 | The export or highlight preset name is not one of the known presets. | Use one of: {choices}. `list_export_presets` (CLI `split-video presets`, HTTP GET /api/v1/presets) describes them. |
+| `preset.unknown` | 422 | 1 | The export or highlight preset name is not one of the known presets. | Use one of: {choices}. `list_export_presets` (CLI `split-video presets`, HTTP GET /api/v1/presets) describes them. For a highlights preset: Use one of: {choices} (the `preset` of `suggest_highlights`, CLI `split-video highlights --preset`); docs/highlights.md says what each weighs. These are not the export presets of `list_export_presets`. |
 | `fit.unknown` | 422 | 1 | The fit is not one of the known framing modes. | Use one of: {choices}. `letterbox` keeps the whole frame with bars, `crop` fills the frame. |
 | `caption.style_unknown` | 422 | 1 | The caption style name is not one of the known styles. | Use one of: {choices}. `list_caption_styles` (CLI `split-video caption-styles`, HTTP GET /api/v1/caption-styles) describes them. |
 | `caption.invalid` | 422 | 1 | A caption option (range, position, colour, tracks) is not usable. | Fix the option named in the message: positions are top, middle or bottom; colours look like #RRGGBB; a range is {start, end} in timeline seconds with start < end; tracks are 1-based numbers `show_timeline` lists. |
