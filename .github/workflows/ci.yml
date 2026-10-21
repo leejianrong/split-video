@@ -92,7 +92,7 @@ jobs:
       # On a push to main: `latest` + `sha-<short>`, same as before. On a
       # `vX.Y.Z` tag push: also `X.Y.Z` and `X.Y` (type=semver no-ops on a
       # branch push, so these two lines are inert outside a tag build) --
-      # see the Development section of README for the release steps.
+      # see CONTRIBUTING.md (Releasing) for the release steps.
       - name: Extract image metadata
         id: meta
         uses: docker/metadata-action@v6
