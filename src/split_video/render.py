@@ -25,13 +25,15 @@ from __future__ import annotations
 
 import os
 import subprocess
+import tempfile
 import threading
 from collections.abc import Callable
 from contextlib import ExitStack
 from dataclasses import dataclass
 from typing import Any
 
-from split_video import assets, presets
+from split_video import assets, presets, transcribe
+from split_video import captions as captions_module
 from split_video.ffmpeg import ExtractError, MediaInfo, StallWatchdog, _require_binary, stall_seconds, stop_on_cancel
 from split_video.jobs import CancelToken, JobCancelledError
 from split_video.media_store import MediaStore
@@ -203,6 +205,7 @@ def build_plan(
     font: str | None = None,
     fps: int = FPS,
     fit: str = "letterbox",
+    captions_ass: tuple[str, str] | None = None,
 ) -> Plan:
     main = _main_track(project)
     main_clips = list(main.clips) if main else []
@@ -260,6 +263,10 @@ def build_plan(
             f"enable='between(t,{clip.start:.3f},{clip.end:.3f})':eof_action=pass:format=auto[{nxt}]"
         )
         vlabel = nxt
+
+    if captions_ass is not None:  # on top of the overlays and text, at output resolution
+        parts.append(captions_module.ass_filter(captions_ass[0], captions_ass[1], vlabel, "vcaptions"))
+        vlabel = "vcaptions"
 
     # Sound from everything that isn't the (already joined) main track.
     mix = [alabel]
@@ -327,14 +334,18 @@ def render(
     height: int | None = None,
     preset: str | None = None,
     fit: str | None = None,
+    captions: captions_module.CaptionRequest | None = None,
 ) -> dict[str, Any]:
     """Write the project to `out_id` (an mp4 in `media`). `progress` gets 0.0..1.0. Returns what was used:
-    `{"preset", "fit", "width", "height", "fps"}`.
+    `{"preset", "fit", "width", "height", "fps"}`, plus `"captions"` (the report of `captions.build`) when captions were asked for.
 
     The picture is the first clip's size unless `width` and `height` (see `check_size`) or an export `preset`
     (see `presets.py`, which also sets frame rate and encoder) say otherwise; explicit size beats the preset's.
     Every clip then fits that frame: `fit="letterbox"` (default) scales it to fit and pads, `"crop"` scales it to
     cover and cuts the overflow (clips with their own crop are not affected).
+
+    With `captions` (a validated `captions.request`) the spoken words of the clips' transcripts are burned in, in the
+    chosen style, on top of everything else (see `captions.py`); the ASS file lives in a temporary directory.
 
     With a `cancel` token (a job's `JobContext`), cancelling terminates ffmpeg at once, deletes
     the partial output and raises `JobCancelledError`.
@@ -369,11 +380,24 @@ def render(
     else:
         width, height = infos[first.source].width // 2 * 2, infos[first.source].height // 2 * 2
     font = find_font() if any(c.kind == "text" for c in video_clips) else None
-    plan = build_plan(project, infos, width, height, font, settings.fps, settings.fit)
     total = project.duration
 
     try:
         with ExitStack() as stack:
+            caption_report, ass_files = None, None
+            if captions is not None:
+                caption_font = find_font()
+                built = captions_module.build(
+                    project, captions, lambda asset: transcribe.load(media, asset), width, height, caption_font
+                )
+                caption_report = built.report
+                if built.ass is not None:
+                    tmp = stack.enter_context(tempfile.TemporaryDirectory(prefix="split-video-captions-"))
+                    ass_path = os.path.join(tmp, "captions.ass")
+                    with open(ass_path, "w", encoding="utf-8") as f:
+                        f.write(built.ass)
+                    ass_files = (ass_path, os.path.dirname(caption_font))
+            plan = build_plan(project, infos, width, height, font, settings.fps, settings.fit, ass_files)
             # Every input, and the output, as real paths for ffmpeg for the whole run.
             inputs = [str(stack.enter_context(media.local_path(c.source))) for c in plan.clips]
             out_path = stack.enter_context(media.write_local(out_id))
@@ -381,13 +405,16 @@ def render(
     except JobCancelledError:
         media.delete(out_id)  # never leave a half-written file behind
         raise
-    return {
+    used = {
         "preset": settings.preset.name if settings.preset else None,
         "fit": settings.fit,
         "width": width,
         "height": height,
         "fps": settings.fps,
     }
+    if caption_report is not None:
+        used["captions"] = caption_report  # only when asked for, so renders without captions report what they did
+    return used
 
 
 def _encode_args(preset: presets.ExportPreset | None) -> list[str]:

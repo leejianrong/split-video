@@ -292,7 +292,7 @@ def test_http_cli_and_engine_report_the_same_result_for_a_preset_render(root, tm
             break
         time.sleep(0.1)
     assert status["status"] == "done", status
-    result = {k: v for k, v in status.items() if k not in ("status", "progress", "error")}
+    result = {k: v for k, v in status.items() if k not in ("status", "progress", "error", "captions")}
     assert result == expected
     assert (probe_media(http_ws / "reel-render.mp4").width, probe_media(http_ws / "reel-render.mp4").height) == (
         1080,

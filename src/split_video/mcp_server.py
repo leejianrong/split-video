@@ -54,6 +54,7 @@ from split_video import (
     transcribe,
     transcript_search,
 )
+from split_video import captions as captions_module
 from split_video.editor.cache import ClassificationCache
 from split_video.editor.classify import ModelNotFoundError
 from split_video.errors import RevisionConflictError
@@ -114,7 +115,8 @@ Separately, timeline projects combine clips from several videos into one:
 list_timelines / create_timeline -> add_clip_to_timeline (video paths as
 for list_videos) -> trim_timeline_clip / move_timeline_clip /
 remove_timeline_clip / set_timeline_transition -> show_timeline to review ->
-render_timeline. Clips are numbered from 1 in track order.
+render_timeline (`captions` burns in word-highlighted captions from the clips' transcripts: transcribe_asset
+first, styles in list_caption_styles). Clips are numbered from 1 in track order.
 
 Clips reference media by asset id (a_ plus 16 hex digits), not path: list_assets shows
 the ids, paths and stream info of every file in the library (scan_library adds a folder's
@@ -1275,6 +1277,12 @@ def create_server(root: Path, store: ProjectStore | None = None, media: MediaSto
         height: int | None = None,
         preset: str | None = None,
         fit: str | None = None,
+        captions: str | bool | None = None,
+        caption_range: dict[str, float] | None = None,
+        caption_font_size: float | None = None,
+        caption_highlight_color: str | None = None,
+        caption_position: str | None = None,
+        caption_tracks: list[int] | None = None,
     ) -> dict[str, Any]:
         """Render the timeline to an mp4 in the root (default '<name>-render.mp4'). Refuses to replace an
         existing file unless overwrite=true. Re-encodes, so it can take a while for long clips. `width` and
@@ -1283,16 +1291,27 @@ def create_server(root: Path, store: ProjectStore | None = None, media: MediaSto
         vertical-1080, square-1080, draft-720) sets size, frame rate and encoder in one go; an explicit width and
         height beat the preset's size (explicit > preset > first clip). `fit` chooses what happens when a picture's
         aspect differs from the frame: "letterbox" (default: scale to fit, black bars) or "crop" (scale to cover and
-        cut the overflow, centered); a clip with its own crop is not affected. Returns name, output, duration and the
-        preset, fit, width, height and fps used."""
+        cut the overflow, centered); a clip with its own crop is not affected. `captions` burns in word-highlighted
+        captions from the clips' transcripts (transcribe the assets first): a style name from list_caption_styles
+        (classic, shorts, minimal) or true for the default; they sit on top of everything, at the output size. By
+        default they come from the main video track's unmuted clips (`caption_tracks`: 1-based track numbers
+        instead); `caption_range` {start, end} (timeline seconds) limits them; `caption_font_size` (fraction of the
+        frame height), `caption_highlight_color` (#RRGGBB) and `caption_position` (top, middle, bottom) override the
+        style. Captions are a render option, not part of the timeline. Returns name, output, duration and the
+        preset, fit, width, height, fps used and `captions` (null, or style, clips_with_transcript,
+        clips_without, words, lines, events)."""
 
         def work() -> dict[str, Any]:
+            caption_request = captions_module.request(
+                captions, caption_range, caption_font_size, caption_highlight_color, caption_position, caption_tracks
+            )
             project_, filename, out_id = timeline_service.plan_render(
-                store, media, name, output, overwrite, width, height, preset, fit
+                store, media, name, output, overwrite, width, height, preset, fit, caption_request
             )
             used = timeline_service.run_render(
-                project_, media, out_id, width=width, height=height, preset=preset, fit=fit
-            )
+                project_, media, out_id, width=width, height=height, preset=preset, fit=fit,
+                caption_request=caption_request,
+            )  # fmt: skip
             return timeline_service.render_result(name, filename, project_, used)
 
         return await run(work)
@@ -1302,5 +1321,12 @@ def create_server(root: Path, store: ProjectStore | None = None, media: MediaSto
         """The export presets render_timeline takes by name (`preset`), each with label, description, width,
         height, fps, codecs, quality (crf), audio settings and container, plus the valid `fits`."""
         return presets.listing()
+
+    @server.tool(annotations=_READ_ONLY)
+    async def list_caption_styles() -> dict[str, Any]:
+        """The caption styles render_timeline takes by name (`captions`), each with font size (a fraction of the
+        frame height), colours, outline, position, rows and characters per row and whether it is upper-case,
+        plus the valid `positions` for the override."""
+        return captions_module.listing()
 
     return server

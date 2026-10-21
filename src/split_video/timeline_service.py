@@ -17,7 +17,7 @@ from collections.abc import Callable
 from dataclasses import replace
 from typing import Any
 
-from split_video import assets, timeline, timeline_ops
+from split_video import assets, captions, timeline, timeline_ops
 from split_video import store as store_module
 from split_video.ffmpeg import ProbeError
 from split_video.jobs import CancelToken
@@ -403,11 +403,13 @@ def plan_render(
     height: int | None = None,
     preset: str | None = None,
     fit: str | None = None,
+    caption_request: captions.CaptionRequest | None = None,
 ) -> tuple[Project, str, str]:
     """Check a render request and return the project, output filename and the
     output's media id (a plain filename is a file in the root). `width`/`height`
     (both or neither, see `render.check_size`), the export `preset` and the `fit` are checked here so a
-    bad one fails before any job starts."""
+    bad one fails before any job starts (`caption_request`, from `captions.request`, was checked when it was built;
+    only its track numbers depend on the project)."""
     resolve_export(preset, width, height, fit)
     project = load_existing(store, name, media)
     filename = output or f"{name}-render.mp4"
@@ -419,6 +421,8 @@ def plan_render(
         raise OutputExistsError(f"{filename} already exists")
     if not any(t.clips for t in project.tracks):
         raise TimelineError("the timeline has no clips to render")
+    if caption_request is not None:
+        captions.caption_tracks(project, caption_request)  # a track number the timeline doesn't have fails here
     return project, filename, filename
 
 
@@ -433,9 +437,14 @@ def run_render(
     height: int | None = None,
     preset: str | None = None,
     fit: str | None = None,
+    caption_request: captions.CaptionRequest | None = None,
 ) -> dict[str, Any]:
-    """Render and return what was used (`render.render`'s `{preset, fit, width, height, fps}`)."""
-    return render(project, media, out_id, progress, cancel, width=width, height=height, preset=preset, fit=fit)
+    """Render and return what was used (`render.render`'s `{preset, fit, width, height, fps, captions}`).
+    `caption_request` comes from `captions.request`, which validates the caption options."""
+    return render(
+        project, media, out_id, progress, cancel, width=width, height=height, preset=preset, fit=fit,
+        captions=caption_request,
+    )  # fmt: skip
 
 
 def render_result(name: str, filename: str, project: Project, used: dict[str, Any]) -> dict[str, Any]:

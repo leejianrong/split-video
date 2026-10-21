@@ -25,6 +25,8 @@ from rich.console import Console
 from rich.table import Table
 
 from split_video import assets, timeline_service
+from split_video import captions as captions_module
+from split_video.captions import CaptionError
 from split_video.errors import RevisionConflictError
 from split_video.ffmpeg import ExtractError, FfmpegNotFoundError, ProbeError
 from split_video.local_media_store import LocalMediaStore
@@ -642,6 +644,24 @@ def render_cmd(
     fit: str | None = typer.Option(
         None, "--fit", help="Aspect mismatch: letterbox (default, black bars) or crop (cover the frame)."
     ),
+    captions: str | None = typer.Option(
+        None,
+        "--captions",
+        help="Burn in captions from the transcripts, in this style (see `split-video caption-styles`).",
+    ),
+    caption_range: str | None = typer.Option(
+        None, "--caption-range", help="Only caption this part of the timeline: START-END in seconds, e.g. 10-40."
+    ),
+    caption_font_size: float | None = typer.Option(
+        None, "--caption-font-size", help="Caption font size as a fraction of the frame height (0.01..0.2)."
+    ),
+    caption_highlight: str | None = typer.Option(
+        None, "--caption-highlight", help="Colour of the word being spoken, #RRGGBB."
+    ),
+    caption_position: str | None = typer.Option(None, "--caption-position", help="top, middle or bottom."),
+    caption_tracks: str | None = typer.Option(
+        None, "--caption-tracks", help="Caption these track numbers (e.g. 1,2) instead of the main video track."
+    ),
     root: Path = _Root,
     as_json: bool = _Json,
 ) -> None:
@@ -651,16 +671,36 @@ def render_cmd(
     media = LocalMediaStore(root)
     try:
         width, height = parse_size(size)
-        project, filename, out_id = timeline_service.plan_render(
-            store, media, name, output, overwrite, width, height, preset, fit
+        try:
+            tracks = [int(t) for t in caption_tracks.split(",")] if caption_tracks else None
+        except ValueError:
+            raise CaptionError("--caption-tracks is a comma-separated list of track numbers, e.g. 1,2") from None
+        caption_request = captions_module.request(
+            captions,
+            captions_module.parse_range(caption_range) if caption_range else None,
+            caption_font_size,
+            caption_highlight,
+            caption_position,
+            tracks,
         )
-        used = timeline_service.run_render(project, media, out_id, width=width, height=height, preset=preset, fit=fit)
+        project, filename, out_id = timeline_service.plan_render(
+            store, media, name, output, overwrite, width, height, preset, fit, caption_request
+        )
+        used = timeline_service.run_render(
+            project, media, out_id, width=width, height=height, preset=preset, fit=fit, caption_request=caption_request
+        )
     except _EXPECTED_ERRORS as exc:
         raise _fail(exc, as_json)
     if as_json:
         typer.echo(json.dumps(timeline_service.render_result(name, filename, project, used), indent=2))
     else:
         console.print(f"[green]Rendered[/green] {filename}")
+        if used.get("captions"):
+            report = used["captions"]
+            console.print(
+                f"Captions ({report['style']}): {report['words']} words in {report['lines']} lines"
+                + (f"; no transcript for {len(report['clips_without'])} clip(s)" if report["clips_without"] else "")
+            )
 
 
 def register(app: typer.Typer) -> None:

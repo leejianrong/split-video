@@ -12,6 +12,7 @@ from rich.console import Console
 from rich.table import Table
 
 from split_video import (
+    captions_cli,
     compose_cli,
     contact_sheet_cli,
     frames_cli,
@@ -264,6 +265,7 @@ def mcp_cmd(
 project_cli.register(app)
 compose_cli.register(app)
 app.command("presets")(presets_cli.presets_cmd)
+app.command("caption-styles")(captions_cli.caption_styles_cmd)
 library_cli.register(app)
 transcribe_cli.register(app)
 app.command("scenes")(scenes_cli.scenes_cmd)

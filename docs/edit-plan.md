@@ -211,6 +211,12 @@ arguments of the MCP tool `render_timeline`. Precedence for the frame size: expl
 clip's size. `split-video presets` / `GET /api/v1/presets` / `list_export_presets` list the presets. The same plan can
 be rendered to several destinations without changing it.
 
+Burned-in captions are a render option in the same way: `--captions <style>` (with `--caption-range`, ...), the
+`captions` and `caption_*` fields of the render request and the `captions` argument of `render_timeline`. They are
+derived at render time from the assets' transcripts, so they are not in the plan or the project file, and the same plan
+can be rendered with or without them. `split-video caption-styles` / `GET /api/v1/caption-styles` / `list_caption_styles`
+list the styles.
+
 ## Examples
 
 **Minimal.** One clip, one track:

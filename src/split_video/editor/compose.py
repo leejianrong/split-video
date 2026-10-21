@@ -10,12 +10,13 @@ and the CLI/MCP can edit the same project.
 from __future__ import annotations
 
 from collections.abc import Callable
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from starlette.responses import Response
 
-from split_video import assets, ocr, proxy, scenes, timeline_ops, timeline_service, transcribe
+from split_video import assets, captions, ocr, proxy, scenes, timeline_ops, timeline_service, transcribe
 from split_video.editor.context import RequestContext, make_context_dependency
 from split_video.editor.job_routes import cancel_job, job_of_kind
 from split_video.editor.media_response import media_response
@@ -196,6 +197,11 @@ class TransitionRequest(BaseModel):
     duration: float = 0.0
 
 
+class CaptionRange(BaseModel):
+    start: float
+    end: float
+
+
 class RenderRequest(BaseModel):
     output: str | None = None  # filename in the browse root; default "<name>-render.mp4"
     overwrite: bool = False
@@ -207,6 +213,15 @@ class RenderRequest(BaseModel):
     preset: str | None = None
     # How a picture whose aspect differs from the frame is fitted: "letterbox" (default) or "crop".
     fit: str | None = None
+    # Burned-in captions from the clips' transcripts: a style name (GET /caption-styles), true for the default
+    # style, or false/null for none. The caption_* fields refine them (ignored without captions); captions are a
+    # render option, not part of the timeline.
+    captions: str | bool | None = None
+    caption_range: CaptionRange | None = None  # timeline seconds; default the whole timeline
+    caption_font_size: float | None = None  # fraction of the frame height, overrides the style's
+    caption_highlight_color: str | None = None  # "#RRGGBB"
+    caption_position: str | None = None  # top | middle | bottom
+    caption_tracks: list[int] | None = None  # 1-based track numbers; default the main video track
 
 
 class RenderStartOut(BaseModel):
@@ -226,6 +241,9 @@ class RenderStatusOut(BaseModel):
     width: int | None = None
     height: int | None = None
     fps: int | None = None
+    # Caption report once finished (null when no captions were asked for): style, clips_with_transcript,
+    # clips_without (clip ids), words, lines, events.
+    captions: dict[str, Any] | None = None
 
 
 def _http(exc: TimelineError) -> HTTPException:
@@ -597,6 +615,14 @@ def make_router(provider: StoreProvider, jobs: JobQueue) -> APIRouter:
     @router.post("/compose/projects/{name}/render", response_model=RenderStartOut)
     def start_render(name: str, request: RenderRequest, ctx: RequestContext = ctx_dep) -> RenderStartOut:
         try:
+            caption_request = captions.request(
+                request.captions,
+                request.caption_range.model_dump() if request.caption_range else None,
+                request.caption_font_size,
+                request.caption_highlight_color,
+                request.caption_position,
+                request.caption_tracks,
+            )
             project, filename, out_id = timeline_service.plan_render(
                 ctx.store,
                 ctx.media,
@@ -607,13 +633,15 @@ def make_router(provider: StoreProvider, jobs: JobQueue) -> APIRouter:
                 request.height,
                 request.preset,
                 request.fit,
+                caption_request,
             )
         except TimelineError as exc:
             raise _http(exc) from None
 
         work = render_work(
-            project, ctx.media, out_id, filename, request.width, request.height, request.preset, request.fit, name
-        )
+            project, ctx.media, out_id, filename, request.width, request.height, request.preset, request.fit, name,
+            caption_request,
+        )  # fmt: skip
         job_id = jobs.submit(RENDER, work, label=filename, total=RENDER_STEPS, owner=ctx.principal.id)
         return RenderStartOut(job_id=job_id)
 
@@ -632,6 +660,7 @@ def make_router(provider: StoreProvider, jobs: JobQueue) -> APIRouter:
             width=summary.get("width"),
             height=summary.get("height"),
             fps=summary.get("fps"),
+            captions=summary.get("captions"),
             error="cancelled" if job.state == "cancelled" else job.error,
         )
 
