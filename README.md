@@ -639,6 +639,11 @@ the visual editor afterward. Tools: `list_videos`, `list_segments`,
 `move_timeline_track`, `place_timeline_clip`, `set_timeline_clip`,
 `add_timeline_text`, `set_timeline_text`, `render_timeline` (with `preset`, `fit` and `captions`), `list_export_presets`, `list_caption_styles`.
 
+New to driving it? The [agent guide](src/split_video/agent_guide/SKILL.md) is the order of calls that works (import,
+report, transcribe, pick moments, plan, render), with limits, costs and error recovery. The server serves it as the
+resource `guide://agent` and the prompts `highlights_workflow`, `vertical_short` and `recover_from_error`;
+`split-video agent-guide` prints it.
+
 Tools only touch files under `--root` (default: the current directory):
 
 ```bash
