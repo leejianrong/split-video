@@ -79,7 +79,10 @@ def transcribe_cmd(
     media = LocalMediaStore(root.resolve())
     try:
         asset_id = _asset_id(media, target)
-        transcribe.require_available()  # before the model or the audio is touched
+        if not transcribe.reusable(
+            media, assets.get_asset(media, asset_id), model=model, language=language, force=force
+        ):
+            transcribe.require_available()  # before the model or the audio is touched
         with error_console.status(f"Transcribing {target} with {model}..."):
             result = transcribe.transcribe(media, asset_id, model=model, language=language, force=force)
     except _EXPECTED as exc:

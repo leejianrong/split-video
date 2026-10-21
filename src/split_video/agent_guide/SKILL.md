@@ -120,7 +120,7 @@ To stop: `cancel_renders()` with the same `batch_id` (or one `job_id`).
 
 | Step | 2.5 h recording | Note |
 | --- | --- | --- |
-| `transcribe_asset()` | about 17 min | Blocks. Needs the optional extra (`uv sync --extra transcribe`, or the Docker image built with `WITH_TRANSCRIPTION=1`); without it the error is `extra.transcription_missing` and nothing else breaks. Run it once; a current transcript is not redone. |
+| `transcribe_asset()` | about 17 min | Blocks. Needs the optional extra (`uv sync --extra transcribe`, or the Docker image built with `WITH_TRANSCRIPTION=1`); without it, making a transcript fails with `extra.transcription_missing` and nothing else breaks. Run it once; a current transcript is returned as is (`made` false), even without the extra. |
 | `analyze_audio()` | about 30 s | Cached next to the video. |
 | `media_report()` with `prepare` | seconds to minutes | Loudness and silence are quick, audio classes take minutes. |
 | `prepare_asset()` | minutes per hour | Only for visual work. |

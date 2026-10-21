@@ -538,7 +538,7 @@ def create_server(
         with `language` a code like "fr", or unset to detect it). The first use downloads the model (140 MB) into the workspace. If a current
         transcript from this model exists nothing is redone unless `force`. Returns `model`, `language`,
         `duration`, `segments` and `words` (counts) and `made` (false when the stored one was current). Without the
-        optional faster-whisper package this is a tool error saying how to install it."""
+        optional faster-whisper package a transcript that needs making is a tool error saying how to install it (a current stored one is returned, `made` false)."""
         return await run(transcribe.transcribe, media, asset, model=model, language=language, force=force)
 
     @server.tool(annotations=_READ_ONLY)
