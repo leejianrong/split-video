@@ -11,20 +11,25 @@ release.
 uv run pytest
 ```
 
-A few tests exercise real YAMNet inference and skip automatically if you
-haven't run `make fetch-model`.
+The full run takes about 10 minutes and needs `ffmpeg`; `uv run pytest tests/unit`
+is the quick layer. A few tests exercise real YAMNet inference and skip
+automatically if you haven't run `make fetch-model`. Set
+`SPLIT_VIDEO_LONG_TESTS=1` to also run the 3-hour classification check.
 
 ## Pre-push hook
 
-A git hook mirrors the fast parts of CI (unit tests, no `ffmpeg` required)
-before every push. Install it once per clone:
+A git hook mirrors the cheap parts of CI before every push: `ruff check`,
+`ruff format --check`, the generated-file drift checks (`openapi.json`, the
+two schemas in `docs/schemas/`, `docs/errors.md`; fix with
+`make openapi schemas errors`) and `tests/unit` (about 3 minutes; it needs
+`ffmpeg` on the PATH, like the rest of the suite). Install it once per clone:
 
 ```bash
 git config core.hooksPath .githooks
 ```
 
 Skip it for a one-off, scoped exception with `git push --no-verify`. CI
-still runs the full suite regardless, so the bypass is safe.
+still runs everything regardless, so the bypass is safe.
 
 ## Releasing
 
