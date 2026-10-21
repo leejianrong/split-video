@@ -356,18 +356,24 @@ def create_server(
         return result(source, segments, revision, segment=segment)
 
     @server.tool(annotations=ToolAnnotations(read_only_hint=False, destructive_hint=False, open_world_hint=False))
-    async def analyze_audio(video: str, force: bool = False) -> dict[str, Any]:
+    async def analyze_audio(
+        video: str, force: bool = False, limit: int | None = None, cursor: str | None = None
+    ) -> dict[str, Any]:
         """Classify the audio (music, singing, speech, applause, laughter, silence/noise) with YAMNet and
         cache the result next to the video. Returns seconds per bucket and the labeled time regions, which
         help judge whether a proposed split falls between songs or inside one. Can take minutes on a long
-        recording; a cached result returns instantly unless force=true. Needs the YAMNet model."""
+        recording; a cached result returns instantly unless force=true. Needs the YAMNet model.
+        The result is bounded (under 64 KB): `seconds_by_bucket`, `regions_by_bucket`, `total_seconds` and
+        `total_regions` cover the whole recording, and `regions` is one page of at most `limit` (default 200, at
+        most 500). While `next_cursor` is not null (`truncated` says so, `notices` explains) call again with
+        `cursor` to continue; every region appears exactly once."""
         source = resolve(video)
 
         def work() -> dict[str, Any]:
             cache = ClassificationCache(media, source)
             if force or not cache.is_analyzed:
                 project.run_analysis(media, source, cache, cache.get_thresholds())
-            return project.summarize_classification(cache)
+            return project.page_classification(cache, limit, cursor)
 
         summary = await run(work)
         return {"video": source, **summary}
@@ -497,19 +503,23 @@ def create_server(
         return await run(transcribe.transcribe, media, asset, model=model, language=language, force=force)
 
     @server.tool(annotations=_READ_ONLY)
-    async def get_transcript(asset: str, start: float | None = None, end: float | None = None) -> dict[str, Any]:
+    async def get_transcript(
+        asset: str,
+        start: float | None = None,
+        end: float | None = None,
+        limit: int | None = None,
+        cursor: str | None = None,
+    ) -> dict[str, Any]:
         """The stored transcript of the library asset `asset`: `model`, `language`, `duration` and `segments`, each
         with `start`, `end`, `text` and `words` (`start`, `end`, `word`, `probability`), all in seconds from the
         start of the asset's audio. With `start` and/or `end` only the words overlapping that span (a cut segment
-        keeps only those words). This is the whole transcript at once: for a long recording use transcript_range (paged)
-        and transcript_search. Run transcribe_asset first: without a transcript this is a tool error. list_assets
+        keeps only those words). One page is returned, under 64 KB: at most `limit` segments (default 100, at most 500)
+        and about 28 KB of them. `total_segments`, `total_words`, `first_start` and `last_end` describe the whole
+        range; while `next_cursor` is not null (`truncated` says so, `notices` explains) call again with the same
+        arguments plus `cursor` to continue, or narrow with `start`/`end`; every segment appears exactly once.
+        For a long recording transcript_range (smaller pages) and transcript_search are usually better. Run transcribe_asset first: without a transcript this is a tool error. list_assets
         shows `transcript` per asset."""
-        found = await run(transcribe.load, media, asset)
-        if found is None:
-            raise transcript_search.TranscriptNotFoundError(
-                f"asset {asset} has no transcript yet: run transcribe_asset first"
-            )
-        return transcribe.excerpt(found, start, end)
+        return await run(transcript_search.transcript_page, media, asset, start, end, limit=limit, cursor=cursor)
 
     @server.tool(annotations=_READ_ONLY)
     async def transcript_range(

@@ -151,9 +151,26 @@ async def test_mcp_matches_http(workspace, anyio_backend):
         assert words == client.get(base, params={"granularity": "word", "limit": 5}).json()
         hits = (await mcp.call_tool("transcript_search", {"asset": asset, "query": "magic word"})).structured_content
         assert hits == client.get(f"{base}/search", params={"q": "magic word"}).json()
-        # get_transcript keeps working, unchanged
+        # get_transcript keeps working; since SPL-111 it also carries paging fields (additive) and a transcript
+        # that does not fit one page (this one is 60 segments) comes back in pages
+        paging = (
+            "total_segments",
+            "total_words",
+            "first_start",
+            "last_end",
+            "count",
+            "truncated",
+            "next_cursor",
+            "notices",
+        )
+        cut = (await mcp.call_tool("get_transcript", {"asset": asset, "start": 2.0, "end": 4.0})).structured_content
+        assert {k: v for k, v in cut.items() if k not in paging} == client.get(
+            base, params={"start": 2, "end": 4}
+        ).json()
+        assert cut["truncated"] is False and cut["next_cursor"] is None and cut["count"] == len(cut["segments"])
         whole = (await mcp.call_tool("get_transcript", {"asset": asset})).structured_content
-        assert whole == client.get(base).json()
+        assert whole["total_segments"] == 60 and whole["truncated"] and whole["next_cursor"]
+        assert whole["segments"] == client.get(base).json()["segments"][: whole["count"]]
         for tool, args in (
             ("transcript_range", {"asset": asset, "limit": 0}),
             ("transcript_range", {"asset": asset, "granularity": "x"}),
@@ -165,6 +182,34 @@ async def test_mcp_matches_http(workspace, anyio_backend):
             assert (await mcp.call_tool(tool, args)).is_error, (tool, args)
         text = (await mcp.call_tool("transcript_search", {"asset": bare, "query": "x"})).content[0].text
         assert "transcribe_asset" in text
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("anyio_backend", ["asyncio"])
+async def test_mcp_get_transcript_pages_a_long_transcript_and_stays_bounded(tmp_path, anyio_backend):
+    root = tmp_path / "ws"
+    root.mkdir()
+    pcm, _ = speech([0.5], 3.0)
+    write_wav(root / "long.wav", pcm)
+    media = LocalMediaStore(root.resolve())
+    asset = assets.register_path(media, "long.wav")
+    document = make_document(asset.id, words=9000, per_segment=12)
+    transcribe.save(media, asset, document)
+    async with Client(create_server(root)) as mcp:
+        sizes, segments, cursor = [], [], None
+        while True:
+            res = await mcp.call_tool("get_transcript", {"asset": asset.id} | ({"cursor": cursor} if cursor else {}))
+            sizes.append(sum(len(c.text.encode()) for c in res.content))
+            page = res.structured_content
+            segments += page["segments"]
+            cursor = page["next_cursor"]
+            if not cursor:
+                break
+        assert len(sizes) > 1 and max(sizes) < 64 * 1024
+        assert segments == document["segments"]
+        assert page["total_segments"] == len(document["segments"])
+        bad = await mcp.call_tool("get_transcript", {"asset": asset.id, "cursor": "nope"})
+        assert bad.is_error and "request.invalid" in bad.content[0].text
 
 
 @pytest.mark.anyio

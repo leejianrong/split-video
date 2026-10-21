@@ -22,7 +22,10 @@ map it to its own error style.
 
 from __future__ import annotations
 
+import base64
+import binascii
 import itertools
+import json
 import posixpath
 import re
 from collections.abc import Callable
@@ -418,6 +421,69 @@ def run_analysis(
             chunks, model, labels, thresholds, frame_done, expected_samples
         )
     cache.store_result(frame_bucket_scores, total_duration, regions)
+
+
+REGION_PAGE_DEFAULT = 200
+# about 54 KB of MCP text at 500 regions: under the 64 KB tool-response cap (docs/tool-response-caps.md)
+REGION_PAGE_MAX = 500
+
+
+def _page_cursor(position: int, total: int) -> str:
+    raw = json.dumps({"i": position, "n": total}, separators=(",", ":")).encode()
+    return base64.urlsafe_b64encode(raw).decode().rstrip("=")
+
+
+def _page_start(cursor: str | None, total: int) -> int:
+    if not cursor:
+        return 0
+    try:
+        data = json.loads(base64.urlsafe_b64decode(cursor + "=" * (-len(cursor) % 4)))
+        position, count = int(data["i"]), int(data["n"])
+    except (ValueError, KeyError, TypeError, binascii.Error):
+        raise ValueError("cursor is not one returned by this tool: start without it") from None
+    if count != total or not 0 <= position <= total:
+        raise ValueError("cursor no longer matches the analysis (it was made again): start without it")
+    return position
+
+
+def page_classification(
+    cache: ClassificationCache, limit: int | None = None, cursor: str | None = None
+) -> dict[str, Any]:
+    """`summarize_classification` bounded for a tool result: the whole-recording summary (`seconds_by_bucket`,
+    `regions_by_bucket`, `total_seconds`, `total_regions`) plus one page of at most `limit` regions (default
+    `REGION_PAGE_DEFAULT`, at most `REGION_PAGE_MAX`) from `cursor`, with `count`, `truncated`, `next_cursor` and
+    `notices`. Concatenating the pages gives exactly the `regions` of `summarize_classification`."""
+    if limit is None:
+        limit = REGION_PAGE_DEFAULT
+    if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= REGION_PAGE_MAX:
+        raise ValueError(f"limit must be a whole number from 1 to {REGION_PAGE_MAX}")
+    full = summarize_classification(cache)
+    regions = full.pop("regions")
+    total = len(regions)
+    at = _page_start(cursor, total)
+    page = regions[at : at + limit]
+    end = at + len(page)
+    by_bucket: dict[str, int] = {}
+    for r in regions:
+        by_bucket[r["bucket"]] = by_bucket.get(r["bucket"], 0) + 1
+    more = end < total
+    notices = []
+    if more:
+        notices.append(
+            f"regions {at + 1}-{end} of {total}: call again with cursor=next_cursor to read the rest "
+            "(seconds_by_bucket and regions_by_bucket already cover the whole recording)"
+        )
+    return {
+        **full,
+        "total_seconds": round(sum(full["seconds_by_bucket"].values()), 1),
+        "regions_by_bucket": dict(sorted(by_bucket.items())),
+        "total_regions": total,
+        "count": len(page),
+        "regions": page,
+        "truncated": at > 0 or more,
+        "next_cursor": _page_cursor(end, total) if more else None,
+        "notices": notices,
+    }
 
 
 def summarize_classification(cache: ClassificationCache) -> dict[str, Any]:
