@@ -5,3 +5,11 @@
 tests
 __pycache__
 *.pyc
+.ruff_cache
+videos
+*_split
+.split-video-cache
+.split-video-models
+.github
+docs
+.githooks
