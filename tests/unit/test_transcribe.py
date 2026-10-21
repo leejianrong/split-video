@@ -296,6 +296,29 @@ def test_missing_dependency_is_reported_before_the_audio_or_model_is_touched(no_
         assert list(models.iterdir()) == []  # nothing was downloaded or created
 
 
+def test_a_current_stored_transcript_is_returned_without_the_extra(store, monkeypatch):
+    media, asset, _ = store
+    assert transcribe.transcribe(media, asset.id, model_factory=lambda n, d: FakeModel())["made"] is True
+    monkeypatch.setitem(sys.modules, "faster_whisper", None)
+    again = transcribe.transcribe(media, asset.id)  # the default path: no model_factory, extra unavailable
+    assert again["made"] is False and again["words"] == 12 and again["asset"] == asset.id
+    # Anything that needs a model still raises: force, another model, another language.
+    for kwargs in ({"force": True}, {"model": "small.en"}, {"language": "fr"}):
+        with pytest.raises(transcribe.TranscriptionUnavailableError):
+            transcribe.transcribe(media, asset.id, **kwargs)
+    assert transcribe.info(media, asset)["model"] == "base.en"  # the stored one is untouched
+
+
+def test_a_stale_transcript_without_the_extra_still_raises(store, tmp_path, monkeypatch):
+    media, asset, _ = store
+    transcribe.transcribe(media, asset.id, model_factory=lambda n, d: FakeModel())
+    monkeypatch.setitem(sys.modules, "faster_whisper", None)
+    other = transcribe.info(media, asset)
+    media.save_cache(asset.path, transcribe.INFO_NAME, {**other, "asset": "a_0000000000000000"})
+    with pytest.raises(transcribe.TranscriptionUnavailableError):
+        transcribe.transcribe(media, asset.id)
+
+
 def test_the_hugging_face_cache_is_pointed_into_the_workspace(monkeypatch, tmp_path):
     for var in ("HF_HOME", "HF_HUB_DISABLE_XET", "HF_HUB_DISABLE_TELEMETRY"):
         monkeypatch.delenv(var, raising=False)

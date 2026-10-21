@@ -208,3 +208,50 @@ async def test_mcp_without_the_dependency_is_a_tool_error_with_the_hint(workspac
         talk = next(a for a in listed if not a["has_video"])
         got = await client.call_tool("transcribe_asset", {"asset": talk["id"]})
         assert got.is_error and "uv sync --extra transcribe" in got.content[0].text
+
+
+def _extra_gone(monkeypatch):
+    """After a transcript is stored: the extra stops being importable, and any model use would fail loudly."""
+    monkeypatch.setitem(sys.modules, "faster_whisper", None)
+
+    def unavailable():
+        raise transcribe.TranscriptionUnavailableError("no faster_whisper")
+
+    monkeypatch.setattr(transcribe, "require_available", unavailable)
+
+
+def test_api_reuses_a_stored_transcript_without_the_extra(workspace, monkeypatch):
+    _, asset = _talk(workspace)
+    client = TestClient(create_app(workspace, DEFAULTS))
+    url = f"/api/v1/assets/{asset.id}/transcribe"
+    assert _wait(client, client.post(url).json()["job_id"])["result"]["made"] is True
+    _extra_gone(monkeypatch)
+    again = client.post(url)
+    assert again.status_code == 200
+    assert _wait(client, again.json()["job_id"])["result"]["made"] is False
+    assert client.post(url, json={"force": True}).status_code == 501
+    assert client.post(url, json={"model": "small.en"}).status_code == 501
+
+
+def test_cli_reuses_a_stored_transcript_without_the_extra(workspace, monkeypatch):
+    args = ["transcribe", "talks/talk.wav", "--root", str(workspace), "--json"]
+    assert json.loads(runner.invoke(app, args).stdout)["made"] is True
+    _extra_gone(monkeypatch)
+    again = runner.invoke(app, args)
+    assert again.exit_code == 0, again.output
+    assert json.loads(again.stdout)["made"] is False
+    assert runner.invoke(app, [*args, "--force"]).exit_code == 4
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("anyio_backend", ["asyncio"])
+async def test_mcp_reuses_a_stored_transcript_without_the_extra(workspace, monkeypatch, anyio_backend):
+    async with Client(create_server(workspace)) as client:
+        await client.call_tool("scan_library", {})
+        listed = (await client.call_tool("list_assets", {})).structured_content["assets"]
+        talk = next(a for a in listed if not a["has_video"])
+        assert (await client.call_tool("transcribe_asset", {"asset": talk["id"]})).structured_content["made"] is True
+        _extra_gone(monkeypatch)
+        again = await client.call_tool("transcribe_asset", {"asset": talk["id"]})
+        assert not again.is_error and again.structured_content["made"] is False
+        assert (await client.call_tool("transcribe_asset", {"asset": talk["id"], "force": True})).is_error

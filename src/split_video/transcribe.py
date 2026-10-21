@@ -545,6 +545,22 @@ def text_between(transcript: dict[str, Any], start: float, end: float) -> str:
     return " ".join(w["word"] for w in words_between(transcript, start, end))
 
 
+def reusable(
+    media: MediaStore,
+    asset: assets.Asset,
+    *,
+    model: str = DEFAULT_MODEL,
+    language: str | None = None,
+    force: bool = False,
+) -> dict[str, Any] | None:
+    """The asset's current transcript info if `transcribe` would reuse it (same `model`, compatible `language`, no
+    `force`), else None. Reusing needs no model, so callers use this to skip the optional-extra check."""
+    current = None if force else info(media, asset)
+    if current is not None and current["model"] == model and language in (None, current["language"]):
+        return current
+    return None
+
+
 def transcribe(
     media: MediaStore,
     asset_id: str,
@@ -560,19 +576,20 @@ def transcribe(
     `language`, if given) exists (`force` redoes it). Returns the transcript's info (see `info`) plus `made`,
     whether this call did the work.
 
-    Raises `TranscriptionUnavailableError` without the optional dependency (checked before anything is read),
+    Raises `TranscriptionUnavailableError` without the optional dependency, but only when a model is needed (a
+    current stored transcript is returned as is; the check comes before the model or the audio is touched),
     `TranscriptionError` for an asset without audio or a model that can't be loaded, `ExtractError` if ffmpeg
     fails, `AssetNotFoundError` / `SourceNotFoundError` for a missing asset and `JobCancelledError` through
     `cancel`; a failed or cancelled run stores nothing and leaves any earlier transcript alone."""
-    if model_factory is None:
-        require_available()
     asset = assets.get_asset(media, asset_id)
     if not asset.has_audio:
         raise TranscriptionError(f"{asset.path} has no audio track to transcribe")
     with _lock_for(asset.id):  # a second job for the same asset waits, then finds the transcript current
-        current = None if force else info(media, asset)
-        if current is not None and current["model"] == model and language in (None, current["language"]):
+        current = reusable(media, asset, model=model, language=language, force=force)
+        if current is not None:
             return {**current, "made": False}
+        if model_factory is None:
+            require_available()
         with media.models_dir() as models:
             factory = model_factory or load_model
             loaded = _interruptibly(lambda: factory(model, str(models)), cancel)

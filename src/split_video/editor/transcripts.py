@@ -147,7 +147,10 @@ def make_router(provider: StoreProvider, jobs: JobQueue) -> APIRouter:
         if not asset.has_audio:
             raise HTTPException(status_code=422, detail=f"{asset.path} has no audio track to transcribe")
         try:
-            transcribe.require_available()
+            if not transcribe.reusable(
+                ctx.media, asset, model=request.model, language=request.language, force=request.force
+            ):
+                transcribe.require_available()
         except transcribe.TranscriptionUnavailableError as exc:
             raise api_error(501, exc) from None
         job_id = jobs.submit(
