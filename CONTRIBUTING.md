@@ -1,9 +1,9 @@
 # Contributing
 
-See the [Development](README.md#development) section of the README for how
-to build and run split-video locally. This file covers the rest of the
-contributor workflow: running tests, the pre-push hook, and cutting a
-release.
+Local setup (`uv sync`, `make fetch-model`) is in
+[docs/cli.md](docs/cli.md#run-without-docker-uv); building the image and `make dev`
+are in [docs/docker.md](docs/docker.md#build-the-image-yourself). This file covers
+the contributor workflow: running tests, the pre-push hook, and cutting a release.
 
 ## Tests
 
