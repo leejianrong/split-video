@@ -533,9 +533,9 @@ def create_server(
         """Transcribe the speech of the library asset with id `asset` (from list_assets) into words with start and end
         times, stored with the asset; read them with transcript_range and
         transcript_search (or get_transcript for the whole of a short one). Runs locally (faster-whisper on the CPU) and
-        before this returns: about 3 minutes per hour of audio with the default `model` "base.en" (English; "small.en"
-        is more careful and 3 times slower; "base" or "small" handle other languages, with `language` a code like
-        "fr", or unset to detect it). The first use downloads the model (140 MB) into the workspace. If a current
+        before this returns: about 7 minutes per hour of audio on a 16-core CPU with the default `model` "base.en" (17 minutes
+        for 2.5 h; English; "small.en" is more careful and 3 times slower; "base" or "small" handle other languages,
+        with `language` a code like "fr", or unset to detect it). The first use downloads the model (140 MB) into the workspace. If a current
         transcript from this model exists nothing is redone unless `force`. Returns `model`, `language`,
         `duration`, `segments` and `words` (counts) and `made` (false when the stored one was current). Without the
         optional faster-whisper package this is a tool error saying how to install it."""
