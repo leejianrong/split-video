@@ -511,6 +511,10 @@ clip with its own `compose crop` region keeps that crop either way. The same opt
 `POST /api/v1/compose/projects/{name}/render` (list: `GET /api/v1/presets`) and on the MCP tool `render_timeline`
 (list: `list_export_presets`). Presets are about how to export, so they are not part of an edit plan.
 
+**Several renders at once** (the highlight reel plus shorts) run as a background queue with limited concurrency:
+`split-video compose render-queue batch.json`, `POST /api/v1/compose/render-queue`, MCP `queue_renders`; see
+[docs/render-queue.md](docs/render-queue.md).
+
 **Captions** (`--captions <style>`) burn the spoken words into the picture, on top of everything else, with the word
 being spoken highlighted. They come from the transcripts of the clips' assets (run `split-video transcribe` first; a clip
 whose asset has none is simply not captioned and is listed in the result's `captions.clips_without`), for the main video

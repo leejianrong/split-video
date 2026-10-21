@@ -183,11 +183,13 @@ class JobOut(BaseModel):
     message: str | None = None  # the item being worked on
     result: Any = None  # JSON summary: partial while running, final when done
     error: str | None = None
+    error_code: str | None = None  # the failure's exception class name (set with `error`)
     created_at: float  # unix seconds
     started_at: float | None = None
     finished_at: float | None = None
     cancel_requested: bool = False
     owner: str | None = None  # the id of the principal that submitted it (`local` in local mode)
+    group: str | None = None  # shared by jobs submitted together (a render batch id); null for a lone job
 
 
 class JobListOut(BaseModel):

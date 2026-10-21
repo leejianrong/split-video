@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import threading
 import time
 import uuid
@@ -46,9 +47,33 @@ JobState = Literal["queued", "running", "done", "error", "cancelled"]
 FINISHED_STATES: frozenset[str] = frozenset({"done", "error", "cancelled"})
 
 DEFAULT_MAX_WORKERS = 2
+# How many renders may run at once. ffmpeg renders are memory-heavy, so the default is low and the bound is hard.
+DEFAULT_RENDER_CONCURRENCY = 2
+MAX_RENDER_CONCURRENCY = 8
+RENDER_CONCURRENCY_ENV = "SPLIT_VIDEO_RENDER_CONCURRENCY"
 # Finished jobs are kept in memory so `status`/`result` work by id after completion. Past this many,
 # the oldest finished job is forgotten (running and queued jobs are never evicted).
 DEFAULT_MAX_RETAINED = 1000
+
+
+def check_render_concurrency(value: int) -> int:
+    """`value` if it is a usable number of simultaneous renders (1..MAX_RENDER_CONCURRENCY), else ValueError."""
+    if not 1 <= value <= MAX_RENDER_CONCURRENCY:
+        raise ValueError(f"render concurrency must be between 1 and {MAX_RENDER_CONCURRENCY}, got {value}")
+    return value
+
+
+def render_concurrency_from_env() -> int:
+    """The configured render concurrency: `SPLIT_VIDEO_RENDER_CONCURRENCY`, else the default (2)."""
+    raw = os.environ.get(RENDER_CONCURRENCY_ENV, "").strip()
+    if not raw:
+        return DEFAULT_RENDER_CONCURRENCY
+    try:
+        return check_render_concurrency(int(raw))
+    except ValueError:
+        raise ValueError(
+            f"{RENDER_CONCURRENCY_ENV} must be a whole number between 1 and {MAX_RENDER_CONCURRENCY}, got {raw!r}"
+        ) from None
 
 
 class JobError(Exception):
@@ -96,6 +121,8 @@ class JobInfo:
     finished_at: float | None = None
     cancel_requested: bool = False
     owner: str | None = None  # the id of the principal that submitted it (see identity.py); None: no request
+    error_code: str | None = None  # the failure's exception class name, set with `error`
+    group: str | None = None  # an id shared by jobs submitted together (a render batch); None: on its own
 
     @property
     def finished(self) -> bool:
@@ -160,9 +187,10 @@ class JobQueue(Protocol):
         label: str | None = None,
         total: int = 0,
         owner: str | None = None,
+        group: str | None = None,
     ) -> str:
         """Queue `work`, to be called with a `JobContext`, and return the job's opaque id.
-        `total` is the initial progress total (0 if unknown yet)."""
+        `total` is the initial progress total (0 if unknown yet). `group` tags jobs submitted together."""
         ...
 
     def record_done(
@@ -170,6 +198,25 @@ class JobQueue(Protocol):
     ) -> str:
         """Register a job that is already `done` (nothing to run, e.g. the result was cached),
         so a client's submit-then-poll flow is the same either way."""
+        ...
+
+    def record_failed(
+        self,
+        kind: str,
+        *,
+        error: str,
+        error_code: str | None = None,
+        label: str | None = None,
+        total: int = 0,
+        owner: str | None = None,
+        group: str | None = None,
+    ) -> str:
+        """Register a job that has already failed (a request rejected before it could run), so a batch
+        submit returns one job id per request, in order, whether or not each one could start."""
+        ...
+
+    def concurrency(self, kind: str) -> int:
+        """How many jobs of this kind run at once at most."""
         ...
 
     def status(self, job_id: str) -> JobInfo:
@@ -191,8 +238,8 @@ class JobQueue(Protocol):
         """Block until the job is finished or `timeout` seconds pass; returns the snapshot."""
         ...
 
-    def list(self, *, kind: str | None = None, state: str | None = None) -> list[JobInfo]:
-        """Known jobs, newest first, optionally of one kind and/or state."""
+    def list(self, *, kind: str | None = None, state: str | None = None, group: str | None = None) -> list[JobInfo]:
+        """Known jobs, newest first, optionally of one kind, state and/or group."""
         ...
 
     def subscribe(self, listener: JobListener) -> Callable[[], None]:
@@ -264,7 +311,10 @@ class JobContext:
 class InProcessJobQueue:
     """Runs jobs on a bounded pool of daemon threads in this process.
 
-    At most `max_workers` jobs run at once; the rest wait as `queued`. State lives in memory
+    At most `max_workers` jobs run at once; the rest wait as `queued`. `kind_limits` caps how many jobs
+    of one kind run at once (renders are capped below the pool size, so they cannot starve a proxy or an
+    analysis, and a long queue of them cannot exhaust memory); a job over its kind's cap waits while
+    others behind it may run. State lives in memory
     for the life of the process, so ids are only good until restart; the newest
     `max_retained` finished jobs are kept and the oldest forgotten beyond that. With
     `synchronous=True` there are no threads: `submit` runs the work to completion before
@@ -277,9 +327,14 @@ class InProcessJobQueue:
         max_retained: int = DEFAULT_MAX_RETAINED,
         *,
         synchronous: bool = False,
+        kind_limits: dict[str, int] | None = None,
     ) -> None:
         if max_workers < 1 or max_retained < 1:
             raise ValueError("max_workers and max_retained must be at least 1")
+        if any(limit < 1 for limit in (kind_limits or {}).values()):
+            raise ValueError("a kind's concurrency limit must be at least 1")
+        self._kind_limits = dict(kind_limits or {})
+        self._running_by_kind: dict[str, int] = {}
         self._max_workers = max_workers
         self._max_retained = max_retained
         self._synchronous = synchronous
@@ -303,11 +358,12 @@ class InProcessJobQueue:
         label: str | None = None,
         total: int = 0,
         owner: str | None = None,
+        group: str | None = None,
     ) -> str:
         with self._lock:
             if self._closed:
                 raise JobError("the job queue is shut down")
-            job = self._new_job(kind, work, label, total, owner)
+            job = self._new_job(kind, work, label, total, owner, group)
             self._emit(JobSubmitted(job.info))
             if not self._synchronous:
                 self._pending.append(job)
@@ -330,8 +386,35 @@ class InProcessJobQueue:
             self._set_state(job, "done", started_at=now, finished_at=now, completed=total, result=_json_safe(result))
         return job.info.id
 
+    def record_failed(
+        self,
+        kind: str,
+        *,
+        error: str,
+        error_code: str | None = None,
+        label: str | None = None,
+        total: int = 0,
+        owner: str | None = None,
+        group: str | None = None,
+    ) -> str:
+        with self._lock:
+            job = self._new_job(kind, None, label, total, owner, group)
+            self._emit(JobSubmitted(job.info))
+            self._set_state(job, "error", finished_at=time.time(), error=error, error_code=error_code)
+        return job.info.id
+
+    def concurrency(self, kind: str) -> int:
+        """At most this many jobs of `kind` run at once (the pool size if the kind has no cap of its own)."""
+        return min(self._kind_limits.get(kind, self._max_workers), self._max_workers)
+
     def _new_job(
-        self, kind: str, work: Callable[[JobContext], Any] | None, label: str | None, total: int, owner: str | None
+        self,
+        kind: str,
+        work: Callable[[JobContext], Any] | None,
+        label: str | None,
+        total: int,
+        owner: str | None,
+        group: str | None = None,
     ) -> _Job:
         info = JobInfo(
             id=uuid.uuid4().hex,
@@ -341,6 +424,7 @@ class InProcessJobQueue:
             total=total,
             created_at=time.time(),
             owner=owner,
+            group=group,
         )
         job = _Job(info, work)
         self._jobs[info.id] = job
@@ -358,10 +442,16 @@ class InProcessJobQueue:
         with self._lock:
             return self._get(job_id).info
 
-    def list(self, *, kind: str | None = None, state: str | None = None) -> list[JobInfo]:
+    def list(self, *, kind: str | None = None, state: str | None = None, group: str | None = None) -> list[JobInfo]:
         with self._lock:
             infos = [j.info for j in reversed(self._jobs.values())]
-        return [i for i in infos if (kind is None or i.kind == kind) and (state is None or i.state == state)]
+        return [
+            i
+            for i in infos
+            if (kind is None or i.kind == kind)
+            and (state is None or i.state == state)
+            and (group is None or i.group == group)
+        ]
 
     def result(self, job_id: str) -> Any:
         with self._lock:
@@ -451,14 +541,29 @@ class InProcessJobQueue:
         while True:
             with self._changed:
                 self._idle += 1
-                while not self._pending and not self._closed:
+                while (job := self._take_runnable()) is None and not self._closed:
                     self._changed.wait()
                 self._idle -= 1
-                if not self._pending:
+                if job is None:
                     self._workers -= 1
                     return
-                job = self._pending.popleft()
-            self._run(job)
+                # Claimed under the lock, before the job is `running`, so two workers cannot both take the last slot.
+                self._running_by_kind[job.info.kind] = self._running_by_kind.get(job.info.kind, 0) + 1
+            try:
+                self._run(job)
+            finally:
+                with self._changed:
+                    self._running_by_kind[job.info.kind] -= 1
+                    self._changed.notify_all()  # a job of this kind that was over its cap can start now
+
+    def _take_runnable(self) -> _Job | None:
+        """The oldest queued job whose kind is under its concurrency cap, removed from the queue (lock held)."""
+        for job in self._pending:
+            limit = self._kind_limits.get(job.info.kind)
+            if limit is None or self._running_by_kind.get(job.info.kind, 0) < limit:
+                self._pending.remove(job)
+                return job
+        return None
 
     def _run(self, job: _Job) -> None:
         with self._lock:
@@ -469,6 +574,7 @@ class InProcessJobQueue:
         outcome: JobState
         value: Any = None
         error: str | None = None
+        error_code: str | None = None
         try:
             value = job.work(JobContext(self, job))
             outcome = "done"
@@ -478,6 +584,7 @@ class InProcessJobQueue:
             log.info("job %s (%s) failed", job.info.id, job.info.kind, exc_info=True)
             outcome = "error"
             error = str(exc) or type(exc).__name__
+            error_code = type(exc).__name__
         with self._lock:
             if outcome == "error" and job.info.cancel_requested:
                 outcome = "cancelled"  # stopping it (e.g. killing ffmpeg) is what made it fail
@@ -489,6 +596,7 @@ class InProcessJobQueue:
                     changes["result"] = summary
             elif outcome == "error":
                 changes["error"] = error
+                changes["error_code"] = error_code
             self._set_state(job, outcome, **changes)
 
     # --- shared bookkeeping (call with the lock held) ------------------------------------

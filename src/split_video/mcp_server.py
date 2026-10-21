@@ -46,6 +46,7 @@ from split_video import (
     presets,
     project,
     proxy,
+    render_queue,
     scenes,
     search,
     time_index,
@@ -59,6 +60,14 @@ from split_video.editor.cache import ClassificationCache
 from split_video.editor.classify import ModelNotFoundError
 from split_video.errors import RevisionConflictError
 from split_video.ffmpeg import ExtractError, FfmpegNotFoundError, ProbeError
+from split_video.jobs import (
+    RENDER,
+    InProcessJobQueue,
+    JobError,
+    JobQueue,
+    check_render_concurrency,
+    render_concurrency_from_env,
+)
 from split_video.local_media_store import LocalMediaStore
 from split_video.local_store import LocalProjectStore
 from split_video.media_store import MediaNotFoundError, MediaOutsideRootError, MediaStore
@@ -86,6 +95,8 @@ _EXPECTED_ERRORS = (
     time_index.TimeIndexError,
     media_report.MediaReportError,
     highlights.HighlightsError,
+    render_queue.RenderQueueError,
+    JobError,
 )
 
 _READ_ONLY = ToolAnnotations(read_only_hint=True, destructive_hint=False, idempotent_hint=True, open_world_hint=False)
@@ -117,6 +128,8 @@ for list_videos) -> trim_timeline_clip / move_timeline_clip /
 remove_timeline_clip / set_timeline_transition -> show_timeline to review ->
 render_timeline (`captions` burns in word-highlighted captions from the clips' transcripts: transcribe_asset
 first, styles in list_caption_styles). Clips are numbered from 1 in track order.
+For several renders at once (a highlight reel plus shorts), queue_renders runs them in the background a few at a
+time; check them with render_queue_status and stop them with cancel_renders.
 
 Clips reference media by asset id (a_ plus 16 hex digits), not path: list_assets shows
 the ids, paths and stream info of every file in the library (scan_library adds a folder's
@@ -148,10 +161,25 @@ def conflict_text(exc: RevisionConflictError) -> str:
     )
 
 
-def create_server(root: Path, store: ProjectStore | None = None, media: MediaStore | None = None) -> MCPServer:
+def create_server(
+    root: Path,
+    store: ProjectStore | None = None,
+    media: MediaStore | None = None,
+    jobs: JobQueue | None = None,
+    render_concurrency: int | None = None,
+) -> MCPServer:
     """`store` and `media` default to local-disk stores under `root` (sidecar
-    files next to the videos); tests pass in-memory ones."""
+    files next to the videos); tests pass in-memory ones. Queued renders (`queue_renders`) run on `jobs`, by
+    default an in-process queue for the life of the server that runs `render_concurrency` of them at once
+    (default: `SPLIT_VIDEO_RENDER_CONCURRENCY`, else 2)."""
     root = root.resolve()
+    if jobs is None:
+        limit = (
+            render_concurrency_from_env()
+            if render_concurrency is None
+            else check_render_concurrency(render_concurrency)
+        )
+        jobs = InProcessJobQueue(max_workers=limit, kind_limits={RENDER: limit})
     store = store if store is not None else LocalProjectStore(root)
     media = media if media is not None else LocalMediaStore(root)
     server = MCPServer("split-video", instructions=INSTRUCTIONS)
@@ -1315,6 +1343,38 @@ def create_server(root: Path, store: ProjectStore | None = None, media: MediaSto
             return timeline_service.render_result(name, filename, project_, used)
 
         return await run(work)
+
+    @server.tool(annotations=_REPLACES_PROJECT)
+    async def queue_renders(renders: list[dict[str, Any]]) -> dict[str, Any]:
+        """Queue several renders at once and return immediately (they run in the background, a few at a time:
+        see `concurrency` in the result). Each item of `renders` is the options of render_timeline plus the
+        timeline: {project, output, overwrite, width, height, preset, fit, captions, caption_range,
+        caption_font_size, caption_highlight_color, caption_position, caption_tracks}; e.g. one highlight reel
+        {project: "reel", preset: "youtube-1080p"} and several shorts {project: "clip1", preset: "vertical-1080",
+        captions: "shorts"}. At most 50. Give each render of one timeline its own `output`. Returns
+        {batch_id, concurrency, total, counts, finished, jobs: [{index, job_id, output, state, progress, error,
+        result}]} with one job per item in order; state is queued, running, done, failed or cancelled. A render that
+        cannot start (unknown timeline, bad preset, output exists) is already `failed` with error {code, message}
+        and does not stop the others; neither does one that fails later. Poll with render_queue_status, stop with
+        cancel_renders."""
+        return await run(lambda: render_queue.submit_batch(jobs, store, media, renders))
+
+    @server.tool(annotations=_READ_ONLY)
+    async def render_queue_status(batch_id: str | None = None) -> dict[str, Any]:
+        """The state of queued renders: one batch (`batch_id`, from queue_renders) or, without it, every render this
+        server remembers. Same shape as queue_renders: per job state (queued, running, done, failed, cancelled),
+        progress 0..1, error {code, message} when failed and, when done, result (name, output, duration, preset,
+        fit, width, height, fps, captions). `finished` is true once nothing is queued or running."""
+        if batch_id is None:
+            return await run(lambda: render_queue.queue_status(jobs))
+        return await run(lambda: render_queue.batch_status(jobs, batch_id))
+
+    @server.tool(annotations=_REPLACES_PROJECT)
+    async def cancel_renders(batch_id: str | None = None, job_id: str | None = None) -> dict[str, Any]:
+        """Cancel the unfinished renders of a batch (`batch_id`) or one render (`job_id`); give exactly one. Queued
+        renders never start; running ones have ffmpeg terminated and their partial output file deleted. Finished
+        renders are left alone, and the others are not affected. Returns the batch's status as render_queue_status."""
+        return await run(lambda: render_queue.cancel_renders(jobs, batch_id=batch_id, job_id=job_id))
 
     @server.tool(annotations=_READ_ONLY)
     async def list_export_presets() -> dict[str, Any]:

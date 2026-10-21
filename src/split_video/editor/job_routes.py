@@ -30,11 +30,13 @@ def job_out(info: JobInfo) -> JobOut:
         message=info.message,
         result=info.result,
         error=info.error,
+        error_code=info.error_code,
         created_at=info.created_at,
         started_at=info.started_at,
         finished_at=info.finished_at,
         cancel_requested=info.cancel_requested,
         owner=info.owner,
+        group=info.group,
     )
 
 

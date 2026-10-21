@@ -1295,6 +1295,17 @@
             ],
             "title": "Error"
           },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
           "finished_at": {
             "anyOf": [
               {
@@ -1309,6 +1320,17 @@
           "fraction": {
             "title": "Fraction",
             "type": "number"
+          },
+          "group": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Group"
           },
           "id": {
             "title": "Id",
@@ -2955,6 +2977,349 @@
           "path"
         ],
         "title": "RegisterAssetRequest",
+        "type": "object"
+      },
+      "RenderQueueCounts": {
+        "properties": {
+          "cancelled": {
+            "title": "Cancelled",
+            "type": "integer"
+          },
+          "done": {
+            "title": "Done",
+            "type": "integer"
+          },
+          "failed": {
+            "title": "Failed",
+            "type": "integer"
+          },
+          "queued": {
+            "title": "Queued",
+            "type": "integer"
+          },
+          "running": {
+            "title": "Running",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "queued",
+          "running",
+          "done",
+          "failed",
+          "cancelled"
+        ],
+        "title": "RenderQueueCounts",
+        "type": "object"
+      },
+      "RenderQueueErrorOut": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "RenderQueueErrorOut",
+        "type": "object"
+      },
+      "RenderQueueItem": {
+        "description": "One render of a batch: the same options as `RenderRequest`, plus the timeline to render.",
+        "properties": {
+          "caption_font_size": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Caption Font Size"
+          },
+          "caption_highlight_color": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Caption Highlight Color"
+          },
+          "caption_position": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Caption Position"
+          },
+          "caption_range": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CaptionRange"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "caption_tracks": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Caption Tracks"
+          },
+          "captions": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Captions"
+          },
+          "fit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fit"
+          },
+          "height": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Height"
+          },
+          "output": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output"
+          },
+          "overwrite": {
+            "default": false,
+            "title": "Overwrite",
+            "type": "boolean"
+          },
+          "preset": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preset"
+          },
+          "project": {
+            "title": "Project",
+            "type": "string"
+          },
+          "width": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Width"
+          }
+        },
+        "required": [
+          "project"
+        ],
+        "title": "RenderQueueItem",
+        "type": "object"
+      },
+      "RenderQueueJobOut": {
+        "properties": {
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RenderQueueErrorOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "index": {
+            "title": "Index",
+            "type": "integer"
+          },
+          "job_id": {
+            "title": "Job Id",
+            "type": "string"
+          },
+          "output": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output"
+          },
+          "progress": {
+            "title": "Progress",
+            "type": "number"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "index",
+          "job_id",
+          "output",
+          "state",
+          "progress"
+        ],
+        "title": "RenderQueueJobOut",
+        "type": "object"
+      },
+      "RenderQueueOut": {
+        "properties": {
+          "batch_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Batch Id"
+          },
+          "concurrency": {
+            "title": "Concurrency",
+            "type": "integer"
+          },
+          "counts": {
+            "$ref": "#/components/schemas/RenderQueueCounts"
+          },
+          "finished": {
+            "title": "Finished",
+            "type": "boolean"
+          },
+          "jobs": {
+            "items": {
+              "$ref": "#/components/schemas/RenderQueueJobOut"
+            },
+            "title": "Jobs",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "batch_id",
+          "concurrency",
+          "total",
+          "counts",
+          "finished",
+          "jobs"
+        ],
+        "title": "RenderQueueOut",
+        "type": "object"
+      },
+      "RenderQueueRequest": {
+        "properties": {
+          "renders": {
+            "items": {
+              "$ref": "#/components/schemas/RenderQueueItem"
+            },
+            "title": "Renders",
+            "type": "array"
+          }
+        },
+        "required": [
+          "renders"
+        ],
+        "title": "RenderQueueRequest",
         "type": "object"
       },
       "RenderRequest": {
@@ -9214,6 +9579,181 @@
           }
         },
         "summary": "Add Text"
+      }
+    },
+    "/api/v1/compose/render-queue": {
+      "get": {
+        "description": "Every render this server still remembers (all batches and single renders), in the order queued.",
+        "operationId": "render_queue_overview_api_v1_compose_render_queue_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RenderQueueOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedOut"
+                }
+              }
+            },
+            "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
+          }
+        },
+        "summary": "Render Queue Overview"
+      },
+      "post": {
+        "description": "Queue several renders at once (the timelines in `renders`, each with the options of a single render) and\nreturn the batch: one job per render, in order. At most `concurrency` run at the same time; the rest wait.\nA render that cannot start (unknown timeline, bad preset, output exists) comes back already `failed` and does\nnot affect the others, and neither does one that fails later. Poll the batch with\n`GET /compose/render-queue/{batch_id}`.",
+        "operationId": "queue_renders_api_v1_compose_render_queue_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RenderQueueRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RenderQueueOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedOut"
+                }
+              }
+            },
+            "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Queue Renders"
+      }
+    },
+    "/api/v1/compose/render-queue/{batch_id}": {
+      "get": {
+        "operationId": "render_queue_batch_api_v1_compose_render_queue__batch_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "batch_id",
+            "required": true,
+            "schema": {
+              "title": "Batch Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RenderQueueOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedOut"
+                }
+              }
+            },
+            "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Render Queue Batch"
+      }
+    },
+    "/api/v1/compose/render-queue/{batch_id}/cancel": {
+      "post": {
+        "description": "Cancel every render of the batch that has not finished: queued ones never start, running ones have ffmpeg\nterminated and their partial output deleted. Idempotent. Cancel just one with `POST /jobs/{job_id}/cancel`.",
+        "operationId": "render_queue_cancel_api_v1_compose_render_queue__batch_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "batch_id",
+            "required": true,
+            "schema": {
+              "title": "Batch Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RenderQueueOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedOut"
+                }
+              }
+            },
+            "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Render Queue Cancel"
       }
     },
     "/api/v1/compose/render/{job_id}": {
