@@ -24,6 +24,8 @@ isn't checked against what you last saw).
 
 from __future__ import annotations
 
+import functools
+import inspect
 import json
 from pathlib import Path
 from typing import Any
@@ -57,13 +59,10 @@ from split_video import (
 )
 from split_video import captions as captions_module
 from split_video.editor.cache import ClassificationCache
-from split_video.editor.classify import ModelNotFoundError
-from split_video.errors import RevisionConflictError
-from split_video.ffmpeg import ExtractError, FfmpegNotFoundError, ProbeError
+from split_video.error_catalogue import error_dict
 from split_video.jobs import (
     RENDER,
     InProcessJobQueue,
-    JobError,
     JobQueue,
     check_render_concurrency,
     render_concurrency_from_env,
@@ -72,32 +71,7 @@ from split_video.local_media_store import LocalMediaStore
 from split_video.local_store import LocalProjectStore
 from split_video.media_store import MediaNotFoundError, MediaOutsideRootError, MediaStore
 from split_video.store import ProjectStore
-from split_video.timeline import TimelineError
-
-_EXPECTED_ERRORS = (
-    project.ProjectError,
-    TimelineError,
-    FfmpegNotFoundError,
-    ProbeError,
-    ExtractError,
-    ModelNotFoundError,
-    frames.FrameError,  # also the base of the contact-sheet errors
-    transcribe.TranscriptionError,
-    transcribe.TranscriptionUnavailableError,
-    transcript_search.TranscriptNotFoundError,
-    transcript_search.TranscriptQueryError,
-    ocr.OcrError,
-    ocr.OcrUnavailableError,
-    ocr.OcrNotFoundError,
-    ocr.OcrArgumentError,
-    search.SearchNotFoundError,
-    search.SearchQueryError,
-    time_index.TimeIndexError,
-    media_report.MediaReportError,
-    highlights.HighlightsError,
-    render_queue.RenderQueueError,
-    JobError,
-)
+from split_video.timeline import OutsideRootError, SourceNotFoundError, TimelineError
 
 _READ_ONLY = ToolAnnotations(read_only_hint=True, destructive_hint=False, idempotent_hint=True, open_world_hint=False)
 _EDITS_PROJECT = ToolAnnotations(read_only_hint=False, destructive_hint=False, open_world_hint=False)
@@ -145,20 +119,44 @@ add_timeline_text puts titles over the picture. Later video tracks draw on top.
 """
 
 
-def conflict_text(exc: RevisionConflictError) -> str:
-    """The tool error for a stale write: JSON, so an agent can read `current_revision` without parsing prose."""
-    return json.dumps(
-        {
-            "error": "revision_conflict",
-            "current_revision": exc.current,
-            "base_revision": exc.base,
-            "message": (
-                f"{exc.kind} {exc.project!r} is at revision {exc.current}, but your change was based on revision "
-                f"{exc.base}, so nothing was written. Re-read the project (list_segments or show_timeline), "
-                f"re-apply your change on top of the latest version, and retry with base_revision={exc.current}."
-            ),
-        }
-    )
+def error_text(exc: BaseException) -> str:
+    """The tool error for any failure: the error catalogue's payload (docs/errors.md) as JSON, so an agent reads
+    `code` and `fix` instead of parsing prose. A stale write also keeps the `error`, `current_revision` and
+    `base_revision` keys it always had."""
+    return json.dumps(error_dict(exc))
+
+
+def structured_errors(fn):
+    """`fn` as a tool whose every failure is a `ToolError` carrying `error_text`. A `ToolError` the tool raised itself
+    (a bad combination of arguments) is a `request.invalid` error with its message."""
+
+    def fail(exc: Exception) -> ToolError:
+        if isinstance(exc, ToolError):
+            text = str(exc)
+            if text.startswith("{") and '"code"' in text:
+                return exc
+            exc = ValueError(text)
+        return ToolError(error_text(exc))
+
+    if inspect.iscoroutinefunction(fn):
+
+        @functools.wraps(fn)
+        async def wrapper(*args, **kwargs):
+            try:
+                return await fn(*args, **kwargs)
+            except Exception as exc:  # noqa: BLE001 - every failure becomes a structured tool error
+                raise fail(exc) from None
+
+    else:
+
+        @functools.wraps(fn)
+        def wrapper(*args, **kwargs):
+            try:
+                return fn(*args, **kwargs)
+            except Exception as exc:  # noqa: BLE001 - every failure becomes a structured tool error
+                raise fail(exc) from None
+
+    return wrapper
 
 
 def create_server(
@@ -183,15 +181,23 @@ def create_server(
     store = store if store is not None else LocalProjectStore(root)
     media = media if media is not None else LocalMediaStore(root)
     server = MCPServer("split-video", instructions=INSTRUCTIONS)
+    register_tool = server.tool
+
+    def tool(*args: Any, **kwargs: Any):
+        """`server.tool`, with every failure of the tool turned into the structured error (see `error_text`)."""
+        decorate = register_tool(*args, **kwargs)
+        return lambda fn: decorate(structured_errors(fn))
+
+    server.tool = tool  # type: ignore[method-assign]
 
     def resolve(video: str) -> str:
         """A video's canonical media id (also its id in the project store)."""
         try:
             media_id = media.resolve_user_path(video)
         except MediaOutsideRootError:
-            raise ToolError(f"{video} is outside the allowed root directory") from None
+            raise OutsideRootError(f"{video} is outside the allowed root directory") from None
         if not media.is_file(media_id):
-            raise ToolError(f"video not found: {video}")
+            raise SourceNotFoundError(f"video not found: {video}")
         return media_id
 
     def current_segments(source: str) -> list:
@@ -205,12 +211,7 @@ def create_server(
     async def run(fn, *args, **kwargs):
         """Run blocking work (ffmpeg, YAMNet) off the event loop, turning the
         anticipated failures into a tool error the model can read."""
-        try:
-            return await anyio.to_thread.run_sync(lambda: fn(*args, **kwargs))
-        except RevisionConflictError as exc:
-            raise ToolError(conflict_text(exc)) from None
-        except _EXPECTED_ERRORS as exc:
-            raise ToolError(str(exc)) from None
+        return await anyio.to_thread.run_sync(lambda: fn(*args, **kwargs))
 
     def result(source: str, segments: list, revision: int, **extra: Any) -> dict[str, Any]:
         return {
@@ -227,9 +228,9 @@ def create_server(
         try:
             listing = await anyio.to_thread.run_sync(media.list_dir, directory)
         except MediaOutsideRootError:
-            raise ToolError(f"{directory} is outside the allowed root directory") from None
+            raise OutsideRootError(f"{directory} is outside the allowed root directory") from None
         except MediaNotFoundError:
-            raise ToolError(f"directory not found: {directory}") from None
+            raise SourceNotFoundError(f"directory not found: {directory}") from None
         return {
             "directory": listing.cwd,
             "entries": [
@@ -460,9 +461,9 @@ def create_server(
         try:
             report = (await run(library.scan, media, folder)).to_dict()
         except MediaOutsideRootError:
-            raise ToolError(f"{folder} is outside the allowed root directory") from None
+            raise OutsideRootError(f"{folder} is outside the allowed root directory") from None
         except MediaNotFoundError:
-            raise ToolError(f"folder not found: {folder}") from None
+            raise SourceNotFoundError(f"folder not found: {folder}") from None
         if proxies:
             ids = [a["id"] for a in report["added"] if (await run(assets.get_asset, media, a["id"])).has_video]
             report["proxies"] = [await run(proxy.prepare, media, asset_id) for asset_id in ids]
@@ -505,7 +506,9 @@ def create_server(
         shows `transcript` per asset."""
         found = await run(transcribe.load, media, asset)
         if found is None:
-            raise ToolError(f"asset {asset} has no transcript yet: run transcribe_asset first")
+            raise transcript_search.TranscriptNotFoundError(
+                f"asset {asset} has no transcript yet: run transcribe_asset first"
+            )
         return transcribe.excerpt(found, start, end)
 
     @server.tool(annotations=_READ_ONLY)
@@ -678,7 +681,7 @@ def create_server(
         the second the first value covers). Run analyze_scenes first: without signals this is a tool error."""
         found = await run(scenes.load, media, asset)
         if found is None:
-            raise ToolError(f"asset {asset} has no scene signals yet: run analyze_scenes first")
+            raise search.SearchNotFoundError(f"asset {asset} has no scene signals yet: run analyze_scenes first")
         return scenes.excerpt(found, start, end)
 
     @server.tool(annotations=_EDITS_PROJECT)

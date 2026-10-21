@@ -19,10 +19,9 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from split_video import project
+from split_video import cli_errors, project
 from split_video.editor.cache import ClassificationCache
 from split_video.editor.classify import ModelNotFoundError
-from split_video.errors import RevisionConflictError
 from split_video.ffmpeg import ExtractError, FfmpegNotFoundError, ProbeError
 from split_video.local_media_store import LocalMediaStore
 from split_video.local_store import LocalProjectStore
@@ -50,27 +49,9 @@ CONFLICT_EXIT_CODE = 3
 
 
 def _fail(exc: Exception, as_json: bool = False, source: Path | None = None) -> typer.Exit:
-    """Report `exc` and return the exit to raise. A revision conflict exits with code 3 and says how
-    to retry; with `--json` it is also printed to stdout as `{"error": "revision_conflict", ...}`."""
-    if isinstance(exc, RevisionConflictError):
-        video = f" {source}" if source is not None else " VIDEO"
-        error_console.print(
-            f"[red]Error:[/red] revision conflict: the project is at revision {exc.current}, but this change was "
-            f"based on revision {exc.base}, so nothing was written. Run `split-video segments{video}` to see the "
-            f"latest, re-apply your change, and retry with --base-revision {exc.current}."
-        )
-        if as_json:
-            _emit_json(
-                {
-                    "error": "revision_conflict",
-                    "current_revision": exc.current,
-                    "base_revision": exc.base,
-                    "message": str(exc),
-                }
-            )
-        return typer.Exit(code=CONFLICT_EXIT_CODE)
-    error_console.print(f"[red]Error:[/red] {exc}")
-    return typer.Exit(code=1)
+    """Report `exc` (the error catalogue's `Error:` / `Fix:` lines, plus the JSON payload with `--json`) and return
+    the exit to raise; a revision conflict exits with code 3."""
+    return cli_errors.fail(exc, as_json)
 
 
 def _stores(source: Path) -> tuple[ProjectStore, MediaStore, str]:
@@ -112,7 +93,7 @@ def _time(text: str) -> float:
     try:
         return parse_time(text)
     except ValueError as exc:
-        raise typer.BadParameter(str(exc)) from None
+        raise cli_errors.fail(exc, exit_code=2) from None
 
 
 def _emit_json(payload: dict[str, Any]) -> None:

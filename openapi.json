@@ -210,6 +210,47 @@
         "title": "AnalyzeStatusResponse",
         "type": "object"
       },
+      "ApiErrorOut": {
+        "description": "The body of an error response (409 and 422 bodies of some routes add their own fields to these).",
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "details": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Details"
+          },
+          "fix": {
+            "title": "Fix",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "detail",
+          "code",
+          "message",
+          "fix"
+        ],
+        "title": "ApiErrorOut",
+        "type": "object"
+      },
       "AssetListOut": {
         "properties": {
           "assets": {
@@ -1306,6 +1347,20 @@
             ],
             "title": "Error Code"
           },
+          "error_info": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Info"
+          },
           "finished_at": {
             "anyOf": [
               {
@@ -2002,6 +2057,11 @@
             "title": "Applied",
             "type": "integer"
           },
+          "code": {
+            "default": "ops.invalid",
+            "title": "Code",
+            "type": "string"
+          },
           "detail": {
             "title": "Detail",
             "type": "string"
@@ -2021,6 +2081,14 @@
             },
             "title": "Errors",
             "type": "array"
+          },
+          "fix": {
+            "title": "Fix",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
           },
           "ok": {
             "default": false,
@@ -2066,6 +2134,8 @@
           }
         },
         "required": [
+          "message",
+          "fix",
           "detail",
           "errors",
           "warnings",
@@ -2208,6 +2278,11 @@
       },
       "PlanInvalidOut": {
         "properties": {
+          "code": {
+            "default": "plan.invalid",
+            "title": "Code",
+            "type": "string"
+          },
           "detail": {
             "title": "Detail",
             "type": "string"
@@ -2223,6 +2298,14 @@
             },
             "title": "Errors",
             "type": "array"
+          },
+          "fix": {
+            "title": "Fix",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
           },
           "ok": {
             "default": false,
@@ -2249,6 +2332,8 @@
           }
         },
         "required": [
+          "message",
+          "fix",
           "detail",
           "errors",
           "warnings",
@@ -3018,6 +3103,17 @@
             "title": "Code",
             "type": "string"
           },
+          "fix": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fix"
+          },
           "message": {
             "title": "Message",
             "type": "string"
@@ -3772,6 +3868,11 @@
             ],
             "title": "Base Revision"
           },
+          "code": {
+            "default": "revision.conflict",
+            "title": "Code",
+            "type": "string"
+          },
           "current_revision": {
             "title": "Current Revision",
             "type": "integer"
@@ -3780,14 +3881,36 @@
             "title": "Detail",
             "type": "string"
           },
+          "details": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Details"
+          },
           "error": {
             "default": "revision_conflict",
             "title": "Error",
+            "type": "string"
+          },
+          "fix": {
+            "title": "Fix",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
             "type": "string"
           }
         },
         "required": [
           "detail",
+          "message",
+          "fix",
           "current_revision",
           "base_revision"
         ],
@@ -5341,6 +5464,16 @@
             },
             "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
           },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -5350,6 +5483,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
           }
         },
         "summary": "Analyze"
@@ -5390,6 +5533,16 @@
             },
             "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
           },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -5399,6 +5552,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
           }
         },
         "summary": "Analyze Status"
@@ -5440,6 +5603,16 @@
             },
             "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
           },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -5449,6 +5622,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
           }
         },
         "summary": "Analyze Cancel"
@@ -5478,6 +5661,26 @@
               }
             },
             "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
           }
         },
         "summary": "List Assets"
@@ -5518,6 +5721,16 @@
             },
             "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
           },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -5527,6 +5740,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
           }
         },
         "summary": "Register Asset"
@@ -5568,6 +5791,16 @@
             },
             "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
           },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -5577,6 +5810,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
           }
         },
         "summary": "Get Asset"
@@ -5643,6 +5886,16 @@
             },
             "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
           },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -5652,6 +5905,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
           }
         },
         "summary": "What Is Happening"
@@ -5782,6 +6045,16 @@
             },
             "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
           },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -5791,6 +6064,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
           }
         },
         "summary": "Get Contact Sheet"
@@ -5906,6 +6189,16 @@
             },
             "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
           },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -5915,6 +6208,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
           }
         },
         "summary": "Get Contact Sheet Info"
@@ -6034,6 +6337,16 @@
             },
             "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
           },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -6043,6 +6356,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
           }
         },
         "summary": "Get Frame"
@@ -6224,6 +6547,16 @@
             },
             "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
           },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -6233,6 +6566,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
           }
         },
         "summary": "Get Highlights"
@@ -6338,6 +6681,16 @@
             },
             "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
           },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -6347,6 +6700,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
           }
         },
         "summary": "Get Ocr"
@@ -6403,6 +6766,16 @@
             },
             "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
           },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -6412,6 +6785,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
           }
         },
         "summary": "Start Ocr"
@@ -6542,6 +6925,16 @@
             },
             "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
           },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -6551,6 +6944,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
           }
         },
         "summary": "Search Ocr"
@@ -6590,6 +6993,16 @@
             },
             "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
           },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -6599,6 +7012,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
           }
         },
         "summary": "Get Proxy"
@@ -6655,6 +7078,16 @@
             },
             "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
           },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -6664,6 +7097,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
           }
         },
         "summary": "Make Proxy"
@@ -6745,6 +7188,16 @@
             },
             "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
           },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -6754,6 +7207,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
           }
         },
         "summary": "Reframe Asset"
@@ -6827,6 +7290,16 @@
             },
             "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
           },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -6836,6 +7309,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
           }
         },
         "summary": "Get Report"
@@ -6877,6 +7360,16 @@
             },
             "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
           },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -6886,6 +7379,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
           }
         },
         "summary": "Prepare Report"
@@ -6959,6 +7462,16 @@
             },
             "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
           },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -6968,6 +7481,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
           }
         },
         "summary": "Get Scenes"
@@ -7024,6 +7547,16 @@
             },
             "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
           },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -7033,6 +7566,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
           }
         },
         "summary": "Start Scene Analysis"
@@ -7179,6 +7722,16 @@
             },
             "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
           },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -7188,6 +7741,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
           }
         },
         "summary": "Search Asset"
@@ -7318,6 +7881,16 @@
             },
             "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
           },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -7327,6 +7900,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
           }
         },
         "summary": "Search Visual"
@@ -7366,6 +7949,16 @@
             },
             "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
           },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -7375,6 +7968,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
           }
         },
         "summary": "Get Thumbnails"
@@ -7416,6 +8019,16 @@
             },
             "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
           },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -7425,6 +8038,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
           }
         },
         "summary": "Get Thumbnails Info"
@@ -7514,6 +8137,16 @@
             },
             "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
           },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -7523,6 +8156,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
           }
         },
         "summary": "Timeline Index"
@@ -7581,6 +8224,16 @@
             },
             "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
           },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -7590,6 +8243,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
           }
         },
         "summary": "Start Transcription"
@@ -7735,6 +8398,16 @@
             },
             "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
           },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -7744,6 +8417,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
           }
         },
         "summary": "Get Transcript"
@@ -7884,6 +8567,16 @@
             },
             "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
           },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -7893,6 +8586,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
           }
         },
         "summary": "Search Transcript"
@@ -7934,6 +8637,16 @@
             },
             "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
           },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -7943,6 +8656,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
           }
         },
         "summary": "Browse"
@@ -7972,6 +8695,26 @@
               }
             },
             "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
           }
         },
         "summary": "List Caption Styles"
@@ -8014,6 +8757,16 @@
             },
             "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
           },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -8023,6 +8776,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
           }
         },
         "summary": "Classification"
@@ -8075,6 +8838,16 @@
             },
             "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
           },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -8084,6 +8857,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
           }
         },
         "summary": "Rethreshold Classification"
@@ -8112,6 +8895,26 @@
               }
             },
             "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
           }
         },
         "summary": "List Projects"
@@ -8149,6 +8952,16 @@
             },
             "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
           },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -8158,6 +8971,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
           }
         },
         "summary": "Create Project"
@@ -8198,6 +9021,16 @@
             },
             "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
           },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -8207,6 +9040,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
           }
         },
         "summary": "Get Project"
@@ -8275,6 +9118,16 @@
             },
             "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
           },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
+          },
           "409": {
             "content": {
               "application/json": {
@@ -8294,6 +9147,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
           }
         },
         "summary": "Add Clip"
@@ -8361,6 +9224,16 @@
             },
             "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
           },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
+          },
           "409": {
             "content": {
               "application/json": {
@@ -8380,6 +9253,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
           }
         },
         "summary": "Remove Clip"
@@ -8455,6 +9338,16 @@
             },
             "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
           },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
+          },
           "409": {
             "content": {
               "application/json": {
@@ -8474,6 +9367,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
           }
         },
         "summary": "Trim Clip"
@@ -8551,6 +9454,16 @@
             },
             "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
           },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
+          },
           "409": {
             "content": {
               "application/json": {
@@ -8570,6 +9483,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
           }
         },
         "summary": "Move Clip"
@@ -8647,6 +9570,16 @@
             },
             "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
           },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
+          },
           "409": {
             "content": {
               "application/json": {
@@ -8666,6 +9599,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
           }
         },
         "summary": "Place Clip"
@@ -8743,6 +9686,16 @@
             },
             "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
           },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
+          },
           "409": {
             "content": {
               "application/json": {
@@ -8762,6 +9715,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
           }
         },
         "summary": "Set Properties"
@@ -8839,6 +9802,16 @@
             },
             "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
           },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
+          },
           "409": {
             "content": {
               "application/json": {
@@ -8858,6 +9831,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
           }
         },
         "summary": "Set Text"
@@ -8935,6 +9918,16 @@
             },
             "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
           },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
+          },
           "409": {
             "content": {
               "application/json": {
@@ -8954,6 +9947,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
           }
         },
         "summary": "Set Transition"
@@ -9034,6 +10037,16 @@
             },
             "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
           },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
+          },
           "409": {
             "content": {
               "application/json": {
@@ -9053,6 +10066,16 @@
               }
             },
             "description": "The batch has problems; they are in `errors`. Nothing was written."
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
           }
         },
         "summary": "Apply Ops"
@@ -9133,6 +10156,16 @@
             },
             "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
           },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
+          },
           "409": {
             "content": {
               "application/json": {
@@ -9152,6 +10185,16 @@
               }
             },
             "description": "The plan has problems; every one is in `errors`. Nothing was written."
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
           }
         },
         "summary": "Apply Plan"
@@ -9202,6 +10245,16 @@
             },
             "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
           },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -9211,6 +10264,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
           }
         },
         "summary": "Start Render"
@@ -9279,6 +10342,16 @@
             },
             "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
           },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
+          },
           "409": {
             "content": {
               "application/json": {
@@ -9298,6 +10371,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
           }
         },
         "summary": "Add Track"
@@ -9365,6 +10448,16 @@
             },
             "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
           },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
+          },
           "409": {
             "content": {
               "application/json": {
@@ -9384,6 +10477,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
           }
         },
         "summary": "Remove Track"
@@ -9461,6 +10564,16 @@
             },
             "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
           },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
+          },
           "409": {
             "content": {
               "application/json": {
@@ -9480,6 +10593,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
           }
         },
         "summary": "Move Track"
@@ -9557,6 +10680,16 @@
             },
             "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
           },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
+          },
           "409": {
             "content": {
               "application/json": {
@@ -9576,6 +10709,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
           }
         },
         "summary": "Add Text"
@@ -9605,6 +10748,26 @@
               }
             },
             "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
           }
         },
         "summary": "Render Queue Overview"
@@ -9643,6 +10806,16 @@
             },
             "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
           },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -9652,6 +10825,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
           }
         },
         "summary": "Queue Renders"
@@ -9692,6 +10875,16 @@
             },
             "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
           },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -9701,6 +10894,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
           }
         },
         "summary": "Render Queue Batch"
@@ -9742,6 +10945,16 @@
             },
             "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
           },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -9751,6 +10964,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
           }
         },
         "summary": "Render Queue Cancel"
@@ -9791,6 +11014,16 @@
             },
             "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
           },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -9800,6 +11033,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
           }
         },
         "summary": "Render Status"
@@ -9841,6 +11084,16 @@
             },
             "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
           },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -9850,6 +11103,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
           }
         },
         "summary": "Render Cancel"
@@ -9902,6 +11165,16 @@
             },
             "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
           },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -9911,6 +11184,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
           }
         },
         "summary": "Detect"
@@ -10018,6 +11301,16 @@
             },
             "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
           },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -10027,6 +11320,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
           }
         },
         "summary": "Event stream (SSE)"
@@ -10079,6 +11382,16 @@
             },
             "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
           },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -10088,6 +11401,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
           }
         },
         "summary": "Export"
@@ -10128,6 +11451,16 @@
             },
             "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
           },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -10137,6 +11470,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
           }
         },
         "summary": "Export Status"
@@ -10178,6 +11521,16 @@
             },
             "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
           },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -10187,6 +11540,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
           }
         },
         "summary": "Export Cancel"
@@ -10251,6 +11614,16 @@
             },
             "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
           },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -10260,6 +11633,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
           }
         },
         "summary": "List Jobs"
@@ -10301,6 +11684,16 @@
             },
             "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
           },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -10310,6 +11703,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
           }
         },
         "summary": "Get Job"
@@ -10351,6 +11754,16 @@
             },
             "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
           },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -10360,6 +11773,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
           }
         },
         "summary": "Cancel"
@@ -10407,6 +11830,16 @@
             },
             "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
           },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -10416,6 +11849,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
           }
         },
         "summary": "Scan Library"
@@ -10455,6 +11898,16 @@
             },
             "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
           },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -10464,6 +11917,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
           }
         },
         "summary": "Media Asset"
@@ -10503,6 +11966,16 @@
             },
             "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
           },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -10512,6 +11985,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
           }
         },
         "summary": "Media File"
@@ -10552,6 +12035,16 @@
             },
             "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
           },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -10561,6 +12054,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
           }
         },
         "summary": "Get Media"
@@ -10600,6 +12103,16 @@
             },
             "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
           },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -10609,6 +12122,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
           }
         },
         "summary": "Open File"
@@ -10638,6 +12161,26 @@
               }
             },
             "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
           }
         },
         "summary": "List Presets"
@@ -10709,6 +12252,16 @@
             },
             "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
           },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
+          },
           "409": {
             "content": {
               "application/json": {
@@ -10728,6 +12281,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
           }
         },
         "summary": "Save Current Project"
@@ -10759,6 +12322,26 @@
               }
             },
             "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
           }
         },
         "summary": "Edit Ops Schema"
@@ -10790,6 +12373,26 @@
               }
             },
             "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
           }
         },
         "summary": "Edit Plan Schema"
@@ -10829,6 +12432,16 @@
             },
             "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
           },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -10838,6 +12451,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
           }
         },
         "summary": "Segments Endpoint"
@@ -10866,6 +12489,26 @@
               }
             },
             "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
           }
         },
         "summary": "Get Session"
@@ -10908,6 +12551,16 @@
             },
             "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
           },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -10917,6 +12570,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
           }
         },
         "summary": "Get State"
@@ -10959,6 +12622,16 @@
             },
             "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
           },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -10968,6 +12641,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
           }
         },
         "summary": "Waveform"
@@ -10997,6 +12680,26 @@
               }
             },
             "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
           }
         },
         "summary": "Whoami"

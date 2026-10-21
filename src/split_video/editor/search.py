@@ -12,11 +12,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, ConfigDict
 
 from split_video import assets, ocr, search, transcript_search
 from split_video.editor.context import RequestContext, make_context_dependency
+from split_video.editor.errors import api_error
 from split_video.editor.ocr import OcrSearchOut
 from split_video.media_store import MediaError
 from split_video.store_provider import StoreProvider
@@ -86,13 +87,13 @@ def make_router(provider: StoreProvider) -> APIRouter:
         try:
             asset = assets.get_asset(ctx.media, asset_id)
         except (TimelineError, MediaError) as exc:
-            raise HTTPException(status_code=404, detail=str(exc)) from None
+            raise api_error(404, exc) from None
         try:
             return call(ctx.media, asset.id, *args, **kwargs)
         except (search.SearchNotFoundError, ocr.OcrNotFoundError, transcript_search.TranscriptNotFoundError) as exc:
-            raise HTTPException(status_code=404, detail=str(exc)) from None
+            raise api_error(404, exc) from None
         except (search.SearchQueryError, ocr.OcrArgumentError, transcript_search.TranscriptQueryError) as exc:
-            raise HTTPException(status_code=422, detail=str(exc)) from None
+            raise api_error(422, exc) from None
 
     @router.get("/assets/{asset_id}/search", response_model=SearchOut)
     def search_asset(

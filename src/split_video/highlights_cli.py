@@ -15,7 +15,7 @@ import typer
 from rich.console import Console
 from rich.markup import escape
 
-from split_video import highlights
+from split_video import cli_errors, highlights
 from split_video.local_media_store import LocalMediaStore
 from split_video.media_store import MediaError
 from split_video.timefmt import format_timestamp, parse_time
@@ -41,7 +41,7 @@ def _seconds(text: str | None) -> float | None:
     try:
         return parse_time(text)
     except ValueError as exc:
-        raise typer.BadParameter(str(exc)) from None
+        raise cli_errors.fail(exc, exit_code=2) from None
 
 
 def highlights_cmd(
@@ -96,8 +96,7 @@ def highlights_cmd(
             snap=snap,
         )
     except _EXPECTED as exc:
-        error_console.print(f"[red]Error:[/red] {escape(str(exc))}")
-        raise typer.Exit(code=1) from None
+        raise cli_errors.fail(exc) from None
     if as_json:
         typer.echo(highlights.dumps(found))
         return

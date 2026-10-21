@@ -17,7 +17,7 @@ import typer
 from rich.console import Console
 from rich.markup import escape
 
-from split_video import assets, transcribe, transcript_search
+from split_video import assets, cli_errors, transcribe, transcript_search
 from split_video.ffmpeg import ExtractError, FfmpegNotFoundError, ProbeError
 from split_video.jobs import JobCancelledError
 from split_video.local_media_store import LocalMediaStore
@@ -49,8 +49,7 @@ def _asset_id(media: MediaStore, target: str) -> str:
 
 
 def _fail(exc: Exception) -> typer.Exit:
-    error_console.print(f"[red]Error:[/red] {escape(str(exc))}")  # the hint has `[transcribe]` in it
-    return typer.Exit(code=UNAVAILABLE_EXIT_CODE if isinstance(exc, transcribe.TranscriptionUnavailableError) else 1)
+    return cli_errors.fail(exc)
 
 
 _EXPECTED = (

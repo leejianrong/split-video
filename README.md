@@ -572,6 +572,11 @@ split-video ops-schema                                                          
 Over HTTP it is `POST /api/v1/compose/projects/{name}/ops?dry_run=` (schema at `GET /api/v1/schemas/edit-ops`); MCP has
 `apply_ops` and `get_edit_ops_schema`. The ops, error codes and examples are in [docs/edit-ops.md](docs/edit-ops.md).
 
+### Errors
+
+Every failure, on the CLI, the MCP server and the HTTP API, carries a stable `code`, a `message` and a `fix` that names
+the next action (`split-video --json-errors ...` prints it as JSON). The codes are listed in [docs/errors.md](docs/errors.md).
+
 ### Revisions: editing the same project from two places
 
 Every project (split points and compose timelines) carries a revision

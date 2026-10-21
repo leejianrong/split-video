@@ -18,7 +18,7 @@ import typer
 from rich.console import Console
 from rich.markup import escape
 
-from split_video import edit_plan
+from split_video import cli_errors, edit_plan
 from split_video.compose_cli import _fail
 from split_video.local_media_store import LocalMediaStore
 from split_video.local_store import LocalProjectStore
@@ -62,14 +62,7 @@ def apply_plan_cmd(
             LocalMediaStore(root), LocalProjectStore(root), doc, dry_run=dry_run, base_revision=base_revision
         )
     except edit_plan.PlanInvalidError as exc:
-        count = len(exc.report.errors)
-        error_console.print(
-            f"[red]Error:[/red] the plan has {count} problem{'s' if count != 1 else ''}; nothing was written"
-        )
-        for e in exc.report.errors:
-            error_console.print(f"  {escape(e.path or '/')}  {e.code}: {escape(e.message)}", highlight=False)
-        typer.echo(json.dumps({"error": "plan_invalid", **exc.report.to_dict()}, indent=2))
-        raise typer.Exit(code=1) from None
+        raise cli_errors.fail(exc, as_json, always_json=True) from None
     except TimelineError as exc:
         raise _fail(exc, as_json)
     if as_json:

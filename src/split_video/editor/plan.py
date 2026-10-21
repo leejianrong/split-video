@@ -19,7 +19,9 @@ from pydantic import BaseModel
 
 from split_video import edit_plan
 from split_video.editor.context import RequestContext, make_context_dependency
+from split_video.editor.errors import body_of
 from split_video.editor.revisions import WRITE_RESPONSES, base_revision
+from split_video.error_catalogue import describe
 from split_video.store_provider import StoreProvider
 
 
@@ -53,6 +55,9 @@ class PlanResultOut(BaseModel):
 
 class PlanInvalidOut(BaseModel):
     error: str = "plan_invalid"
+    code: str = "plan.invalid"  # the error catalogue's code (docs/errors.md)
+    message: str
+    fix: str  # what to do next
     detail: str
     ok: bool = False
     errors: list[PlanIssueOut]
@@ -70,9 +75,7 @@ PLAN_RESPONSES: dict[int | str, dict] = {
 
 
 def invalid_response(exc: edit_plan.PlanInvalidError) -> JSONResponse:
-    count = len(exc.report.errors)
-    detail = f"the plan has {count} problem{'s' if count != 1 else ''}; nothing was written"
-    return JSONResponse(status_code=422, content={"error": "plan_invalid", "detail": detail, **exc.report.to_dict()})
+    return JSONResponse(status_code=422, content=body_of(describe(exc)))
 
 
 def with_project(plan: Any, name: str) -> Any:

@@ -17,7 +17,7 @@ import typer
 from rich.console import Console
 from rich.markup import escape
 
-from split_video import edit_ops
+from split_video import cli_errors, edit_ops
 from split_video.compose_cli import _fail
 from split_video.local_media_store import LocalMediaStore
 from split_video.local_store import LocalProjectStore
@@ -59,12 +59,7 @@ def apply_ops_cmd(
             continue_on_error=continue_on_error,
         )
     except edit_ops.OpsInvalidError as exc:
-        body = edit_ops.invalid_body(exc.report)
-        error_console.print(f"[red]Error:[/red] {escape(body['detail'])}")
-        for e in exc.report.errors:
-            error_console.print(f"  {escape(e.path or '/')}  {e.code}: {escape(e.message)}", highlight=False)
-        typer.echo(json.dumps(body, indent=2))
-        raise typer.Exit(code=1) from None
+        raise cli_errors.fail(exc, as_json, always_json=True) from None
     except TimelineError as exc:
         raise _fail(exc, as_json)
     if as_json:

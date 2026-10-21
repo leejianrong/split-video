@@ -20,8 +20,10 @@ from pydantic import BaseModel
 from split_video import edit_ops
 from split_video.editor.compose import _http as http_error
 from split_video.editor.context import RequestContext, make_context_dependency
+from split_video.editor.errors import body_of
 from split_video.editor.plan import PlanIssueOut, PlanTrackOut
 from split_video.editor.revisions import WRITE_RESPONSES, base_revision
+from split_video.error_catalogue import describe
 from split_video.errors import RevisionConflictError
 from split_video.store_provider import StoreProvider
 from split_video.timeline import TimelineError
@@ -54,6 +56,9 @@ class OpsResultOut(BaseModel):
 
 class OpsInvalidOut(BaseModel):
     error: str = "ops_invalid"
+    code: str = "ops.invalid"  # the error catalogue's code (docs/errors.md)
+    message: str
+    fix: str  # what to do next
     detail: str
     ok: bool = False
     errors: list[PlanIssueOut]
@@ -94,7 +99,7 @@ def with_project(doc: Any, name: str) -> Any:
 
 
 def invalid_response(exc: edit_ops.OpsInvalidError) -> JSONResponse:
-    return JSONResponse(status_code=422, content=edit_ops.invalid_body(exc.report))
+    return JSONResponse(status_code=422, content=body_of(describe(exc)))
 
 
 def make_router(provider: StoreProvider) -> APIRouter:

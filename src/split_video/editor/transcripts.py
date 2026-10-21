@@ -18,6 +18,7 @@ from pydantic import BaseModel
 
 from split_video import assets, transcribe, transcript_search
 from split_video.editor.context import RequestContext, make_context_dependency
+from split_video.editor.errors import api_error
 from split_video.job_work import TRANSCRIBE_STEPS, transcribe_work
 from split_video.jobs import TRANSCRIPTION, JobQueue
 from split_video.media_store import MediaError
@@ -132,7 +133,7 @@ def make_router(provider: StoreProvider, jobs: JobQueue) -> APIRouter:
         try:
             return assets.get_asset(ctx.media, asset_id)
         except (TimelineError, MediaError) as exc:
-            raise HTTPException(status_code=404, detail=str(exc)) from None
+            raise api_error(404, exc) from None
 
     @router.post("/assets/{asset_id}/transcribe", response_model=TranscribeStartResponse)
     def start_transcription(
@@ -148,7 +149,7 @@ def make_router(provider: StoreProvider, jobs: JobQueue) -> APIRouter:
         try:
             transcribe.require_available()
         except transcribe.TranscriptionUnavailableError as exc:
-            raise HTTPException(status_code=501, detail=str(exc)) from None
+            raise api_error(501, exc) from None
         job_id = jobs.submit(
             TRANSCRIPTION,
             transcribe_work(ctx.media, asset.id, model=request.model, language=request.language, force=request.force),
@@ -163,9 +164,9 @@ def make_router(provider: StoreProvider, jobs: JobQueue) -> APIRouter:
         try:
             return call(ctx.media, asset.id, *args, **kwargs)
         except transcript_search.TranscriptNotFoundError as exc:
-            raise HTTPException(status_code=404, detail=str(exc)) from None
+            raise api_error(404, exc) from None
         except transcript_search.TranscriptQueryError as exc:
-            raise HTTPException(status_code=422, detail=str(exc)) from None
+            raise api_error(422, exc) from None
 
     @router.get("/assets/{asset_id}/transcript", response_model=TranscriptOut | TranscriptPageOut)
     def get_transcript(

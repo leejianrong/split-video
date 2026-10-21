@@ -12,11 +12,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
 from split_video import assets, highlights
 from split_video.editor.context import RequestContext, make_context_dependency
+from split_video.editor.errors import api_error
 from split_video.media_store import MediaError
 from split_video.store_provider import StoreProvider
 from split_video.timeline import TimelineError
@@ -64,7 +65,7 @@ def make_router(provider: StoreProvider) -> APIRouter:
         try:
             asset = assets.get_asset(ctx.media, asset_id)
         except (TimelineError, MediaError) as exc:
-            raise HTTPException(status_code=404, detail=str(exc)) from None
+            raise api_error(404, exc) from None
         try:
             return highlights.suggest_highlights(
                 ctx.media,
@@ -82,8 +83,8 @@ def make_router(provider: StoreProvider) -> APIRouter:
                 snap=snap,
             )
         except highlights.NoSignalsError as exc:
-            raise HTTPException(status_code=409, detail=str(exc)) from None
+            raise api_error(409, exc) from None
         except highlights.HighlightsError as exc:
-            raise HTTPException(status_code=422, detail=str(exc)) from None
+            raise api_error(422, exc) from None
 
     return router
