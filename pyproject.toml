@@ -38,10 +38,17 @@ build-backend = "uv_build"
 dev = [
     "httpx>=0.28.1",
     "pytest>=8.0",
+    "pytest-timeout>=2.4.0",
     "ruff>=0.16.5",
 ]
 
 [tool.pytest.ini_options]
+# A hung test (a wedged ffmpeg, a server that never answers) must fail ONE test with a stack dump, not hold the
+# CI job until GitHub's 6 h limit kills it (that happened once, on SPL-110). The whole suite is ~8 minutes, so
+# no single test comes near this. SIGALRM (not "thread") so the run carries on with the remaining tests; a known
+# long test can raise its own limit with @pytest.mark.timeout(n).
+timeout = 300
+timeout_method = "signal"
 markers = [
     "real_model: runs the real faster-whisper model; skipped without the `transcribe` extra and a downloaded model",
 ]

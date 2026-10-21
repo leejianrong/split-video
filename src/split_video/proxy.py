@@ -215,7 +215,7 @@ def _proxy_command(ffmpeg: str, source: str, out: str, fps: float | None, has_au
 def _strip_command(ffmpeg: str, source: str, out: str, strip: Strip) -> list[str]:
     vf = f"fps=1/{strip.interval:g}:round=up,scale={strip.tile_width}:{strip.tile_height},tile={strip.columns}x{strip.rows}"
     return [
-        ffmpeg, "-hide_banner", "-loglevel", "error", "-y", "-skip_frame", "nokey", "-i", source,
+        ffmpeg, "-nostdin", "-hide_banner", "-loglevel", "error", "-y", "-skip_frame", "nokey", "-i", source,
         "-an", "-vf", vf, "-frames:v", "1", "-q:v", "5", "-update", "1", out,
     ]  # fmt: skip
 
@@ -255,7 +255,18 @@ def _seek_strip(
     with tempfile.TemporaryDirectory(prefix="strip-") as tmp:
         for k in range(strip.count):
             tile = os.path.join(tmp, f"{k:04d}.png")
-            cmd = [ffmpeg, "-hide_banner", "-loglevel", "error", "-y", "-ss", f"{k * strip.interval:.3f}", "-i", source]
+            cmd = [
+                ffmpeg,
+                "-nostdin",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-y",
+                "-ss",
+                f"{k * strip.interval:.3f}",
+                "-i",
+                source,
+            ]
             cmd += ["-an", "-frames:v", "1", "-vf", f"scale={strip.tile_width}:{strip.tile_height}", tile]
             result = run_cancellable(cmd, cancel)
             if result.returncode != 0:
@@ -267,6 +278,7 @@ def _seek_strip(
             report((k + 1) / (strip.count + 1))
         join = [
             ffmpeg,
+            "-nostdin",
             "-hide_banner",
             "-loglevel",
             "error",

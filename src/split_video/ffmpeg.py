@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import threading
+import time
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
@@ -30,6 +32,9 @@ class ExtractError(RuntimeError):
 
 
 WAVEFORM_SAMPLE_RATE = 8000
+
+# ffprobe only reads headers, so a probe that takes this long is hung (a stuck network mount, say).
+PROBE_TIMEOUT_SECONDS = 120.0
 
 
 def _require_binary(name: str) -> str:
@@ -71,6 +76,54 @@ def stop_on_cancel(proc: subprocess.Popen[Any], cancel: CancelToken | None) -> C
     return cancel.on_cancel(lambda: stop_process(proc))
 
 
+# How long an ffmpeg render may go without its `-progress` output advancing before it is killed as hung.
+# Generous: a single slow filter step on a long clip can legitimately sit still for a while.
+STALL_SECONDS = 300.0
+STALL_ENV = "SPLIT_VIDEO_FFMPEG_STALL_SECONDS"
+
+
+def stall_seconds() -> float | None:
+    """The no-progress limit: `SPLIT_VIDEO_FFMPEG_STALL_SECONDS` when set (0 or less turns the watchdog off,
+    returned as None), else `STALL_SECONDS`."""
+    raw = os.environ.get(STALL_ENV)
+    try:
+        value = float(raw) if raw else STALL_SECONDS
+    except ValueError:
+        value = STALL_SECONDS
+    return value if value > 0 else None
+
+
+class StallWatchdog:
+    """Kills `proc` if `touch()` is not called for `timeout` seconds. Call `touch()` whenever the process
+    shows real progress; `stalled` says afterwards whether the watchdog did the killing. A context manager."""
+
+    def __init__(self, proc: subprocess.Popen[Any], timeout: float | None) -> None:
+        self.proc = proc
+        self.timeout = timeout
+        self.stalled = False
+        self._last = time.monotonic()
+        self._done = threading.Event()
+
+    def touch(self) -> None:
+        self._last = time.monotonic()
+
+    def _watch(self) -> None:
+        assert self.timeout is not None
+        while not self._done.wait(min(1.0, self.timeout / 4)):
+            if time.monotonic() - self._last >= self.timeout:
+                self.stalled = True
+                stop_process(self.proc)
+                return
+
+    def __enter__(self) -> StallWatchdog:  # noqa: PYI034 (Self needs Python 3.11)
+        if self.timeout is not None:
+            threading.Thread(target=self._watch, name="ffmpeg-watchdog", daemon=True).start()
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self._done.set()
+
+
 def run_cancellable(
     cmd: list[str], cancel: CancelToken | None = None, *, text: bool = True, env: dict[str, str] | None = None
 ) -> subprocess.CompletedProcess[Any]:
@@ -78,8 +131,10 @@ def run_cancellable(
     is terminated at once and `JobCancelledError` is raised in place of a result. Without a token
     this is a plain `subprocess.run`. `env` replaces the child's environment when given."""
     if cancel is None:
-        return subprocess.run(cmd, capture_output=True, text=text, check=False, env=env)
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=text, env=env)
+        return subprocess.run(cmd, capture_output=True, text=text, check=False, env=env, stdin=subprocess.DEVNULL)
+    proc = subprocess.Popen(
+        cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=text, env=env
+    )
     detach = stop_on_cancel(proc, cancel)
     try:
         stdout, stderr = proc.communicate()
@@ -97,7 +152,7 @@ def run_with_progress(
     once and gets `JobCancelledError`. `cmd[0]` must be the ffmpeg binary. stdout carries the
     progress, so the output must be a file; stderr is returned (its last 8 KiB)."""
     full = [cmd[0], "-nostdin", "-nostats", "-progress", "pipe:1", *cmd[1:]]
-    proc = subprocess.Popen(full, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    proc = subprocess.Popen(full, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     tail: list[str] = []
 
     def drain() -> None:
@@ -132,6 +187,7 @@ def iter_stdout_lines(cmd: list[str], cancel: CancelToken | None = None, what: s
     failing ffmpeg raises `ExtractError` saying `what` failed, with the tail of stderr."""
     proc = subprocess.Popen(
         [cmd[0], "-nostdin", "-nostats", *cmd[1:]],
+        stdin=subprocess.DEVNULL,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
@@ -164,9 +220,18 @@ def iter_stdout_lines(cmd: list[str], cancel: CancelToken | None = None, what: s
         raise ExtractError(f"ffmpeg failed to {what}: {''.join(tail).strip()[-2000:]}")
 
 
+def _run_ffprobe(cmd: list[str], path: Path) -> subprocess.CompletedProcess[str]:
+    try:
+        return subprocess.run(
+            cmd, capture_output=True, text=True, check=False, stdin=subprocess.DEVNULL, timeout=PROBE_TIMEOUT_SECONDS
+        )
+    except subprocess.TimeoutExpired:
+        raise ProbeError(f"ffprobe did not finish reading '{path}' within {PROBE_TIMEOUT_SECONDS:.0f} s") from None
+
+
 def probe_duration(path: Path) -> float:
     ffprobe = _require_binary("ffprobe")
-    result = subprocess.run(
+    result = _run_ffprobe(
         [
             ffprobe,
             "-v",
@@ -177,9 +242,7 @@ def probe_duration(path: Path) -> float:
             "default=noprint_wrappers=1:nokey=1",
             str(path),
         ],
-        capture_output=True,
-        text=True,
-        check=False,
+        path,
     )
     if result.returncode != 0 or not result.stdout.strip():
         raise ProbeError(f"could not read '{path}': {result.stderr.strip()}")
@@ -198,7 +261,7 @@ class MediaInfo:
 def probe_media(path: Path) -> MediaInfo:
     """Duration, video size and whether there's an audio stream, in one ffprobe call."""
     ffprobe = _require_binary("ffprobe")
-    result = subprocess.run(
+    result = _run_ffprobe(
         [
             ffprobe,
             "-v",
@@ -209,9 +272,7 @@ def probe_media(path: Path) -> MediaInfo:
             "json",
             str(path),
         ],
-        capture_output=True,
-        text=True,
-        check=False,
+        path,
     )
     if result.returncode != 0:
         raise ProbeError(f"could not read '{path}': {result.stderr.strip()}")
@@ -261,7 +322,9 @@ def detect_silence(
         "null",
         "-",
     ]
-    proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True, errors="replace")
+    proc = subprocess.Popen(
+        cmd, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True, errors="replace"
+    )
     parser = SilenceParser()
     detach = stop_on_cancel(proc, cancel)
     try:
@@ -287,7 +350,9 @@ def extract_pcm_audio(path: Path, sample_rate: int = WAVEFORM_SAMPLE_RATE, cance
     """
     ffmpeg = _require_binary("ffmpeg")
     result = run_cancellable(
-        [ffmpeg, "-i", str(path), "-vn", "-ac", "1", "-ar", str(sample_rate), "-f", "s16le", "-"], cancel, text=False
+        [ffmpeg, "-nostdin", "-i", str(path), "-vn", "-ac", "1", "-ar", str(sample_rate), "-f", "s16le", "-"],
+        cancel,
+        text=False,
     )
     if result.returncode != 0:
         raise ExtractError(
@@ -316,7 +381,7 @@ def iter_pcm_chunks(
     the generator early (or an exception in the consumer) stops ffmpeg too."""
     ffmpeg = _require_binary("ffmpeg")
     cmd = [ffmpeg, "-nostdin", "-i", str(path), "-vn", "-ac", "1", "-ar", str(sample_rate), "-f", "s16le", "-"]
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    proc = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     tail: list[bytes] = []
 
     def drain() -> None:
