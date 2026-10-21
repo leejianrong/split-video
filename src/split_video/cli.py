@@ -13,6 +13,7 @@ from rich.table import Table
 
 from split_video import (
     captions_cli,
+    cli_errors,
     compose_cli,
     contact_sheet_cli,
     frames_cli,
@@ -49,6 +50,18 @@ from split_video.timefmt import format_timestamp
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 console = Console()
 error_console = Console(stderr=True)
+
+
+@app.callback()
+def _root(
+    json_errors: bool = typer.Option(
+        False,
+        "--json-errors",
+        help="When a command fails, also print the error as JSON ({code, message, fix, details}) on stdout "
+        "(the same as SPLIT_VIDEO_JSON_ERRORS=1; commands with --json do it already). See docs/errors.md.",
+    ),
+) -> None:
+    cli_errors.force_json(json_errors)
 
 
 @app.command()
@@ -105,11 +118,9 @@ def split(
         total_duration = probe_duration(source)
         silences = detect_silence(source, silence_threshold, min_silence_duration)
     except FfmpegNotFoundError as exc:
-        error_console.print(f"[red]Error:[/red] {exc}")
-        raise typer.Exit(code=1)
+        raise cli_errors.fail(exc) from None
     except ProbeError as exc:
-        error_console.print(f"[red]Error:[/red] {exc}")
-        raise typer.Exit(code=1)
+        raise cli_errors.fail(exc) from None
 
     if verbose:
         for s in silences:
@@ -163,8 +174,7 @@ def split(
         try:
             extract_segment(source, seg.start, seg.end, out_path, precise, output_format)
         except ExtractError as exc:
-            error_console.print(f"[red]Error:[/red] {exc}")
-            raise typer.Exit(code=1)
+            raise cli_errors.fail(exc) from None
 
     if manifest:
         manifest_data = build_manifest(

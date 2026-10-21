@@ -15,7 +15,7 @@ import typer
 from rich.console import Console
 from rich.markup import escape
 
-from split_video import ocr, search, transcript_search
+from split_video import cli_errors, ocr, search, transcript_search
 from split_video.ffmpeg import ExtractError, FfmpegNotFoundError, ProbeError
 from split_video.local_media_store import LocalMediaStore
 from split_video.media_store import MediaError
@@ -42,8 +42,7 @@ _EXPECTED = (
 
 
 def _fail(exc: Exception) -> typer.Exit:
-    error_console.print(f"[red]Error:[/red] {escape(str(exc))}")
-    return typer.Exit(code=1)
+    return cli_errors.fail(exc)
 
 
 def search_cmd(

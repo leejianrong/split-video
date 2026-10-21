@@ -28,6 +28,7 @@ from split_video import (
     transcribe,
 )
 from split_video.editor.context import RequestContext, make_context_dependency
+from split_video.editor.errors import ApiError, api_error
 from split_video.editor.job_routes import cancel_job, job_of_kind
 from split_video.editor.media_response import media_response
 from split_video.editor.revisions import WRITE_RESPONSES, base_revision
@@ -245,8 +246,9 @@ class RenderQueueRequest(BaseModel):
 
 
 class RenderQueueErrorOut(BaseModel):
-    code: str  # the exception class, e.g. ProjectNotFoundError, OutputExistsError, ExtractError
+    code: str  # the error catalogue's code, e.g. timeline.not_found, render.output_exists, ffmpeg.failed
     message: str
+    fix: str | None = None  # what to do next (docs/errors.md)
 
 
 class RenderQueueJobOut(BaseModel):
@@ -300,7 +302,7 @@ class RenderStatusOut(BaseModel):
     captions: dict[str, Any] | None = None
 
 
-def _http(exc: TimelineError) -> HTTPException:
+def _http(exc: TimelineError) -> ApiError:
     """The HTTP status that best matches a timeline failure."""
     if isinstance(exc, ProjectNotFoundError | SourceNotFoundError | AssetNotFoundError):
         status = 404
@@ -310,7 +312,7 @@ def _http(exc: TimelineError) -> HTTPException:
         status = 400
     else:
         status = 422
-    return HTTPException(status_code=status, detail=str(exc))
+    return api_error(status, exc)
 
 
 def make_router(provider: StoreProvider, jobs: JobQueue) -> APIRouter:
@@ -388,8 +390,8 @@ def make_router(provider: StoreProvider, jobs: JobQueue) -> APIRouter:
         if isinstance(exc, MediaOutsideRootError):
             return HTTPException(status_code=400, detail="path escapes the browse root")
         if isinstance(exc, ProbeError):
-            return HTTPException(status_code=422, detail=str(exc))
-        return HTTPException(status_code=404, detail=str(exc))
+            return api_error(422, exc)
+        return api_error(404, exc)
 
     @router.get("/assets", response_model=AssetListOut)
     def list_assets(ctx: RequestContext = ctx_dep) -> AssetListOut:
@@ -699,10 +701,10 @@ def make_router(provider: StoreProvider, jobs: JobQueue) -> APIRouter:
         job_id = jobs.submit(RENDER, work, label=filename, total=RENDER_STEPS, owner=ctx.principal.id)
         return RenderStartOut(job_id=job_id)
 
-    def queue_http(exc: Exception) -> HTTPException:
+    def queue_http(exc: Exception) -> ApiError:
         if isinstance(exc, render_queue.UnknownBatchError | UnknownJobError):
-            return HTTPException(status_code=404, detail=str(exc))
-        return HTTPException(status_code=422, detail=str(exc))
+            return api_error(404, exc)
+        return api_error(422, exc)
 
     @router.post("/compose/render-queue", response_model=RenderQueueOut)
     def queue_renders(request: RenderQueueRequest, ctx: RequestContext = ctx_dep) -> RenderQueueOut:
@@ -793,7 +795,7 @@ def make_media_router(provider: StoreProvider) -> APIRouter:
         try:
             media_id = assets.media_id_of(ctx.media, asset_id)
         except (TimelineError, MediaError) as exc:
-            raise HTTPException(status_code=404, detail=str(exc)) from None
+            raise api_error(404, exc) from None
         return media_response(ctx.media, media_id, request)
 
     return router

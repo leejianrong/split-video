@@ -51,6 +51,9 @@ GUARDED = [
     "editor/plan.py",
     "editor/presets.py",
     "editor/caption_styles.py",
+    "error_catalogue.py",
+    "cli_errors.py",
+    "editor/errors.py",
 ]
 FORBIDDEN = re.compile(
     r"_project_path|project_path|FILE_SUFFIX|\.split-video-project\.json|\.split-video-timeline\.json"
@@ -94,11 +97,14 @@ ENGINE = [
     "identity.py",
     "store_provider.py",
     "editor/compose.py",
+    "error_catalogue.py",
 ]
 # Adapters may take a `Path` root at their entry point (and app.py serves its static dir) but
 # must not do filesystem work or root-relative arithmetic on media themselves.
 ADAPTERS = [
     "mcp_server.py",
+    "cli_errors.py",
+    "editor/errors.py",
     "editor/app.py",
     "editor/media_response.py",
     "editor/library.py",

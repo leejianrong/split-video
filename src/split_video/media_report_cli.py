@@ -15,7 +15,7 @@ import typer
 from rich.console import Console
 from rich.markup import escape
 
-from split_video import media_report
+from split_video import cli_errors, media_report
 from split_video.ffmpeg import ExtractError, FfmpegNotFoundError, ProbeError
 from split_video.jobs import JobCancelledError
 from split_video.local_media_store import LocalMediaStore
@@ -73,8 +73,7 @@ def report_cmd(
         else:
             found = media_report.media_report(media, asset_id, bucket_seconds=bucket_seconds, include=include)
     except _EXPECTED as exc:
-        error_console.print(f"[red]Error:[/red] {escape(str(exc))}")
-        raise typer.Exit(code=1) from None
+        raise cli_errors.fail(exc) from None
     except JobCancelledError:
         raise typer.Exit(code=130) from None
     if as_json:

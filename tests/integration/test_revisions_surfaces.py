@@ -63,7 +63,8 @@ def test_stale_split_save_is_409_with_the_current_revision_and_writes_nothing(cl
     stale = client.post("/api/v1/project", params=path, json=mine, headers=if_match(0))
     assert stale.status_code == 409
     body = stale.json()
-    assert set(body) == {"detail", "error", "current_revision", "base_revision"}
+    assert {"detail", "error", "current_revision", "base_revision"} <= set(body)
+    assert body["code"] == "revision.conflict" and body["fix"] and body["details"]["current_revision"] == 1
     assert (body["error"], body["current_revision"], body["base_revision"]) == ("revision_conflict", 1, 0)
     assert "retry" in body["detail"] and "base_revision=1" in body["detail"] and "If-Match" in body["detail"]
     state = client.get("/api/v1/state", params=path).json()
@@ -109,12 +110,12 @@ def test_timeline_writes_carry_the_revision_and_stale_ones_409(client, three_son
     assert other.json()["revision"] == 2
     stale = client.patch(f"{base}/clips/{clip_id}", json={"in_point": 1.0}, headers=if_match(1))
     assert stale.status_code == 409
-    assert stale.json() == {
-        "detail": stale.json()["detail"],
+    assert {k: stale.json()[k] for k in ("error", "current_revision", "base_revision")} == {
         "error": "revision_conflict",
         "current_revision": 2,
         "base_revision": 1,
     }
+    assert stale.json()["code"] == "revision.conflict" and "If-Match: 2" in stale.json()["fix"]
     assert "base_revision=2" in stale.json()["detail"]
     assert client.get(base).json()["tracks"][0]["clips"][0]["in_point"] == 0  # not applied
 
@@ -275,7 +276,7 @@ async def test_mcp_split_conflict_is_structured_with_retry_guidance(root, three_
         assert added["revision"] == 1
         error = await _error(client, "add_split", video=three_songs_clip.name, at=12, base_revision=0)
         assert (error["error"], error["current_revision"], error["base_revision"]) == ("revision_conflict", 1, 0)
-        assert "base_revision=1" in error["message"] and "list_segments" in error["message"]
+        assert "base_revision=1" in error["message"] and "list_segments" in error["fix"]
         assert len((await _call(client, "list_segments", video=three_songs_clip.name))["segments"]) == 2
         retried = await _call(client, "add_split", video=three_songs_clip.name, at=12, base_revision=1)
         assert retried["revision"] == 2
@@ -294,7 +295,7 @@ async def test_mcp_timeline_conflict_and_revisions_in_results(root, three_songs_
 
         error = await _error(client, "trim_timeline_clip", name="mix", clip=1, in_point=1, base_revision=1)
         assert (error["error"], error["current_revision"], error["base_revision"]) == ("revision_conflict", 2, 1)
-        assert "base_revision=2" in error["message"] and "show_timeline" in error["message"]
+        assert "base_revision=2" in error["message"] and "show_timeline" in error["fix"]
         error = await _error(client, "add_timeline_track", name="mix", base_revision=0)
         assert error["current_revision"] == 2
         trimmed = await _call(client, "trim_timeline_clip", name="mix", clip=1, in_point=1, base_revision=2)

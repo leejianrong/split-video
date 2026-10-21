@@ -103,7 +103,7 @@ def _check_done_shape(status):
     assert status["counts"] == {"queued": 0, "running": 0, "done": 3, "failed": 1, "cancelled": 0}
     assert status["jobs"][1]["result"]["captions"]["style"] == "shorts"
     assert status["jobs"][1]["result"]["width"] == 1080
-    assert status["jobs"][3]["error"]["code"] == "ProjectNotFoundError" and status["jobs"][3]["result"] is None
+    assert status["jobs"][3]["error"]["code"] == "timeline.not_found" and status["jobs"][3]["result"] is None
 
 
 def test_http_three_renders_finish_and_the_failing_one_does_not_stop_them(ws):

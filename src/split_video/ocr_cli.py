@@ -17,7 +17,7 @@ import typer
 from rich.console import Console
 from rich.markup import escape
 
-from split_video import ocr
+from split_video import cli_errors, ocr
 from split_video.ffmpeg import ExtractError, FfmpegNotFoundError, ProbeError
 from split_video.jobs import JobCancelledError
 from split_video.local_media_store import LocalMediaStore
@@ -45,8 +45,7 @@ _EXPECTED = (
 
 
 def _fail(exc: Exception) -> typer.Exit:
-    error_console.print(f"[red]Error:[/red] {escape(str(exc))}")
-    return typer.Exit(code=UNAVAILABLE_EXIT_CODE if isinstance(exc, ocr.OcrUnavailableError) else 1)
+    return cli_errors.fail(exc)
 
 
 def ocr_cmd(

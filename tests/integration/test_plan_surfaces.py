@@ -192,10 +192,8 @@ def test_invalid_plans_report_everything_on_every_surface(media_dir, tmp_path):
     assert "4 problems" in body["detail"]
     cli = cli_apply(root, plan, tmp_path=tmp_path)
     assert cli.exit_code == 1
-    assert json.loads(cli.stdout) == {
-        "error": "plan_invalid",
-        **{k: v for k, v in body.items() if k not in ("error", "detail")},
-    }
+    assert json.loads(cli.stdout) == body  # the same document, with the catalogue's code, message and fix (SPL-55)
+    assert body["code"] == "plan.invalid" and body["fix"]
     assert LocalProjectStore(root).list_timelines() == []  # nothing was created by any of them
 
     mismatch = client.put("/api/v1/compose/projects/other/plan", json=plan_for(ids))

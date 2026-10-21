@@ -16,7 +16,7 @@ import typer
 from rich.console import Console
 from rich.markup import escape
 
-from split_video import assets, contact_sheet
+from split_video import assets, cli_errors, contact_sheet
 from split_video.ffmpeg import ExtractError, FfmpegNotFoundError, ProbeError
 from split_video.frames_cli import _time
 from split_video.local_media_store import LocalMediaStore
@@ -68,8 +68,7 @@ def contact_sheet_cmd(
             stem = Path(assets.get_asset(media, asset_id).path).stem
             out = Path(f"{stem}-sheet-{first:g}s.{'png' if sheet.format == 'png' else 'jpg'}")
     except _EXPECTED as exc:
-        error_console.print(f"[red]Error:[/red] {escape(str(exc))}")
-        raise typer.Exit(code=1) from None
+        raise cli_errors.fail(exc) from None
     out.write_bytes(sheet.data)
     if as_json:
         typer.echo(json.dumps({**sheet.info(), "out": str(out)}, indent=2))

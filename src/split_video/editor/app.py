@@ -32,6 +32,7 @@ from split_video.editor.compose import make_media_router as make_compose_media_r
 from split_video.editor.compose import make_router as make_compose_router
 from split_video.editor.contact_sheet import make_router as make_contact_sheet_router
 from split_video.editor.context import RequestContext, make_context_dependency
+from split_video.editor.errors import ERROR_RESPONSE, ApiError, ApiErrorOut, api_error, api_error_handler
 from split_video.editor.events import EventBus, EventsConfig
 from split_video.editor.events import make_router as make_events_router
 from split_video.editor.frames import make_router as make_frames_router
@@ -214,6 +215,10 @@ def create_app(
             "`POST /api/v1/compose/projects/{name}/ops` (schema at `GET /api/v1/schemas/edit-ops`, docs/edit-ops.md)."
         ),
         lifespan=lifespan,
+        responses={
+            404: {"model": ApiErrorOut, "description": ERROR_RESPONSE},
+            501: {"model": ApiErrorOut, "description": ERROR_RESPONSE},
+        },
     )
     authenticator = authenticator_from_env() if authenticator is None else authenticator
     app.state.authenticator = authenticator
@@ -224,6 +229,8 @@ def create_app(
 
     # Under /api/ and /media/ nothing is routed before the caller is authenticated (a no-op in local mode).
     app.add_middleware(AuthMiddleware, authenticator=authenticator)
+
+    app.add_exception_handler(ApiError, api_error_handler)  # type: ignore[arg-type]
 
     @app.exception_handler(RevisionConflictError)
     async def revision_conflict(request: Request, exc: RevisionConflictError) -> Response:
@@ -518,9 +525,9 @@ def create_app(
                 overwrite=request.overwrite,
             )
         except ExportConflictError as exc:
-            raise HTTPException(status_code=409, detail=str(exc))
+            raise api_error(409, exc)
         except ProjectError as exc:
-            raise HTTPException(status_code=422, detail=str(exc))
+            raise api_error(422, exc)
 
         work = export_work(
             media,

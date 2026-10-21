@@ -2,7 +2,7 @@ IMAGE := split-video
 PORT  ?= 8765
 DIR   ?= $(PWD)
 
-.PHONY: help build dev test fetch-model openapi schemas
+.PHONY: help build dev test fetch-model openapi schemas errors
 
 .DEFAULT_GOAL := help
 
@@ -33,3 +33,6 @@ openapi: ## Regenerate openapi.json (the committed /api/v1 schema)
 schemas: ## Regenerate docs/schemas/*.schema.json (the published edit plan and edit ops schemas)
 	uv run python scripts/export_edit_plan_schema.py
 	uv run python scripts/export_edit_ops_schema.py
+
+errors: ## Regenerate docs/errors.md (the error catalogue, generated from the registry)
+	uv run python scripts/export_error_catalogue.py

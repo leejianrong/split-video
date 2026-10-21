@@ -13,10 +13,13 @@ field in their body; a revision conflict always has `"error": "revision_conflict
 
 from __future__ import annotations
 
+from typing import Any
+
 from fastapi import Header, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
+from split_video.error_catalogue import describe
 from split_video.errors import RevisionConflictError
 
 REVISION_ERROR = "revision_conflict"
@@ -31,6 +34,10 @@ IF_MATCH_DESCRIPTION = (
 class RevisionConflictOut(BaseModel):
     detail: str  # what happened and how to retry
     error: str = REVISION_ERROR
+    code: str = "revision.conflict"  # the error catalogue's code (docs/errors.md)
+    message: str  # the same as `detail`, without the header note
+    fix: str  # what to do next
+    details: dict[str, Any] | None = None
     current_revision: int  # the project's revision now: reload, re-apply, retry with If-Match set to this
     base_revision: int | None  # the revision the request said it was based on
 
@@ -61,9 +68,13 @@ def base_revision(if_match: str | None = Header(default=None, alias="If-Match", 
 
 
 def conflict_response(exc: RevisionConflictError) -> JSONResponse:
+    info = describe(exc)
     body = RevisionConflictOut(
         detail=f"{exc} (Send the revision as the If-Match header.)",
         current_revision=exc.current,
         base_revision=exc.base,
+        message=info.message,
+        fix=info.fix,
+        details=info.details,
     )
     return JSONResponse(status_code=409, content=body.model_dump())

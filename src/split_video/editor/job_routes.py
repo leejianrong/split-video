@@ -31,6 +31,7 @@ def job_out(info: JobInfo) -> JobOut:
         result=info.result,
         error=info.error,
         error_code=info.error_code,
+        error_info=info.error_info,
         created_at=info.created_at,
         started_at=info.started_at,
         finished_at=info.finished_at,

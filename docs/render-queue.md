@@ -42,8 +42,8 @@ batch. Give each render of one timeline its own `output`; two requests for the s
 `jobs` has one entry per request, in request order. `state` is `queued`, `running`, `done`, `failed` or `cancelled`
 (the generic job API says `error` for `failed`). A finished render carries `result`, the same document a single render
 returns (`name`, `output`, `duration`, `preset`, `fit`, `width`, `height`, `fps`, `captions`). A failed one carries
-`error: {code, message}`, where `code` is the exception class (`ProjectNotFoundError`, `OutputExistsError`,
-`SourceNotFoundError`, `ExtractError`, ...). `job_id` also works with `GET /api/v1/jobs/{id}` and the SSE stream
+`error: {code, message, fix}`, where `code` is a stable code of the [error catalogue](errors.md)
+(`timeline.not_found`, `render.output_exists`, `source.not_found`, `ffmpeg.failed`, ...) and `fix` says what to do next. `job_id` also works with `GET /api/v1/jobs/{id}` and the SSE stream
 (`group` is the batch id).
 
 ## Behaviour

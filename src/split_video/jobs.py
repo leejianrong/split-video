@@ -31,6 +31,8 @@ from collections.abc import Callable
 from dataclasses import dataclass, replace
 from typing import Any, Literal, Protocol, runtime_checkable
 
+from split_video.error_catalogue import describe
+
 log = logging.getLogger(__name__)
 
 # Job kinds.
@@ -122,6 +124,8 @@ class JobInfo:
     cancel_requested: bool = False
     owner: str | None = None  # the id of the principal that submitted it (see identity.py); None: no request
     error_code: str | None = None  # the failure's exception class name, set with `error`
+    # The failure in the error catalogue's terms ({code, message, fix}, docs/errors.md), set with `error`.
+    error_info: dict[str, str] | None = None
     group: str | None = None  # an id shared by jobs submitted together (a render batch); None: on its own
 
     @property
@@ -206,6 +210,7 @@ class JobQueue(Protocol):
         *,
         error: str,
         error_code: str | None = None,
+        error_info: dict[str, str] | None = None,
         label: str | None = None,
         total: int = 0,
         owner: str | None = None,
@@ -392,6 +397,7 @@ class InProcessJobQueue:
         *,
         error: str,
         error_code: str | None = None,
+        error_info: dict[str, str] | None = None,
         label: str | None = None,
         total: int = 0,
         owner: str | None = None,
@@ -400,7 +406,9 @@ class InProcessJobQueue:
         with self._lock:
             job = self._new_job(kind, None, label, total, owner, group)
             self._emit(JobSubmitted(job.info))
-            self._set_state(job, "error", finished_at=time.time(), error=error, error_code=error_code)
+            self._set_state(
+                job, "error", finished_at=time.time(), error=error, error_code=error_code, error_info=error_info
+            )
         return job.info.id
 
     def concurrency(self, kind: str) -> int:
@@ -575,6 +583,7 @@ class InProcessJobQueue:
         value: Any = None
         error: str | None = None
         error_code: str | None = None
+        error_info: dict[str, str] | None = None
         try:
             value = job.work(JobContext(self, job))
             outcome = "done"
@@ -585,6 +594,8 @@ class InProcessJobQueue:
             outcome = "error"
             error = str(exc) or type(exc).__name__
             error_code = type(exc).__name__
+            info = describe(exc)
+            error_info = {"code": info.code, "message": error, "fix": info.fix}
         with self._lock:
             if outcome == "error" and job.info.cancel_requested:
                 outcome = "cancelled"  # stopping it (e.g. killing ffmpeg) is what made it fail
@@ -597,6 +608,7 @@ class InProcessJobQueue:
             elif outcome == "error":
                 changes["error"] = error
                 changes["error_code"] = error_code
+                changes["error_info"] = error_info
             self._set_state(job, outcome, **changes)
 
     # --- shared bookkeeping (call with the lock held) ------------------------------------

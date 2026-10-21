@@ -21,6 +21,7 @@ from starlette.responses import Response
 
 from split_video import assets, contact_sheet
 from split_video.editor.context import RequestContext, make_context_dependency
+from split_video.editor.errors import api_error
 from split_video.editor.frames import CACHE_CONTROL, IMAGE_RESPONSES
 from split_video.media_store import MediaError
 from split_video.store_provider import StoreProvider
@@ -29,10 +30,10 @@ from split_video.timeline import TimelineError
 
 def _fail(exc: Exception) -> HTTPException:
     if isinstance(exc, contact_sheet.FrameArgumentError):
-        return HTTPException(status_code=400, detail=str(exc))
+        return api_error(400, exc)
     if isinstance(exc, contact_sheet.FrameError):
-        return HTTPException(status_code=422, detail=str(exc))
-    return HTTPException(status_code=404, detail=str(exc))
+        return api_error(422, exc)
+    return api_error(404, exc)
 
 
 def make_router(provider: StoreProvider) -> APIRouter:

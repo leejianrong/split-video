@@ -13,7 +13,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from split_video import library, proxy
+from split_video import cli_errors, library, proxy
 from split_video.ffmpeg import ExtractError, FfmpegNotFoundError
 from split_video.local_media_store import LocalMediaStore
 from split_video.media_store import MediaError
@@ -65,8 +65,7 @@ def scan_cmd(
     try:
         report = library.scan(media, folder)
     except (MediaError, FfmpegNotFoundError) as exc:
-        error_console.print(f"[red]Error:[/red] {exc}")
-        raise typer.Exit(code=1) from None
+        raise cli_errors.fail(exc) from None
     prepared = _prepare(media, [a.id for a in report.added if a.has_video]) if proxies else []
     if as_json:
         typer.echo(json.dumps({**report.to_dict(), **({"proxies": prepared} if proxies else {})}, indent=2))

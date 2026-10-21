@@ -125,7 +125,9 @@ def test_a_failing_render_ends_failed_with_a_structured_error_and_siblings_finis
     done = _wait(jobs, batch)
     assert _states(done) == ["done", "failed", "done"]
     assert done["counts"] == {"queued": 0, "running": 0, "done": 2, "failed": 1, "cancelled": 0}
-    assert done["jobs"][1]["error"] == {"code": "ExtractError", "message": "ffmpeg failed rendering 'bad.mp4'"}
+    error = done["jobs"][1]["error"]
+    assert (error["code"], error["message"]) == ("ffmpeg.failed", "ffmpeg failed rendering 'bad.mp4'")
+    assert "ffprobe" in error["fix"]
     assert done["jobs"][1]["result"] is None
     assert not media.exists("bad.mp4")  # the partial file is gone
     assert media.exists("reel-render.mp4") and media.exists("ok.mp4")
@@ -154,7 +156,7 @@ def test_requests_that_cannot_start_come_back_failed_in_place_and_do_not_stop_th
     done = _wait(jobs, batch)
     assert _states(done) == ["done"] + ["failed"] * 9 + ["done"]
     codes = [j["error"]["code"] for j in done["jobs"][1:10]]
-    assert codes[0] == "ProjectNotFoundError" and "OutputExistsError" in codes and "RenderRequestError" in codes
+    assert codes[0] == "timeline.not_found" and "render.output_exists" in codes and "render.request_invalid" in codes
     assert "already the output of another render" in done["jobs"][5]["error"]["message"]
     assert "unknown render option" in done["jobs"][7]["error"]["message"]
     assert [j["output"] for j in done["jobs"]][1] == "nope-render.mp4"

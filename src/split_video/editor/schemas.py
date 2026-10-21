@@ -184,6 +184,7 @@ class JobOut(BaseModel):
     result: Any = None  # JSON summary: partial while running, final when done
     error: str | None = None
     error_code: str | None = None  # the failure's exception class name (set with `error`)
+    error_info: dict[str, str] | None = None  # the failure as {code, message, fix} (docs/errors.md)
     created_at: float  # unix seconds
     started_at: float | None = None
     finished_at: float | None = None

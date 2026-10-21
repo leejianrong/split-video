@@ -11,11 +11,12 @@ from __future__ import annotations
 
 import hashlib
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from starlette.responses import Response
 
 from split_video import assets, frames
 from split_video.editor.context import RequestContext, make_context_dependency
+from split_video.editor.errors import api_error
 from split_video.media_store import MediaError
 from split_video.store_provider import StoreProvider
 from split_video.timeline import TimelineError
@@ -56,11 +57,11 @@ def make_router(provider: StoreProvider) -> APIRouter:
                 ctx.media, asset.id, time, width=width, height=height, format=format, quality=quality, source=source
             )
         except (TimelineError, MediaError) as exc:
-            raise HTTPException(status_code=404, detail=str(exc)) from None
+            raise api_error(404, exc) from None
         except frames.FrameArgumentError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from None
+            raise api_error(400, exc) from None
         except frames.FrameError as exc:
-            raise HTTPException(status_code=422, detail=str(exc)) from None
+            raise api_error(422, exc) from None
         etag = hashlib.sha1(
             f"{asset.id}|{asset.size}|{asset.mtime}|{frame.source}|{time}|{width}|{height}|{frame.format}|{quality}".encode()
         ).hexdigest()

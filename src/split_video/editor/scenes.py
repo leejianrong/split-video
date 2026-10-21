@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 
 from split_video import assets, scenes
 from split_video.editor.context import RequestContext, make_context_dependency
+from split_video.editor.errors import api_error
 from split_video.job_work import SCENE_STEPS, scene_work
 from split_video.jobs import SCENE_ANALYSIS, JobQueue
 from split_video.media_store import MediaError
@@ -65,7 +66,7 @@ def make_router(provider: StoreProvider, jobs: JobQueue) -> APIRouter:
         try:
             return assets.get_asset(ctx.media, asset_id)
         except (TimelineError, MediaError) as exc:
-            raise HTTPException(status_code=404, detail=str(exc)) from None
+            raise api_error(404, exc) from None
 
     @router.post("/assets/{asset_id}/scenes", response_model=ScenesStartResponse)
     def start_scene_analysis(

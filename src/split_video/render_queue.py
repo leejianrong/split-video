@@ -18,6 +18,7 @@ import uuid
 from typing import Any
 
 from split_video import captions, timeline_service
+from split_video.error_catalogue import describe
 from split_video.identity import LOCAL_PRINCIPAL, Principal, can_see_job
 from split_video.job_work import RENDER_STEPS, render_work
 from split_video.jobs import RENDER, JobInfo, JobQueue, UnknownJobError
@@ -146,6 +147,7 @@ def submit_batch(
                 RENDER,
                 error=str(exc) or type(exc).__name__,
                 error_code=type(exc).__name__,
+                error_info=_info_of(exc),
                 label=label,
                 total=RENDER_STEPS,
                 owner=owner,
@@ -182,10 +184,18 @@ def _entry(index: int, info: JobInfo) -> dict[str, Any]:
     }
 
 
+def _info_of(exc: Exception) -> dict[str, str]:
+    described = describe(exc)
+    return {"code": described.code, "message": str(exc) or type(exc).__name__, "fix": described.fix}
+
+
 def _error_of(info: JobInfo) -> dict[str, str] | None:
+    """The failure as `{code, message, fix}`: the error catalogue's code (docs/errors.md), what happened, what to do."""
     if info.state != "error":
         return None
-    return {"code": info.error_code or "RenderError", "message": info.error or "render failed"}
+    if info.error_info is not None:
+        return info.error_info
+    return {"code": "error.internal", "message": info.error or "render failed", "fix": describe(RuntimeError()).fix}
 
 
 def _describe(jobs: JobQueue, batch_id: str | None, infos: list[JobInfo]) -> dict[str, Any]:

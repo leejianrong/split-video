@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 
 from split_video import assets, ocr
 from split_video.editor.context import RequestContext, make_context_dependency
+from split_video.editor.errors import api_error
 from split_video.job_work import ocr_work
 from split_video.jobs import OCR, JobQueue
 from split_video.media_store import MediaError
@@ -93,7 +94,7 @@ def make_router(provider: StoreProvider, jobs: JobQueue) -> APIRouter:
         try:
             return assets.get_asset(ctx.media, asset_id)
         except (TimelineError, MediaError) as exc:
-            raise HTTPException(status_code=404, detail=str(exc)) from None
+            raise api_error(404, exc) from None
 
     @router.post("/assets/{asset_id}/ocr", response_model=OcrStartResponse)
     def start_ocr(asset_id: str, request: OcrRequest | None = None, ctx: RequestContext = ctx_dep) -> OcrStartResponse:
@@ -110,7 +111,7 @@ def make_router(provider: StoreProvider, jobs: JobQueue) -> APIRouter:
         try:
             ocr.require_available()
         except ocr.OcrUnavailableError as exc:
-            raise HTTPException(status_code=501, detail=str(exc)) from None
+            raise api_error(501, exc) from None
         job_id = jobs.submit(
             OCR,
             ocr_work(
@@ -128,9 +129,9 @@ def make_router(provider: StoreProvider, jobs: JobQueue) -> APIRouter:
         try:
             return call(ctx.media, asset.id, *args, **kwargs)
         except ocr.OcrNotFoundError as exc:
-            raise HTTPException(status_code=404, detail=str(exc)) from None
+            raise api_error(404, exc) from None
         except ocr.OcrArgumentError as exc:
-            raise HTTPException(status_code=422, detail=str(exc)) from None
+            raise api_error(422, exc) from None
 
     @router.get("/assets/{asset_id}/ocr", response_model=OcrPageOut)
     def get_ocr(

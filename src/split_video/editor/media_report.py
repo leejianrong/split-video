@@ -11,11 +11,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
 from split_video import assets, media_report
 from split_video.editor.context import RequestContext, make_context_dependency
+from split_video.editor.errors import api_error
 from split_video.job_work import report_prepare_work
 from split_video.jobs import ANALYSIS, JobQueue
 from split_video.media_store import MediaError
@@ -53,7 +54,7 @@ def make_router(provider: StoreProvider, jobs: JobQueue) -> APIRouter:
         try:
             return assets.get_asset(ctx.media, asset_id)
         except (TimelineError, MediaError) as exc:
-            raise HTTPException(status_code=404, detail=str(exc)) from None
+            raise api_error(404, exc) from None
 
     @router.get("/assets/{asset_id}/report", response_model=ReportOut)
     def get_report(
@@ -69,7 +70,7 @@ def make_router(provider: StoreProvider, jobs: JobQueue) -> APIRouter:
         try:
             return media_report.media_report(ctx.media, asset.id, bucket_seconds=bucket_seconds, include=include)
         except media_report.MediaReportError as exc:
-            raise HTTPException(status_code=422, detail=str(exc)) from None
+            raise api_error(422, exc) from None
 
     @router.post("/assets/{asset_id}/report/prepare", response_model=ReportStartResponse)
     def prepare_report(asset_id: str, ctx: RequestContext = ctx_dep) -> ReportStartResponse:
