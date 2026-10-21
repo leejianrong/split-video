@@ -74,8 +74,10 @@ seconds of CPU, nothing is stored from it).
 
 from __future__ import annotations
 
+import logging
 import os
 import queue
+import re
 import threading
 import uuid
 from collections.abc import Callable, Iterable, Iterator
@@ -150,6 +152,37 @@ def _lock_for(asset_id: str) -> threading.Lock:
 # --- the optional dependency and the model ---------------------------------------------------
 
 
+_URL_QUERY = re.compile(r"(https?://[^\s?#'\"<>]+)\?[^\s'\"<>]*")
+_REDACTED_LOGGERS = ("httpx", "httpcore", "huggingface_hub", "urllib3", "filelock")
+
+
+def redact_urls(text: str) -> str:
+    """`text` with the query string of every URL replaced by `?<redacted>`: a presigned model-download URL carries its
+    signature there, and it must not end up in a log or an error message."""
+    return _URL_QUERY.sub(r"\1?<redacted>", text)
+
+
+class _RedactUrls(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        try:
+            message = record.getMessage()
+        except Exception:  # noqa: BLE001 - a malformed record is left to the handler to complain about
+            return True
+        redacted = redact_urls(message)
+        if redacted != message:
+            record.msg, record.args = redacted, None
+        return True
+
+
+def redact_logged_urls() -> None:
+    """Strip URL query strings from what the HTTP libraries behind the model download log (httpx logs every request
+    at INFO, with the full URL). Safe to call again."""
+    for name in _REDACTED_LOGGERS:
+        target = logging.getLogger(name)
+        if not any(isinstance(f, _RedactUrls) for f in target.filters):
+            target.addFilter(_RedactUrls())
+
+
 def _import_faster_whisper(models_dir: str | None = None) -> Any:
     """Import faster-whisper, after pointing the Hugging Face downloader at `models_dir` (only effective if
     huggingface_hub is not imported yet, which is why `load_model` also passes `download_root`)."""
@@ -181,6 +214,7 @@ def load_model(name: str, models_dir: str, *, cpu_threads: int = 0) -> ModelLike
     """The faster-whisper model `name` (CPU, int8) from `models_dir`, downloading it on first use. A model that is
     already there is opened with no network access; only a missing one is fetched."""
     module = _import_faster_whisper(models_dir)
+    redact_logged_urls()
     kwargs: dict[str, Any] = {
         "device": "cpu",
         "compute_type": "int8",
@@ -195,7 +229,7 @@ def load_model(name: str, models_dir: str, *, cpu_threads: int = 0) -> ModelLike
             if local_only:
                 continue
             raise TranscriptionError(
-                f"could not load the transcription model {name!r}: {exc}. The first use downloads the model "
+                f"could not load the transcription model {name!r}: {redact_urls(str(exc))}. The first use downloads the model "
                 f"(about 140 MB for base.en) into the workspace, so it needs internet access once; model names "
                 f"are faster-whisper's (tiny.en, base.en, small.en, base, small, ...)."
             ) from None

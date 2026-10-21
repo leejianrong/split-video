@@ -57,7 +57,7 @@ def stored_bytes(w):
         files = {
             p.name: p.read_bytes()
             for p in sorted(Path(w.media.root).iterdir())
-            if p.suffix == ".json" or p.name.startswith(".")
+            if p.is_file() and (p.suffix == ".json" or p.name.startswith("."))
         }
         return files, table
     return (w.store.load_timeline(NAME), w.store.load_timeline(NAME).revision), table

@@ -513,7 +513,7 @@ def _fail(op: _Op, code: str, message: str, hint: str = "", field_name: str | No
 _RULES: dict[str, tuple[str, str | None, str]] = {
     "in_negative": ("plan.clip.in_negative", "in", ""),
     "out_past_end": ("plan.clip.out_of_range", "out", "the asset is shorter than that"),
-    "too_short": ("plan.clip.too_short", None, ""),
+    "too_short": ("plan.clip.too_short", None, "make the clip at least 0.1s long: move 'out' later or 'in' earlier"),
     "crossfade_first": (
         "plan.clip.crossfade_first",
         "transition",
@@ -1078,8 +1078,10 @@ def _summary(
         "applied": report.applied,
         "ops": len(doc["ops"]),
         "clips": sum(len(t.clips) for t in project.tracks),
-        "duration": project.duration,
-        "tracks": [{"id": t.id, "kind": t.kind, "clips": len(t.clips), "end": t.end} for t in project.tracks],
+        "duration": timeline.ms(project.duration),
+        "tracks": [
+            {"id": t.id, "kind": t.kind, "clips": len(t.clips), "end": timeline.ms(t.end)} for t in project.tracks
+        ],
         "results": report.results,
         "warnings": [w.to_dict() for w in report.warnings],
         "ops_hash": report.plan_hash,

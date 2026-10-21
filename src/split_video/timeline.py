@@ -166,6 +166,17 @@ def validate_name(name: str) -> None:
 # --- serialisation ----------------------------------------------------------
 
 
+def ms(seconds: float) -> float:
+    """`seconds` rounded to a millisecond, for OUTPUT only (sums of floats show as 123.36000000000013 otherwise).
+    What is stored in the timeline file is never rounded, so `plan_hash`es and saved files are unchanged."""
+    return round(seconds, 3) + 0.0  # + 0.0: no "-0.0"
+
+
+def shown_crop(crop: dict[str, float] | None) -> dict[str, float] | None:
+    """A crop box for output: fractions of the frame to 6 digits (finer than a pixel of any real source)."""
+    return None if crop is None else {k: round(v, 6) + 0.0 for k, v in crop.items()}
+
+
 def to_dict(project: Project) -> dict[str, Any]:
     return {
         "version": FORMAT_VERSION,

@@ -6,9 +6,10 @@ shapes); these are the generic view of the same jobs.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 
 from split_video.editor.auth import principal_dependency
+from split_video.editor.errors import api_error
 from split_video.editor.schemas import JobListOut, JobOut
 from split_video.identity import LOCAL_PRINCIPAL, Principal, can_see_job
 from split_video.jobs import JobInfo, JobQueue, UnknownJobError
@@ -49,9 +50,9 @@ def job_of_kind(
     try:
         info = jobs.status(job_id)
     except UnknownJobError:
-        raise HTTPException(status_code=404, detail="unknown job id") from None
+        raise api_error(404, UnknownJobError("unknown job id")) from None
     if (kind is not None and info.kind != kind) or not can_see_job(info.owner, principal):
-        raise HTTPException(status_code=404, detail="unknown job id")
+        raise api_error(404, UnknownJobError("unknown job id"))
     return info
 
 
@@ -63,7 +64,7 @@ def cancel_job(jobs: JobQueue, job_id: str, kind: str | None = None, principal: 
         if not info.finished:
             info = jobs.wait(job_id, CANCEL_WAIT_SECONDS)
     except UnknownJobError:
-        raise HTTPException(status_code=404, detail="unknown job id") from None
+        raise api_error(404, UnknownJobError("unknown job id")) from None
     return info
 
 

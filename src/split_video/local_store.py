@@ -7,14 +7,14 @@ like `~/.cache/`: `make dev` runs the editor in a `--rm`'d container with only
 the video directory bind-mounted, so anything written elsewhere is wiped on
 the next run. This is the only module that knows those file names.
 
-Each project file has a lock file next to it, named after it plus `.lock`
-(`<video>.split-video-project.json.lock`, `<name>.split-video-timeline.json.lock`).
+Each project file has a lock file in a hidden `.split-video-locks/` directory next to it, named after it plus
+`.lock` (`.split-video-locks/<video>.split-video-project.json.lock`), so no empty `.lock` files pile up beside the
+videos; the directory is still inside the bind-mounted workspace.
 A writer holds an exclusive advisory lock (`fcntl.flock`) on it across
 read-check-write, so the revision compare-and-swap is atomic across processes
 (the editor server, the CLI and the MCP server are separate processes editing
 the same files). Lock files are empty, are never deleted (removing one would
-break mutual exclusion), don't match the project-file suffixes (so they never
-show up in `list_timelines`) and are git-ignored. Readers don't lock: files
+break mutual exclusion), are not project files (they never show up in `list_timelines`) and are git-ignored. Readers don't lock: files
 are replaced by rename, so a reader sees the old or the new file.
 Where `flock` isn't available (Windows) or fails (some network filesystems) the
 store falls back to a per-process lock: writers in one process still exclude
@@ -59,6 +59,7 @@ SPLIT_FORMAT_VERSION = 2
 SPLIT_SUFFIX = ".split-video-project.json"
 TIMELINE_SUFFIX = ".split-video-timeline.json"
 LOCK_SUFFIX = ".lock"  # appended to a project file's name: the file `flock`ed around its writes
+LOCK_DIR = ".split-video-locks"  # hidden directory next to the project file that holds its lock file
 
 _process_locks: dict[str, threading.Lock] = {}
 _process_locks_guard = threading.Lock()
@@ -71,7 +72,7 @@ def _write_lock(project_file: Path) -> Iterator[None]:
 
     Not re-entrant: don't take it again for the same project while holding it."""
     global _warned_no_flock
-    lock_path = project_file.parent / f"{project_file.name}{LOCK_SUFFIX}"
+    lock_path = project_file.parent / LOCK_DIR / f"{project_file.name}{LOCK_SUFFIX}"
     key = os.path.abspath(lock_path)
     with _process_locks_guard:
         thread_lock = _process_locks.setdefault(key, threading.Lock())

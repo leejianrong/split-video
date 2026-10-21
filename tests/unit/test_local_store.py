@@ -5,7 +5,7 @@ import os
 
 import pytest
 
-from split_video import timeline
+from split_video import local_store, timeline
 from split_video.local_store import LocalProjectStore
 from split_video.store import SavedSegment
 from split_video.timeline import Clip, Project, ProjectExistsError, ProjectNotFoundError, TimelineError, Track
@@ -82,13 +82,51 @@ def test_atomic_save_goes_through_a_temp_file_and_leaves_none_behind(tmp_path, m
     store.save_split("v.mp4", [SavedSegment(start=0.0, end=1.0)])
     store.save_timeline("show", _project())
     assert len(replaced) == 2
-    # No temp files left behind; each project file has only its (empty) lock file next to it.
+    # No temp files left behind, and no `.lock` files beside the videos: the locks are in a hidden directory.
     assert sorted(p.name for p in tmp_path.iterdir()) == [
+        ".split-video-locks",
         "show.split-video-timeline.json",
-        "show.split-video-timeline.json.lock",
         "v.mp4.split-video-project.json",
+    ]
+    assert sorted(p.name for p in (tmp_path / ".split-video-locks").iterdir()) == [
+        "show.split-video-timeline.json.lock",
         "v.mp4.split-video-project.json.lock",
     ]
+    assert all(p.stat().st_size == 0 for p in (tmp_path / ".split-video-locks").iterdir())
+
+
+def test_locking_still_excludes_writers_with_the_lock_in_the_hidden_directory(tmp_path):
+    import threading
+
+    store = LocalProjectStore(tmp_path)
+    store.save_timeline("show", _project())
+    inside = []
+    entered = threading.Event()
+    release = threading.Event()
+
+    def hold():
+        with local_store._write_lock(tmp_path / "show.split-video-timeline.json"):
+            inside.append("holder")
+            entered.set()
+            release.wait(5)
+            inside.append("holder-done")
+
+    t = threading.Thread(target=hold)
+    t.start()
+    assert entered.wait(5)
+
+    def second():
+        with local_store._write_lock(tmp_path / "show.split-video-timeline.json"):
+            inside.append("second")
+
+    t2 = threading.Thread(target=second)
+    t2.start()
+    t2.join(0.3)
+    assert inside == ["holder"], "a second writer must wait for the lock"
+    release.set()
+    t.join(5)
+    t2.join(5)
+    assert inside == ["holder", "holder-done", "second"]
 
 
 def test_a_failed_write_keeps_the_previous_file(tmp_path, monkeypatch):

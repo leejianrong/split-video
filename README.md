@@ -612,9 +612,9 @@ changes, but nothing checks that you were looking at the latest. Pass it when
 your change only makes sense on the version you saw (an agent that read the
 project, reasoned about it, then edits by clip number, for example).
 
-The lock is an advisory `flock` on an empty `<project file>.lock` file right
-next to each project file (so it lives in the bind-mounted video folder under
-Docker; it is git-ignored and safe to delete when nothing is running). It
+The lock is an advisory `flock` on an empty `<project file>.lock` file in a hidden
+`.split-video-locks/` folder next to each project file (so it lives in the bind-mounted video folder under
+Docker without cluttering it; it is git-ignored and safe to delete when nothing is running). It
 works across processes on the same machine, and across containers sharing a
 bind mount on a Linux host. It does not work where `flock` does not (Windows,
 some network filesystems such as NFS without lock support, and some

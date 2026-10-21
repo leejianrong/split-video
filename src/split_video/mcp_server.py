@@ -34,6 +34,7 @@ import anyio.to_thread
 from mcp.server.mcpserver import Image, MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp_types import ToolAnnotations
+from pydantic import ValidationError
 
 from split_video import (
     assets,
@@ -59,7 +60,7 @@ from split_video import (
 )
 from split_video import captions as captions_module
 from split_video.editor.cache import ClassificationCache
-from split_video.error_catalogue import error_dict
+from split_video.error_catalogue import ErrorInfo, argument_error, error_dict
 from split_video.jobs import (
     RENDER,
     InProcessJobQueue,
@@ -159,6 +160,31 @@ def structured_errors(fn):
     return wrapper
 
 
+def invalid_arguments(tool: str, exc: ValidationError) -> ErrorInfo:
+    """`request.invalid` for arguments that did not match the tool's input schema (the engine never ran)."""
+    problems = []
+    for item in exc.errors():
+        name = ".".join(str(part) for part in item["loc"]) or "arguments"
+        got = item.get("input")
+        shown = "" if item["type"] == "missing" else f" (got {type(got).__name__})"
+        problems.append({"argument": name, "problem": f"{item['msg']}{shown}", "type": item["type"]})
+    return argument_error(f"{tool}", problems)
+
+
+class _StructuredServer(MCPServer):
+    """An `MCPServer` whose argument-validation failures carry the error catalogue's payload too, not pydantic's dump
+    (a tool's own failures are handled by `structured_errors`; the arguments are checked before the tool runs)."""
+
+    async def call_tool(self, name, arguments, context=None):  # type: ignore[no-untyped-def,override]
+        try:
+            return await super().call_tool(name, arguments, context)
+        except ToolError as exc:
+            if isinstance(exc.__cause__, ValidationError):
+                text = json.dumps(invalid_arguments(name, exc.__cause__).to_dict())
+                raise ToolError(f"Error executing tool {name}: {text}") from None
+            raise
+
+
 def create_server(
     root: Path,
     store: ProjectStore | None = None,
@@ -180,7 +206,7 @@ def create_server(
         jobs = InProcessJobQueue(max_workers=limit, kind_limits={RENDER: limit})
     store = store if store is not None else LocalProjectStore(root)
     media = media if media is not None else LocalMediaStore(root)
-    server = MCPServer("split-video", instructions=INSTRUCTIONS)
+    server = _StructuredServer("split-video", instructions=INSTRUCTIONS)
     register_tool = server.tool
 
     def tool(*args: Any, **kwargs: Any):
@@ -460,7 +486,7 @@ def create_server(
         an asset, so list_assets shows it with duration, size and stream info. Incremental: files
         already recorded and unchanged are not probed again. Returns the counts, the newly `added`
         assets (id and path), `copies` (paths whose bytes are already in the library) and `skipped`
-        files that could not be read as media, each with a reason. With `proxies` true, each newly added
+        files that could not be read as media, each with a short reason, a `code` (media.unreadable) and a `fix`. With `proxies` true, each newly added
         video also gets its proxy and thumbnail strip made before this returns (slow: minutes per hour of
         video; see prepare_asset), listed under `proxies` (one prepare_asset result per video; the HTTP API
         queues these as jobs instead and returns their ids)."""

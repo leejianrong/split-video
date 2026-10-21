@@ -64,7 +64,11 @@ def cli_ops(root, doc, *args, stdin=False, tmp_path=None):
 
 
 def snapshot(root):
-    return {p.name: p.read_bytes() for p in sorted(root.iterdir()) if p.suffix == ".json" or p.name.startswith(".")}
+    return {
+        p.name: p.read_bytes()
+        for p in sorted(root.iterdir())
+        if p.is_file() and (p.suffix == ".json" or p.name.startswith("."))
+    }
 
 
 def test_edits_from_real_media_render(media_dir, tmp_path):  # noqa: F811
