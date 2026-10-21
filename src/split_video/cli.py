@@ -41,6 +41,7 @@ from split_video.ffmpeg import (
     extract_segment,
     probe_duration,
 )
+from split_video.jobs import MAX_RENDER_CONCURRENCY
 from split_video.naming import build_manifest, segment_filename, write_manifest
 from split_video.segments import compute_segments
 from split_video.timefmt import format_timestamp
@@ -219,6 +220,13 @@ def edit(
     no_browser: bool = typer.Option(
         False, "--no-browser", help="Don't automatically open a browser tab (required inside Docker)."
     ),
+    render_concurrency: int | None = typer.Option(
+        None,
+        "--render-concurrency",
+        min=1,
+        max=MAX_RENDER_CONCURRENCY,
+        help="Renders that run at once (the rest wait in the render queue). Default 2, or SPLIT_VIDEO_RENDER_CONCURRENCY.",
+    ),
 ) -> None:
     """Launch a local browser-based editor for adjusting song split points."""
     defaults = StateParams(
@@ -228,7 +236,7 @@ def edit(
         padding=silence_padding,
     )
     authenticator = authenticator_from_env()
-    editor_app = create_app(source, defaults, authenticator=authenticator)
+    editor_app = create_app(source, defaults, authenticator=authenticator, render_concurrency=render_concurrency)
 
     url = f"http://{host}:{port}/"
     if source.is_dir():
@@ -255,11 +263,18 @@ def mcp_cmd(
         file_okay=False,
         help="Directory the MCP tools may read and write videos under. Paths outside it are refused.",
     ),
+    render_concurrency: int | None = typer.Option(
+        None,
+        "--render-concurrency",
+        min=1,
+        max=MAX_RENDER_CONCURRENCY,
+        help="Queued renders (queue_renders) that run at once. Default 2, or SPLIT_VIDEO_RENDER_CONCURRENCY.",
+    ),
 ) -> None:
     """Run an MCP server over stdio so an AI agent can inspect, edit and export a video's splits."""
     from split_video.mcp_server import create_server
 
-    create_server(root).run("stdio")
+    create_server(root, render_concurrency=render_concurrency).run("stdio")
 
 
 project_cli.register(app)

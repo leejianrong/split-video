@@ -80,7 +80,17 @@ from split_video.editor.transcripts import make_router as make_transcripts_route
 from split_video.errors import RevisionConflictError
 from split_video.identity import LOCAL_PRINCIPAL, Principal
 from split_video.job_work import analysis_summary, analysis_work, export_work
-from split_video.jobs import ANALYSIS, EXPORT, InProcessJobQueue, JobInfo, JobQueue
+from split_video.jobs import (
+    ANALYSIS,
+    DEFAULT_MAX_WORKERS,
+    EXPORT,
+    RENDER,
+    InProcessJobQueue,
+    JobInfo,
+    JobQueue,
+    check_render_concurrency,
+    render_concurrency_from_env,
+)
 from split_video.local_media_store import LocalMediaStore
 from split_video.local_store import LocalProjectStore
 from split_video.media_store import MediaNotFoundError, MediaOutsideRootError, MediaStore
@@ -157,6 +167,7 @@ def create_app(
     events: EventsConfig | None = None,
     provider: StoreProvider | None = None,
     authenticator: Authenticator | None = None,
+    render_concurrency: int | None = None,
 ) -> FastAPI:
     """`root` is either a video file to open immediately (the historical
     `split-video edit <file>` behavior, unchanged) or a directory to pick a
@@ -169,13 +180,22 @@ def create_app(
     Every request is made by a `Principal`, decided by `authenticator` (default: from the environment, see
     `editor/auth.py`: local single-user mode with no checks unless `SPLIT_VIDEO_TOKEN` is set). Routes get
     their stores from `provider` for that principal; `store`/`media` are the shorthand for a provider that
-    returns the same two stores to everyone (give one or the other, not both)."""
+    returns the same two stores to everyone (give one or the other, not both). `render_concurrency` caps the renders
+    that run at once on the default queue (default: `SPLIT_VIDEO_RENDER_CONCURRENCY`, else 2; ignored with `jobs`)."""
     # `version` is the API version, not the package version, so the committed
     # openapi.json only changes when the API does.
     own_jobs = jobs is None
     projects: dict[tuple[str, str], _ProjectState] = {}  # (principal id, source media id)
     projects_lock = threading.Lock()
-    jobs = InProcessJobQueue() if jobs is None else jobs
+    if jobs is None:
+        # Renders are capped (SPLIT_VIDEO_RENDER_CONCURRENCY, default 2) and the pool has one more worker than that,
+        # so a full queue of renders never keeps a proxy or an analysis from starting.
+        renders = (
+            render_concurrency_from_env()
+            if render_concurrency is None
+            else check_render_concurrency(render_concurrency)
+        )
+        jobs = InProcessJobQueue(max_workers=max(DEFAULT_MAX_WORKERS, renders + 1), kind_limits={RENDER: renders})
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:

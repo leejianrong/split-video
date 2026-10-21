@@ -35,7 +35,7 @@ from typing import Any
 from split_video import assets, presets, transcribe
 from split_video import captions as captions_module
 from split_video.ffmpeg import ExtractError, MediaInfo, StallWatchdog, _require_binary, stall_seconds, stop_on_cancel
-from split_video.jobs import CancelToken, JobCancelledError
+from split_video.jobs import CancelToken
 from split_video.media_store import MediaStore
 from split_video.timeline import Clip, Project, TimelineError, Track
 
@@ -348,7 +348,7 @@ def render(
     chosen style, on top of everything else (see `captions.py`); the ASS file lives in a temporary directory.
 
     With a `cancel` token (a job's `JobContext`), cancelling terminates ffmpeg at once, deletes
-    the partial output and raises `JobCancelledError`.
+    the partial output and raises `JobCancelledError`; a render that fails mid-way deletes its partial output too.
 
     Clips are found by asset id (relinked if their file moved); a clip that can't be found
     is a `SourceNotFoundError` naming the asset and its last known path."""
@@ -382,6 +382,7 @@ def render(
     font = find_font() if any(c.kind == "text" for c in video_clips) else None
     total = project.duration
 
+    writing = False  # set once the output may exist, so a failure before that never deletes an older file
     try:
         with ExitStack() as stack:
             caption_report, ass_files = None, None
@@ -401,9 +402,11 @@ def render(
             # Every input, and the output, as real paths for ffmpeg for the whole run.
             inputs = [str(stack.enter_context(media.local_path(c.source))) for c in plan.clips]
             out_path = stack.enter_context(media.write_local(out_id))
+            writing = True
             _run_ffmpeg(plan, inputs, str(out_path), total, progress, cancel, settings.preset)
-    except JobCancelledError:
-        media.delete(out_id)  # never leave a half-written file behind
+    except BaseException:
+        if writing:
+            media.delete(out_id)  # cancelled or failed: never leave a half-written file behind
         raise
     used = {
         "preset": settings.preset.name if settings.preset else None,

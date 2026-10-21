@@ -14,6 +14,9 @@ DEFAULTS = StateParams(silence_threshold=-35.0, min_silence_duration=2.0, min_so
 NO_LEGACY_ALIAS = {
     "/api/v1/events",
     "/api/v1/whoami",
+    "/api/v1/compose/render-queue",
+    "/api/v1/compose/render-queue/{batch_id}",
+    "/api/v1/compose/render-queue/{batch_id}/cancel",
     "/api/v1/presets",
     "/api/v1/caption-styles",
     "/api/v1/library/scan",

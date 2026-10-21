@@ -17,6 +17,7 @@ made before asset ids existed links its clips automatically; the first edit (or
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 from typing import Any
 
@@ -24,11 +25,18 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from split_video import assets, timeline_service
+from split_video import assets, render_queue, timeline_service
 from split_video import captions as captions_module
 from split_video.captions import CaptionError
 from split_video.errors import RevisionConflictError
 from split_video.ffmpeg import ExtractError, FfmpegNotFoundError, ProbeError
+from split_video.jobs import (
+    MAX_RENDER_CONCURRENCY,
+    RENDER,
+    InProcessJobQueue,
+    check_render_concurrency,
+    render_concurrency_from_env,
+)
 from split_video.local_media_store import LocalMediaStore
 from split_video.local_store import LocalProjectStore
 from split_video.media_store import MediaStore
@@ -703,6 +711,77 @@ def render_cmd(
             )
 
 
+def render_queue_cmd(
+    spec: typer.FileText = typer.Argument(
+        ...,
+        help='JSON file (or - for stdin): a list of render requests, or {"renders": [...]}. Each request is '
+        "{project, output, overwrite, width, height, preset, fit, captions, caption_range, ...}, the options of "
+        "`compose render` plus the project name.",
+    ),
+    concurrency: int | None = typer.Option(
+        None,
+        "--concurrency",
+        min=1,
+        max=MAX_RENDER_CONCURRENCY,
+        help="Renders that run at once (default 2, or SPLIT_VIDEO_RENDER_CONCURRENCY); the rest wait.",
+    ),
+    root: Path = _Root,
+    as_json: bool = _Json,
+) -> None:
+    """Render several timelines (or one timeline several ways) with limited concurrency, then report each one.
+
+    A render that fails does not stop the others; the exit code is 1 if any failed or was cancelled. Ctrl+C cancels
+    what is queued and running (partial files are deleted). The JSON is the same as the API's and the MCP tool's:
+    {batch_id, concurrency, total, counts, finished, jobs: [{index, job_id, output, state, progress, error, result}]}."""
+    root = root.resolve()
+    try:
+        renders = json.load(spec)
+    except json.JSONDecodeError as exc:
+        raise _fail(TimelineError(f"the render list is not valid JSON: {exc}"), as_json)
+    if isinstance(renders, dict):
+        renders = renders.get("renders")
+    try:
+        limit = render_concurrency_from_env() if concurrency is None else check_render_concurrency(concurrency)
+    except ValueError as exc:
+        raise _fail(TimelineError(str(exc)), as_json)
+    jobs = InProcessJobQueue(max_workers=limit, kind_limits={RENDER: limit})
+    status: dict[str, Any] = {}
+    try:
+        status = render_queue.submit_batch(jobs, LocalProjectStore(root), LocalMediaStore(root), renders)
+        batch_id = status["batch_id"]
+        reported: set[str] = set()
+        try:
+            while True:
+                status = render_queue.batch_status(jobs, batch_id)
+                for job in status["jobs"]:
+                    if job["state"] in ("done", "failed", "cancelled") and job["job_id"] not in reported:
+                        reported.add(job["job_id"])
+                        if not as_json:
+                            detail = f": {job['error']['message']}" if job["error"] else ""
+                            error_console.print(
+                                f"[{job['index']}/{status['total']}] {job['output']}: {job['state']}{detail}"
+                            )
+                if status["finished"]:
+                    break
+                time.sleep(0.25)
+        except KeyboardInterrupt:
+            status = render_queue.cancel_renders(jobs, batch_id=batch_id)
+    except (render_queue.RenderQueueError, *_EXPECTED_ERRORS) as exc:
+        raise _fail(exc, as_json)
+    finally:
+        jobs.shutdown()
+    if as_json:
+        typer.echo(json.dumps(status, indent=2))
+    else:
+        counts = status["counts"]
+        console.print(
+            f"{counts['done']} done, {counts['failed']} failed, {counts['cancelled']} cancelled "
+            f"(concurrency {status['concurrency']})"
+        )
+    if status["counts"]["failed"] or status["counts"]["cancelled"]:
+        raise typer.Exit(1)
+
+
 def register(app: typer.Typer) -> None:
     for command_name, fn in (
         ("list", list_cmd),
@@ -724,6 +803,7 @@ def register(app: typer.Typer) -> None:
         ("assets", assets_cmd),
         ("migrate", migrate_cmd),
         ("render", render_cmd),
+        ("render-queue", render_queue_cmd),
     ):
         compose_app.command(command_name)(fn)
     app.add_typer(compose_app, name="compose")

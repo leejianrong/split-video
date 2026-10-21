@@ -16,7 +16,17 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from starlette.responses import Response
 
-from split_video import assets, captions, ocr, proxy, scenes, timeline_ops, timeline_service, transcribe
+from split_video import (
+    assets,
+    captions,
+    ocr,
+    proxy,
+    render_queue,
+    scenes,
+    timeline_ops,
+    timeline_service,
+    transcribe,
+)
 from split_video.editor.context import RequestContext, make_context_dependency
 from split_video.editor.job_routes import cancel_job, job_of_kind
 from split_video.editor.media_response import media_response
@@ -24,7 +34,7 @@ from split_video.editor.revisions import WRITE_RESPONSES, base_revision
 from split_video.errors import RevisionConflictError
 from split_video.ffmpeg import ProbeError
 from split_video.job_work import RENDER_STEPS, render_work
-from split_video.jobs import RENDER, JobInfo, JobQueue
+from split_video.jobs import RENDER, JobInfo, JobQueue, UnknownJobError
 from split_video.media_store import MediaError, MediaOutsideRootError, MediaStore
 from split_video.store_provider import StoreProvider
 from split_video.timeline import (
@@ -222,6 +232,50 @@ class RenderRequest(BaseModel):
     caption_highlight_color: str | None = None  # "#RRGGBB"
     caption_position: str | None = None  # top | middle | bottom
     caption_tracks: list[int] | None = None  # 1-based track numbers; default the main video track
+
+
+class RenderQueueItem(RenderRequest):
+    """One render of a batch: the same options as `RenderRequest`, plus the timeline to render."""
+
+    project: str  # the timeline's name (GET /compose/projects)
+
+
+class RenderQueueRequest(BaseModel):
+    renders: list[RenderQueueItem]  # at most 50; queued in this order
+
+
+class RenderQueueErrorOut(BaseModel):
+    code: str  # the exception class, e.g. ProjectNotFoundError, OutputExistsError, ExtractError
+    message: str
+
+
+class RenderQueueJobOut(BaseModel):
+    index: int  # 1-based position in the batch
+    job_id: str  # also usable with GET /jobs/{id}, GET /compose/render/{id} and POST /jobs/{id}/cancel
+    output: str | None  # the file this render writes
+    state: str  # queued | running | done | failed | cancelled
+    progress: float  # 0.0..1.0
+    error: RenderQueueErrorOut | None = None  # set when state is failed
+    result: dict[str, Any] | None = None  # when done: name, output, duration, preset, fit, width, height, fps, captions
+    started_at: float | None = None
+    finished_at: float | None = None
+
+
+class RenderQueueCounts(BaseModel):
+    queued: int
+    running: int
+    done: int
+    failed: int
+    cancelled: int
+
+
+class RenderQueueOut(BaseModel):
+    batch_id: str | None  # null for the whole queue (GET /compose/render-queue)
+    concurrency: int  # renders that run at once; the rest wait as queued
+    total: int
+    counts: RenderQueueCounts
+    finished: bool  # nothing is queued or running any more
+    jobs: list[RenderQueueJobOut]  # in request order
 
 
 class RenderStartOut(BaseModel):
@@ -644,6 +698,47 @@ def make_router(provider: StoreProvider, jobs: JobQueue) -> APIRouter:
         )  # fmt: skip
         job_id = jobs.submit(RENDER, work, label=filename, total=RENDER_STEPS, owner=ctx.principal.id)
         return RenderStartOut(job_id=job_id)
+
+    def queue_http(exc: Exception) -> HTTPException:
+        if isinstance(exc, render_queue.UnknownBatchError | UnknownJobError):
+            return HTTPException(status_code=404, detail=str(exc))
+        return HTTPException(status_code=422, detail=str(exc))
+
+    @router.post("/compose/render-queue", response_model=RenderQueueOut)
+    def queue_renders(request: RenderQueueRequest, ctx: RequestContext = ctx_dep) -> RenderQueueOut:
+        """Queue several renders at once (the timelines in `renders`, each with the options of a single render) and
+        return the batch: one job per render, in order. At most `concurrency` run at the same time; the rest wait.
+        A render that cannot start (unknown timeline, bad preset, output exists) comes back already `failed` and does
+        not affect the others, and neither does one that fails later. Poll the batch with
+        `GET /compose/render-queue/{batch_id}`."""
+        items = [r.model_dump(exclude_unset=True) for r in request.renders]
+        try:
+            return RenderQueueOut(
+                **render_queue.submit_batch(jobs, ctx.store, ctx.media, items, principal=ctx.principal)
+            )
+        except render_queue.RenderQueueError as exc:
+            raise queue_http(exc) from None
+
+    @router.get("/compose/render-queue", response_model=RenderQueueOut)
+    def render_queue_overview(ctx: RequestContext = ctx_dep) -> RenderQueueOut:
+        """Every render this server still remembers (all batches and single renders), in the order queued."""
+        return RenderQueueOut(**render_queue.queue_status(jobs, ctx.principal))
+
+    @router.get("/compose/render-queue/{batch_id}", response_model=RenderQueueOut)
+    def render_queue_batch(batch_id: str, ctx: RequestContext = ctx_dep) -> RenderQueueOut:
+        try:
+            return RenderQueueOut(**render_queue.batch_status(jobs, batch_id, ctx.principal))
+        except render_queue.RenderQueueError as exc:
+            raise queue_http(exc) from None
+
+    @router.post("/compose/render-queue/{batch_id}/cancel", response_model=RenderQueueOut)
+    def render_queue_cancel(batch_id: str, ctx: RequestContext = ctx_dep) -> RenderQueueOut:
+        """Cancel every render of the batch that has not finished: queued ones never start, running ones have ffmpeg
+        terminated and their partial output deleted. Idempotent. Cancel just one with `POST /jobs/{job_id}/cancel`."""
+        try:
+            return RenderQueueOut(**render_queue.cancel_renders(jobs, batch_id=batch_id, viewer=ctx.principal))
+        except render_queue.RenderQueueError as exc:
+            raise queue_http(exc) from None
 
     def render_out(job: JobInfo) -> RenderStatusOut:
         summary = job.result or {}

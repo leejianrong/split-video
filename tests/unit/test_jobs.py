@@ -3,6 +3,7 @@
 import subprocess
 import sys
 import threading
+import time
 from unittest import mock
 
 import pytest
@@ -417,3 +418,65 @@ def test_stop_on_cancel_kills_a_process_that_ignores_sigterm(queue, monkeypatch)
     assert queue.wait(job_id, 10).state == "done"  # the work only waited for the process
     assert proc.returncode is not None
     assert ffmpeg_module.KILL_GRACE_SECONDS == 0.3
+
+
+def test_a_kind_limit_caps_that_kind_and_other_kinds_still_run():
+    q = InProcessJobQueue(max_workers=3, kind_limits={"render": 1})
+    try:
+        release = threading.Event()
+        running = []
+
+        def work(label):
+            def run(ctx):
+                running.append(label)
+                release.wait(10)
+
+            return run
+
+        a = q.submit("render", work("r1"))
+        b = q.submit("render", work("r2"))
+        c = q.submit("proxy", work("p1"))
+        deadline = time.monotonic() + 5
+        while len(running) < 2 and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert sorted(running) == ["p1", "r1"]  # r2 waits for its kind's slot although a worker is free
+        assert q.status(b).state == "queued" and q.status(c).state == "running"
+        release.set()
+        for job in (a, b, c):
+            assert q.wait(job, 5).state == "done"
+        assert q.concurrency("render") == 1 and q.concurrency("proxy") == 3
+    finally:
+        q.shutdown()
+
+
+def test_record_failed_and_group_and_error_code():
+    q = InProcessJobQueue(synchronous=True)
+    failed = q.record_failed("render", error="nope", error_code="TimelineError", label="x.mp4", group="g1")
+    boom = q.submit("render", lambda ctx: 1 / 0, group="g1")
+    other = q.submit("render", lambda ctx: None)
+    assert (q.status(failed).state, q.status(failed).error, q.status(failed).error_code) == (
+        "error",
+        "nope",
+        "TimelineError",
+    )
+    assert q.status(boom).error_code == "ZeroDivisionError"
+    assert {i.id for i in q.list(group="g1")} == {failed, boom} and other not in {i.id for i in q.list(group="g1")}
+    with pytest.raises(JobFailedError, match="nope"):
+        q.result(failed)
+
+
+def test_render_concurrency_setting_is_bounded(monkeypatch):
+    from split_video.jobs import MAX_RENDER_CONCURRENCY, check_render_concurrency, render_concurrency_from_env
+
+    monkeypatch.delenv("SPLIT_VIDEO_RENDER_CONCURRENCY", raising=False)
+    assert render_concurrency_from_env() == 2
+    monkeypatch.setenv("SPLIT_VIDEO_RENDER_CONCURRENCY", "3")
+    assert render_concurrency_from_env() == 3
+    for bad in ("0", "99", "many"):
+        monkeypatch.setenv("SPLIT_VIDEO_RENDER_CONCURRENCY", bad)
+        with pytest.raises(ValueError, match="between 1 and"):
+            render_concurrency_from_env()
+    with pytest.raises(ValueError):
+        check_render_concurrency(MAX_RENDER_CONCURRENCY + 1)
+    with pytest.raises(ValueError):
+        InProcessJobQueue(kind_limits={"render": 0})
