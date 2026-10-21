@@ -17,6 +17,7 @@ concurrency:
 jobs:
   lint:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
 
@@ -47,6 +48,9 @@ jobs:
 
   test:
     runs-on: ubuntu-latest
+    # The suite takes 5-9 minutes here (the real-model tests are opt-in and skipped). Anything past 25 is a hang;
+    # without this a wedged ffmpeg held the job for GitHub's 6 h default (SPL-110).
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v7
 
