@@ -1,12 +1,13 @@
 # Fetches the YAMNet model in its own stage so `kagglehub` (only needed to
 # resolve Kaggle's signed, short-lived download URLs) never ends up in the
 # final image — see scripts/fetch_yamnet_model.py.
-FROM python:3.12-slim AS models
+# The base image is pinned by digest for reproducible builds; Dependabot's docker ecosystem bumps it.
+FROM python:3.12-slim@sha256:cb33f7f771ecec2ef1225cf39b159591a040391bd73e4c01f00fdfc4c47611d2 AS models
 RUN pip install --no-cache-dir kagglehub
 COPY scripts/fetch_yamnet_model.py ./
 RUN python fetch_yamnet_model.py /models
 
-FROM python:3.12-slim
+FROM python:3.12-slim@sha256:cb33f7f771ecec2ef1225cf39b159591a040391bd73e4c01f00fdfc4c47611d2
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ffmpeg fonts-dejavu-core \
