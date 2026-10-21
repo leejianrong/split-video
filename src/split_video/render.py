@@ -26,6 +26,7 @@ from __future__ import annotations
 import os
 import subprocess
 import tempfile
+import threading
 from collections.abc import Callable
 from contextlib import ExitStack
 from dataclasses import dataclass
@@ -33,7 +34,7 @@ from typing import Any
 
 from split_video import assets, presets, transcribe
 from split_video import captions as captions_module
-from split_video.ffmpeg import ExtractError, MediaInfo, _require_binary, stop_on_cancel
+from split_video.ffmpeg import ExtractError, MediaInfo, StallWatchdog, _require_binary, stall_seconds, stop_on_cancel
 from split_video.jobs import CancelToken, JobCancelledError
 from split_video.media_store import MediaStore
 from split_video.timeline import Clip, Project, TimelineError, Track
@@ -435,9 +436,13 @@ def _run_ffmpeg(
     progress: Callable[[float], None] | None,
     cancel: CancelToken | None = None,
     preset: presets.ExportPreset | None = None,
+    stall_timeout: float | None = None,
 ) -> None:
+    """Run the render. A cancelled job stops it; so does ffmpeg's `-progress` output standing still for
+    `stall_timeout` seconds (default `ffmpeg.stall_seconds()`), which raises `ExtractError`."""
     cmd = [
         _require_binary("ffmpeg"),
+        "-nostdin",
         "-y",
         "-nostats",
         "-progress",
@@ -454,23 +459,50 @@ def _run_ffmpeg(
         *_encode_args(preset),
         out_path,
     ]
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    proc = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     assert proc.stdout is not None and proc.stderr is not None
+    # stderr is drained on a thread: reading it only after stdout ends deadlocks once ffmpeg has written
+    # more than a pipe buffer of log (it blocks on stderr, so stdout never ends).
+    tail: list[str] = []
+
+    def drain() -> None:
+        assert proc.stderr is not None
+        for line in proc.stderr:
+            tail.append(line)
+            del tail[:-200]
+
+    reader = threading.Thread(target=drain, name="ffmpeg-stderr", daemon=True)
+    reader.start()
     detach = stop_on_cancel(proc, cancel)  # cancelling terminates ffmpeg, which ends the loop below
+    stall = stall_seconds() if stall_timeout is None else stall_timeout
     try:
-        for line in proc.stdout:
-            if progress and line.startswith("out_time_us="):
-                try:
-                    progress(min(1.0, max(0.0, int(line.split("=")[1]) / 1_000_000 / total)))
-                except ValueError:
-                    pass  # ffmpeg prints out_time_us=N/A before the first frame
-        stderr = proc.stderr.read()
-        returncode = proc.wait()
+        with StallWatchdog(proc, stall) as watchdog:
+            last_time = None
+            for line in proc.stdout:
+                if not line.startswith("out_time_us="):
+                    continue
+                value = line.split("=")[1].strip()
+                if value != last_time:  # the watchdog counts only output time that moved
+                    last_time = value
+                    watchdog.touch()
+                if progress:
+                    try:
+                        progress(min(1.0, max(0.0, int(value) / 1_000_000 / total)))
+                    except ValueError:
+                        pass  # ffmpeg prints out_time_us=N/A before the first frame
+            returncode = proc.wait()
+            reader.join(5)
     finally:
         detach()
         if proc.poll() is None:  # leaving early (an exception in `progress`): don't leak the process
             proc.kill()
             proc.wait()
+    stderr = "".join(tail)
+    if watchdog.stalled:
+        raise ExtractError(
+            f"ffmpeg stopped making progress rendering '{os.path.basename(out_path)}' for {stall:g} s and was killed: "
+            f"{stderr.strip()[-500:]}"
+        )
     if cancel is not None:
         cancel.raise_if_cancelled()
     if returncode != 0:
