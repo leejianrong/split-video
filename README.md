@@ -642,7 +642,8 @@ the visual editor afterward. Tools: `list_videos`, `list_segments`,
 New to driving it? The [agent guide](src/split_video/agent_guide/SKILL.md) is the order of calls that works (import,
 report, transcribe, pick moments, plan, render), with limits, costs and error recovery. The server serves it as the
 resource `guide://agent` and the prompts `highlights_workflow`, `vertical_short` and `recover_from_error`;
-`split-video agent-guide` prints it.
+`split-video agent-guide` prints it. The whole workflow is tested end to end by a scripted MCP client on a long
+synthetic recording ([docs/e2e-agent-test.md](docs/e2e-agent-test.md)).
 
 Tools only touch files under `--root` (default: the current directory):
 
