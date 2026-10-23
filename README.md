@@ -69,6 +69,7 @@ claude mcp add split-video -- docker run -i --rm -v ~/recordings:/data \
 | [docs/highlights.md](docs/highlights.md), [docs/media-report.md](docs/media-report.md), [docs/time-index.md](docs/time-index.md) | Highlight scoring, media report and time index formats |
 | [docs/render-queue.md](docs/render-queue.md), [docs/tool-response-caps.md](docs/tool-response-caps.md) | Render queue, tool response size limits |
 | [docs/e2e-agent-test.md](docs/e2e-agent-test.md) | The end-to-end agent test |
+| [docs/ux-spec.md](docs/ux-spec.md) | UX spec for the unified editor (design contract for M3) |
 | [docs/adr/](docs/adr/), [docs/decisions/](docs/decisions/) | Architecture decisions and design notes |
 
 ## Contributing

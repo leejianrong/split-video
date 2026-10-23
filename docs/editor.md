@@ -2,6 +2,8 @@
 
 How to use the browser editor for splitting a recording. For starting it, see [docker.md](docker.md).
 
+The editor is being rebuilt as one workspace; its design contract is [ux-spec.md](ux-spec.md).
+
 `split-video edit ~/recordings` starts a local server and opens a browser
 tab with a file browser to pick a video from. Point it at a file directly
 (`split-video edit liveshow.mp4`) to skip the picker and open straight into
