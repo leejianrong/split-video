@@ -1,6 +1,7 @@
 # 0002: Agent-first highlights editor, hosted-ready seams
 
 Status: accepted (2026-10-19). Board card: SPL-30. Amends 0001.
+Amended by [0003](0003-one-editor-one-project-model.md): one editor, one project model; the M3 frontend is one port, not two.
 
 ## Context
 
