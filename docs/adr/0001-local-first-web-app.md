@@ -2,6 +2,7 @@
 
 Status: accepted (2026-10-14, recorded 2026-10-19). Board card: SPL-12.
 Partially superseded by [0002](0002-agent-first-hosted-ready.md): auth and hosting positions revised.
+Amended by [0003](0003-one-editor-one-project-model.md): the split editor and the compose page become one editor with one project model.
 
 ## Context
 
