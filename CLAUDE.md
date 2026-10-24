@@ -12,7 +12,7 @@ Python CLI, MCP server and local web editor (FastAPI) for long recordings: split
 ## Checks
 
 - Cheap gate (CI `lint`, mirrored by `.githooks/pre-push`; seconds): `uv run ruff check . && uv run ruff format --check .` plus the four `scripts/export_*.py --check` drift checks.
-- Tests (CI `test`): `uv run pytest tests/unit` takes about 3 minutes, the full `uv run pytest` 5-10 (needs `ffmpeg`). Run both in the background and wait; do not poll.
+- Tests (CI `test`): `uv run pytest tests/unit` takes about 3 minutes, the full `uv run pytest` 5-15 locally, 8-25 on CI runners (needs `ffmpeg`). Run both in the background and wait; do not poll.
 - ffmpeg and server tests need hard timeouts (SPL-110: a wedged ffmpeg held CI for 6 h). pytest has a 300 s per-test limit; spawn ffmpeg with `-nostdin`, never read an SSE stream without a deadline, and start servers in the background and kill them by PID.
 
 ## Architecture rules (M1 seams)
