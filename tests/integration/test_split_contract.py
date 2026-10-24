@@ -31,7 +31,9 @@ LEGACY = FIXTURES / "split_legacy"
 GOLDEN = FIXTURES / "split_contract" / "golden.json"
 VARIANTS = ["fresh", "v1_minimal", "v2_labelled", "v2_empty", "v2_unparseable", "v2_gaps_and_overlap"]
 DEFAULTS = StateParams(silence_threshold=-35.0, min_silence_duration=2.0, min_song_length=2.0, padding=0.15)
-runner = CliRunner()
+# CI sets FORCE_COLOR and its own terminal width; the golden output is plain text at 80 columns
+runner = CliRunner(env={"NO_COLOR": "1", "FORCE_COLOR": "", "COLUMNS": "80", "TERM": "dumb"})
+ANSI = re.compile(r"\x1b\[[0-9;]*m")
 
 
 # --- helpers ---------------------------------------------------------------------------------
@@ -56,6 +58,7 @@ def clean(value, root: Path):
     if isinstance(value, list):
         return [clean(v, root) for v in value]
     if isinstance(value, str):
+        value = ANSI.sub("", value)
         return value.replace(str(root.resolve()), "<ROOT>").replace(str(root), "<ROOT>")
     return value
 
