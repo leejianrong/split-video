@@ -1,9 +1,9 @@
 # UX spec: the unified editor
 
-Status: draft for M3 (SPL-91). Decision: ADR 0003 (`docs/adr/0003-one-editor-one-project-model.md`, SPL-115).
+Status: draft for M3 (SPL-91). Decision: [ADR 0003](adr/0003-one-editor-one-project-model.md) (SPL-115).
 Layout figures come from the accepted wireframes (1440 x 900 canvas); anything
-the wireframes do not settle is listed under [Open questions](#open-questions)
-and is not specified here.
+the wireframes do not settle was decided by the owner on 2026-10-24 and is
+recorded under [Decisions](#decisions).
 
 UI cards link to a section with "Implements docs/ux-spec.md#timeline". Anchors
 below are stable: do not rename a heading without updating its links.
@@ -25,12 +25,12 @@ below are stable: do not rename a heading without updating its links.
 | [#shortcuts](#shortcuts) | Keyboard shortcuts |
 | [#accessibility](#accessibility) | Accessibility |
 | [#feature-budget](#feature-budget) | Feature budget |
-| [#open-questions](#open-questions) | Open questions |
+| [#decisions](#decisions) | Decisions |
 
 ## Purpose
 
 This is the design contract for the M3 editor: one workspace, one project (the
-timeline project, see ADR 0003). It says what each region shows, what it does
+timeline project, see [ADR 0003](adr/0003-one-editor-one-project-model.md)). It says what each region shows, what it does
 and how it behaves, so frontend cards can be built and reviewed without
 re-deciding the design. It does not specify colours, fonts or component code.
 
@@ -39,7 +39,7 @@ recordings (streams, gigs, lectures). Agents are also users: whatever the UI can
 do is available through the API, CLI and MCP (ADR 0002), and what an agent does
 is visible in the UI.
 
-Visual direction: dark theme, teal accent. The layout pattern (media and tools
+Visual direction: dark theme only (no light theme), teal accent. The layout pattern (media and tools
 left, preview centre, contextual inspector right, timeline below, export dialog
 with a queue) is the one CapCut desktop uses; labels, icons and styling are our
 own, and no third-party imagery is used.
@@ -69,7 +69,7 @@ own, and no third-party imagery is used.
 
 Wireframe sizes at 1440 x 900. Supported window width 1280 to 1920 px; below
 1280 px a "window too small" notice is shown rather than a broken layout. Height
-minimum 720 px.
+minimum 720 px. Touch devices are not supported in M3 (mouse and keyboard only).
 
 | Region | Wireframe size | Min | Resizable | Notes |
 |---|---|---|---|---|
@@ -94,8 +94,8 @@ Behaviour:
   retry") and the agent status ("Agent connected, 2 edits live" when an agent
   session is attached; hidden otherwise).
 - The aspect ratio picker in the top bar sets the project canvas (16:9, 9:16,
-  1:1). Changing it never moves clips; it changes crop and fit (see
-  [Preview](#preview)).
+  1:1), which is the output ratio. Changing it never moves clips; it changes crop
+  and fit (see [Preview](#preview)).
 
 ## Left tabs
 
@@ -141,7 +141,11 @@ lands.
   reason ("loud, crowd cheers, you say 'finally'"). Actions: **Make short**
   (builds a 9:16 short with captions on a new timeline segment) and **Add to
   timeline** (inserts the range as a labelled segment).
-- Footer button "Make a short from every highlight (N)".
+- Footer button "Make a short from every highlight (N)": creates a short
+  timeline for each of the N suggestions listed, and so accepts them. It is
+  not the export count (see [Export](#export)).
+- A suggestion is **accepted** once the user acts on it with Make short, Add to
+  timeline or the footer button. Unreviewed suggestions are never exported.
 - Clicking a card previews the range in the preview without changing the
   timeline. Dismissing a card removes it from the list (undoable).
 - Review step: suggestions from an agent arrive here and never change the
@@ -159,7 +163,8 @@ lands.
 - Search box finds words and jumps between matches.
 - States: not transcribed (button "Transcribe"), running (progress, partial text
   appears), done, failed.
-- Speaker labels: see [Open questions](#open-questions).
+- Speaker labels are not shown in M3 (decided: no diarisation; the transcript is
+  plain sentences).
 
 ### Text
 
@@ -194,13 +199,21 @@ lands.
   with Play/Pause and a **Fit** menu (Fit, 100%).
 - Rendering follows ADR 0002: server-side preview, so what is shown matches
   export. While a preview frame renders, the previous frame stays with a small
-  spinner; scrubbing may show lower-quality frames, never wrong ones.
-- **Ratio**: the project canvas (16:9, 9:16, 1:1) set in the top bar. A clip whose
-  shape differs is shown per its canvas fit: Crop to fill, Letterbox, or
-  Reframe (see [Inspector](#inspector)).
+  spinner; scrubbing may show lower-quality frames, never wrong ones. Targets: a still
+  frame within 500 ms of a scrub, and playback at 720p proxy quality. SPL-73
+  (browser compositor spike) and SPL-69 to SPL-72 confirm these are feasible;
+  if they are not, the targets are revisited.
+- **Ratio**: the project canvas (16:9, 9:16, 1:1) set in the top bar; it is the
+  output ratio. A clip whose shape differs is shown per its canvas fit: Crop to
+  fill, Letterbox, or Reframe (see [Inspector](#inspector)). A clip's reframe
+  and crop only choose how that clip is cropped to fit the canvas; they never
+  change the canvas, and the canvas never overrides them.
 - **Safe zone**: when the ratio is 9:16 a "Safe zone" toggle (default on) draws
   the area clear of platform interface; the Highlights wireframe shows it as a
-  checked option. The margins are in [Open questions](#open-questions).
+  checked option. One set of margins for 9:16, no per-platform variants yet: 10%
+  of the height free at the top and at the bottom (192 px of 1920) and 6% of the
+  width free at each side (65 px of 1080). These are the margins captions
+  already keep (`SAFE_MARGIN` and `SIDE_MARGIN` in `src/split_video/captions.py`).
 - **Captions and text** are drawn over the picture in the preview as they
   will be exported.
 - **Play**: Space or K toggles; clicking the picture toggles. Preview audio is
@@ -216,7 +229,7 @@ selection, for example "Selected: Song 2, 4 min 12 s".
 | Selection | Tabs and controls |
 |---|---|
 | Nothing | Project details: name, source file(s), length, aspect ratio, frame rate, "proxy/preview: ready". Export shortcut. |
-| Video clip (including a song segment) | **Video**: Canvas fit (Crop to fill, Letterbox, Reframe), ratio buttons (16:9, 9:16, 1:1), Scale (%), Position (X, Y), Brightness; Reset clip. **Audio**: Volume (dB), mute. **Speed**: speed factor. **Crop**: crop region. |
+| Video clip (including a song segment) | **Video**: Canvas fit (Crop to fill, Letterbox, Reframe), Scale (%), Position (X, Y), Brightness; Reset clip. **Audio**: Volume (dB), mute. **Speed**: speed factor. **Crop**: crop region. |
 | Audio clip | Volume (dB), mute, fade in and out. |
 | Text clip | Text, size, colour, position. |
 | Captions clip | Style, highlight mode, size, position, "Edit words in Transcript tab". |
@@ -228,6 +241,9 @@ Rules:
 
 - Changing a control applies immediately and is one undo step per drag or edit.
 - Every numeric field has a reset. "Reset clip" restores clip defaults.
+- The output ratio is the project canvas in the top bar; the inspector has no
+  per-clip ratio. Canvas fit, Reframe and Crop only decide how the clip is
+  cropped to fit the canvas.
 - Reframe: "Follow centre" or "Pick region" (drag a box on the preview). Smart
   tracking is not in M3.
 - Keyframe buttons are not shown in M3.
@@ -238,7 +254,7 @@ Bottom region, 292 px high in the wireframe.
 
 **Toolbar** (40 px): Select tool, Undo, Redo, Split at playhead, Delete, a
 Snapping toggle (on by default; the label "Snapping on" appears in the status),
-Ripple toggle, zoom out / slider / zoom in, and a "fit whole timeline" button.
+a single global Ripple toggle (off by default), zoom out / slider / zoom in, and a "fit whole timeline" button.
 
 **Ruler and playhead.** A time ruler across the top (labels adapt to the zoom:
 seconds up to hours; the wireframes use 0:30:00 steps for a 2 h 41 min
@@ -246,11 +262,12 @@ recording). A vertical playhead; click or drag the ruler to move it. The
 playhead position is shown in the preview readout.
 
 **Tracks and lanes.** Each lane has a header (120 px wide) at the left. Lanes,
-top to bottom, appear only when they have content except the main lanes:
+top to bottom, appear only when they have content except the main lanes. A Zoom
+or effects lane is post-M3: zoom clips have no creation path in M3 and the lane
+is not shown.
 
 | Lane | Contents |
 |---|---|
-| Zoom / effects (top) | Zoom and effect clips (placeholder in M3 if Effects is a placeholder) |
 | Text | Title clips |
 | Captions | Caption blocks, labelled "Auto captions, 1,204 words" |
 | Main video | The main track: segments with labels, filmstrip |
@@ -280,29 +297,28 @@ default view fits the whole timeline.
 within 8 px; a thin teal guide line shows what was snapped to. Holding Alt while
 dragging turns snapping off for that drag.
 
-**Selection.** Click selects a segment or clip; Shift-click adds; drag on empty
-space draws a box. Click on empty timeline space deselects. Clicking a clip
-moves nothing; the playhead moves only on the ruler or when the user clicks an
-empty part of the lane with the Select tool (see
-[Open questions](#open-questions)).
+**Selection.** Clicking a clip selects it (and moves nothing); Shift-click adds;
+drag on empty space draws a box. A plain click on a lane (empty space or
+between clips) moves the playhead to that point and deselects. The playhead also
+moves on the ruler.
 
 **Drag and trim.** Drag a clip to move it (within its lane, or to a compatible
 lane). Drag a clip edge to trim; a tooltip shows the new time. Drag a cut to
 move the boundary between two segments; the neighbours resize with it and
 nothing is lost. Minimum clip length is one frame.
 
-**Ripple.** With ripple on, delete or trim closes the gap on that lane and moves
-later clips on it; off by default for non-main lanes and on for the main video
-lane (see [Open questions](#open-questions) for the default). Delete on the main
-track with ripple off leaves a gap.
+**Ripple.** One global toggle for the whole timeline, off by default. With
+ripple on, delete or trim closes the gap on that lane and moves later clips on
+it. With it off, delete leaves a gap, on the main track too. Shift+Delete
+ripple-deletes the selection whatever the toggle says.
 
-**Split at playhead.** `S` or the toolbar button cuts the clip(s) under the
+**Split at playhead.** `S` (Ctrl/Cmd+B as an alias) or the toolbar button cuts the clip(s) under the
 playhead on every unlocked lane (selected clips only if any are selected). The
 result is two segments with the same label plus " (2)" until renamed.
 
-**Undo and redo.** Unlimited within a session, shared by UI and agent edits,
-and kept across a reload where the engine supports it (see
-[Open questions](#open-questions)).
+**Undo and redo.** Unlimited within a session, shared by UI and agent edits.
+History is session-only: it is not saved in the project file and is gone after a
+reload (persisting it would be a format change, later).
 
 **Agent edits.** Appear live; changed segments flash briefly and an entry
 "Agent: removed 3 gaps" appears in the undo list.
@@ -348,8 +364,8 @@ A dialog opened from the top bar Export button ("Export and render queue").
 | Option | Output |
 |---|---|
 | Each segment as its own file | One file per labelled main-track segment, named from the labels ("Song 1 ... Song 4, 4 files") |
-| The whole timeline as one video | One file |
-| Each highlight as a short | One vertical clip with captions per accepted highlight |
+| The whole timeline as one video | One file, named after the project ("my-gig.mp4") |
+| Each highlight as a short | One vertical clip with captions per accepted highlight (see [Highlights](#highlights)); unreviewed suggestions are not exported |
 
 **Settings:**
 
@@ -359,13 +375,13 @@ A dialog opened from the top bar Export button ("Export and render queue").
 - Save to: a folder path with a Choose button; default is a folder next to the
   source named `<source>_export`.
 - A line "Estimated time: about 4 min, up to 2 renders at once".
-- Footer: summary of presets, Cancel, and **Start export (N)** (N = files).
+- Footer: summary of presets, Cancel, and **Start export (N)** (N = files to render: segments, one, or accepted highlights). N is not the count on the Highlights footer button.
 
 **Render queue** (below the settings, also reachable from the top bar after the
 dialog closes):
 
 - One row per output file with name and state: Waiting, Rendering with a percent
-  and bar, Done (Open folder), Failed (message, "Fix: ..." hint, Retry),
+  and bar, Done (Open folder), Failed (message, "Fix: ..." hint, Retry; for example "my-gig.mp4: out of disk space. Fix: free some space, then retry"),
   Cancelled.
 - **Cancel all**, and per-row cancel. One failed render never stops the others.
 - The dialog can be closed while renders continue; the top bar shows a queue
@@ -398,9 +414,9 @@ The `?` overlay lists exactly this table.
 | Space / K | Play / pause | current |
 | J / L | Step back / forward 5 s | current |
 | S | Split at the playhead (adds a cut) | current (was "add a split") |
-| Ctrl+B | Split at the playhead | new, CapCut-like alias |
-| Delete / Backspace | Delete the selection; on a cut, remove the cut | current, widened |
-| Shift+Delete | Delete and close the gap (ripple) | new |
+| Ctrl/Cmd+B | Split at the playhead | new, CapCut-like alias |
+| Delete / Backspace | Delete the selected clip or cut (a cut: remove the cut) | current, widened |
+| Shift+Delete | Ripple delete: delete the selection and close the gap | new |
 | Left / Right | Nudge the selected cut 0.1 s (1 s with Shift) | current |
 | Comma / Period | Previous / next frame | new |
 | Home / End | Playhead to start / end | new |
@@ -470,41 +486,37 @@ On macOS Ctrl reads as Cmd.
 Deferred items keep their place in the layout where it costs nothing (the
 Effects tab) and get no controls.
 
-## Open questions
+## Decisions
 
-Gaps and inconsistencies found in the wireframes. Each needs an owner decision
-before the related card starts; none is specified above.
+Owner decisions of 2026-10-24 on the gaps and inconsistencies found in the
+wireframes. The sections above already reflect them.
 
-1. **Playhead on click.** Whether a plain click on a lane moves the playhead or
-   only selects. The wireframes show a playhead but no click behaviour.
-2. **Ripple default.** Which lanes ripple by default, and whether the toggle is
-   per lane or global. Not drawn.
-3. **Safe zone margins.** The Highlights wireframe shows "Safe zone" with a
-   checkmark but no margins or per-platform variants.
-4. **Undo across reload.** Whether history is persisted in the project file (a
-   format change) or lasts only for the session.
-5. **Transcript speakers.** Speaker labels are not drawn.
-6. **Lane list.** The main wireframe shows Zoom, Text, Captions, Main video,
-   Main audio and Music, while the Highlights wireframe shows only Captions and
-   Main lanes. Which lanes appear when empty is inferred here (hidden unless
-   they have content).
-7. **"Zoom" lane vs Effects placeholder.** The timeline has a Zoom lane but the
-   Effects tab is a placeholder; zoom clips have no creation path in M3.
-8. **Aspect ratio in two places.** 16:9 / 9:16 / 1:1 appear in the top bar
-   (project canvas) and in the clip inspector (per-clip ratio buttons). How they
-   interact (does a clip ratio override the canvas?) is not drawn.
-9. **Export "each highlight as a short"** assumes accepted highlights; whether
-   un-reviewed suggestions count is not stated. Also the wireframe's "Make a
-   short from every highlight (3)" and "Start export (3)" are different
-   actions with the same count.
-10. **Failed render in the queue.** The wireframe's failed item is "reel.mp4",
-    which no export option produces; naming for the whole-timeline output is
-    undefined.
-11. **Preview quality and latency targets** (ADR 0002 accepts server rendering
-    but no target is set).
-12. **Window below 1280 px.** The notice is proposed here; the wireframes only
-    cover 1440 px. Same for touch devices.
-13. **Dark only.** Only the dark theme is drawn; a light theme is not planned.
-14. **Shortcut conflicts.** S currently adds a split on the old timeline and
-    Delete removes a split; behaviour for a selected clip versus a selected cut
-    is proposed here and should be confirmed.
+1. **Playhead on click.** A plain click on a lane moves the playhead; clicking a
+   clip selects it.
+2. **Ripple.** A single global toggle, off by default. Shift+Delete
+   ripple-deletes the selection.
+3. **Safe zone.** One set of margins for 9:16 (10% top and bottom, 6% at each
+   side, as captions use), shown by a toggle. No per-platform variants yet.
+4. **Undo and redo** are session-only. History is not persisted; persisting it
+   would be a format change, later.
+5. **Aspect ratio in two places.** The project canvas ratio (top bar) is the
+   output ratio. A clip's reframe and crop in the inspector control how that
+   clip is cropped to fit the canvas. They do not override each other.
+6. **Each highlight as a short** exports only highlights the user has accepted.
+   The Highlights footer button "Make a short from every highlight" creates
+   short timelines for the listed suggestions; the export count (Start export
+   (N)) is the number of files to render.
+7. **Export names.** The whole-timeline file is named after the project. The
+   failed-render example uses a name an export can produce.
+8. **Preview targets.** A scrubbed still within 500 ms; playback at 720p proxy
+   quality. SPL-73 and SPL-69 to SPL-72 confirm feasibility, otherwise revisit.
+9. **Window.** Narrower than 1280 px shows a "window too small" notice;
+   minimum height 720 px; no touch support in M3.
+10. **Dark theme only.**
+11. **Shortcuts.** S splits at the playhead (Ctrl/Cmd+B alias); Delete removes the
+    selected clip or cut; Shift+Delete ripple-deletes.
+12. **Transcript speakers.** No speaker labels in M3.
+13. **Lane list.** Lanes appear only when they have content, except the main
+    video and main audio lanes.
+14. **Zoom lane.** Post-M3. There is no Zoom lane in M3 (zoom clips have no
+    creation path); the Effects tab stays a placeholder.
