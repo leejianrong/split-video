@@ -51,9 +51,11 @@ jobs:
 
   test:
     runs-on: ubuntu-latest
-    # The suite takes 5-9 minutes here (the real-model tests are opt-in and skipped). Anything past 25 is a hang;
-    # without this a wedged ffmpeg held the job for GitHub's 6 h default (SPL-110).
-    timeout-minutes: 25
+    # The identical suite took 8, 12 and 24.6 minutes on GitHub-hosted runners, and one run was cancelled at the old
+    # 25 minute limit: runner speed varies about 3x. The real-model tests are opt-in and skipped. Real hangs are caught
+    # per test (pytest-timeout 300 s, the SPL-110 ffmpeg watchdog), so this job limit is only the backstop; without it
+    # a wedged ffmpeg held the job for GitHub's 6 h default (SPL-110).
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v7
 
