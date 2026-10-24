@@ -43,6 +43,7 @@ from split_video import (
     contact_sheet,
     edit_ops,
     edit_plan,
+    export_modes,
     frames,
     highlights,
     library,
@@ -1411,6 +1412,72 @@ def create_server(
         and does not stop the others; neither does one that fails later. Poll with render_queue_status, stop with
         cancel_renders."""
         return await run(lambda: render_queue.submit_batch(jobs, store, media, renders))
+
+    @server.tool(annotations=_REPLACES_PROJECT)
+    async def export_project(
+        mode: str,
+        video: str | None = None,
+        project: str | None = None,
+        timelines: list[str] | None = None,
+        only: list[int] | None = None,
+        output: str | None = None,
+        output_dir: str | None = None,
+        overwrite: bool = False,
+        precise: bool = False,
+        output_format: str | None = None,
+        width: int | None = None,
+        height: int | None = None,
+        preset: str | None = None,
+        fit: str | None = None,
+        captions: str | None = None,
+        caption_range: dict[str, float] | None = None,
+        caption_font_size: float | None = None,
+        caption_highlight_color: str | None = None,
+        caption_position: str | None = None,
+        caption_tracks: list[int] | None = None,
+    ) -> dict[str, Any]:
+        """One export operation with three modes; it returns at once and the files are written in the background
+        on the render queue (a few at a time). mode `segments`: each included segment of `video` as its own file in
+        '<video name>_split/' (`only` = segment numbers instead; a stream copy unless you pass a preset, size, fit or
+        captions, then each is rendered). mode `timeline`: the whole timeline as one `<name>.mp4`, named after the
+        timeline `project` (or `video`'s own timeline). mode `highlights`: each timeline in `timelines` (the highlights
+        the user accepted; suggestions nobody accepted are never exported) as a vertical short (default preset
+        vertical-1080, fit crop, 'shorts' captions when there is a transcript). Render options are those of
+        render_timeline; `output` names the timeline file, `output_dir` a folder in the root. Returns the same
+        batch as queue_renders ({mode, batch_id, concurrency, total, counts, finished, jobs: [{index, job_id, output,
+        state, progress, error {code, message, fix}, result}]}); a file that cannot be written is already `failed`
+        and does not stop the others. Poll with render_queue_status, stop with cancel_renders."""
+        video_id = resolve(video) if video is not None else None
+        options = export_modes.RenderOptions(
+            width=width,
+            height=height,
+            preset=preset,
+            fit=fit,
+            captions=captions,
+            caption_range=caption_range,
+            caption_font_size=caption_font_size,
+            caption_highlight_color=caption_highlight_color,
+            caption_position=caption_position,
+            caption_tracks=caption_tracks,
+        )
+        return await run(
+            lambda: export_modes.submit_export(
+                jobs,
+                store,
+                media,
+                mode,
+                video=video_id,
+                project_name=project,
+                timelines=timelines,
+                only=only,
+                output=output,
+                output_dir=output_dir,
+                overwrite=overwrite,
+                precise=precise,
+                output_format=output_format,
+                options=options,
+            )
+        )
 
     @server.tool(annotations=_READ_ONLY)
     async def render_queue_status(batch_id: str | None = None) -> dict[str, Any]:

@@ -79,6 +79,7 @@ async def test_exposes_the_documented_tools(root):
         "set_timeline_transition",
         "render_timeline",
         "queue_renders",
+        "export_project",
         "render_queue_status",
         "cancel_renders",
         "list_export_presets",

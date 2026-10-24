@@ -62,3 +62,31 @@ returns (`name`, `output`, `duration`, `preset`, `fit`, `width`, `height`, `fps`
   touched once ffmpeg starts writing, and only with `overwrite`.
 - Timelines are read when the batch is queued: editing one afterwards does not change a render already queued.
 - The queue lives in memory in the server (or MCP) process; batch ids are good until restart.
+
+## Export modes: segments, timeline, highlights
+
+Splitting is an export mode, not a separate tool. One operation writes the files of a mode as a batch on this queue
+(`src/split_video/export_modes.py`), so it has the same concurrency limit, states, cancel and failure isolation, and
+the same answer plus `mode`. Poll and cancel with the render-queue calls above.
+
+| Surface | Call |
+| --- | --- |
+| HTTP | `POST /api/v1/compose/export` `{"mode": ..., ...}` |
+| CLI | `split-video compose export MODE [--video F] [--project NAME] [--timelines A,B] [--only 1,3] [--preset P] [--fit F] [--captions S] [--output-dir D] [--overwrite] [--concurrency N] [--json]` (waits, exit 1 if any file failed) |
+| MCP | `export_project(mode, video?, project?, timelines?, only?, preset?, ...)` returns at once |
+
+| `mode` | Needs | Writes |
+| --- | --- | --- |
+| `segments` | `video` | Each included segment of the recording's main track as its own file in `<video>_split/`, named exactly as `split-video export` names them (`export_name`, else `NN - <video>`). A stream copy (`precise`, `output_format` as in the split export) unless a preset, size, fit or captions is given: then each segment is rendered to `.mp4` (its clip's crop and gain kept). `only` names segments and overrides the include flags. No `manifest.json` (the old `export` still writes it). |
+| `timeline` | `project` (a timeline), or `video` (its own timeline) | The whole timeline as one `<project>.mp4` (a recording's name without its extension), in the root, beside the video for `video`, or in `output_dir`; `output` renames it. Every clip plays, whatever `included` says. It never overwrites a source file. |
+| `highlights` | `timelines` | Each listed timeline as a vertical short `<name>.mp4`: preset `vertical-1080`, fit `crop`, the `shorts` captions when a clip's asset has a transcript (`captions: "off"` or any option you pass wins). |
+
+**What "accepted highlight" means.** Project data has no accepted flag. `suggest_highlights` returns candidates and an
+[edit plan](edit-plan.md) turns one into a timeline; a highlight is accepted when its timeline is in `timelines`. The
+caller (the Highlights panel, an agent) owns that list, so unreviewed suggestions are never exported and no format
+changes. A persisted flag (and "export all accepted" without a list) is a later, additive change.
+
+A request that is wrong as a whole (unknown mode, missing `video`/`project`/`timelines`, bad preset or caption option,
+more than 50 files) is an error before anything is queued (`export.invalid` and the usual codes). A file that cannot be
+written (it exists, unknown timeline, missing source, ffmpeg error) comes back `failed` with `{code, message, fix}` and
+the others carry on.

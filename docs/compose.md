@@ -66,6 +66,9 @@ clip with its own `compose crop` region keeps that crop either way. The same opt
 `split-video compose render-queue batch.json`, `POST /api/v1/compose/render-queue`, MCP `queue_renders`; see
 [docs/render-queue.md](render-queue.md).
 
+To export a recording's segments, a whole timeline or accepted highlights as shorts in one call: `split-video compose export`,
+`POST /api/v1/compose/export`, MCP `export_project` ([export modes](render-queue.md#export-modes-segments-timeline-highlights)).
+
 **Captions** (`--captions <style>`) burn the spoken words into the picture, on top of everything else, with the word
 being spoken highlighted. They come from the transcripts of the clips' assets (run `split-video transcribe` first; a clip
 whose asset has none is simply not captioned and is listed in the result's `captions.clips_without`), for the main video
