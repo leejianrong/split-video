@@ -193,6 +193,9 @@ def test_cancelling_one_queued_render_leaves_the_others_running(store, media, jo
         [{"project": "reel"}, {"project": "short1", "output": "s1.mp4"}, {"project": "short2", "output": "s2.mp4"}],
     )
     queued = batch["jobs"][2]["job_id"]
+    deadline = time.monotonic() + 10
+    while ffmpeg.running < 2 and time.monotonic() < deadline:  # both slots taken: only then is the third queued
+        time.sleep(0.01)
     after = render_queue.cancel_renders(jobs, job_id=queued)
     assert _states(after) == ["running", "running", "cancelled"] or _states(after) == ["queued", "running", "cancelled"]
     ffmpeg.release.set()

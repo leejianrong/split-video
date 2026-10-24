@@ -19,6 +19,7 @@ from starlette.responses import Response
 from split_video import (
     assets,
     captions,
+    export_modes,
     ocr,
     proxy,
     render_queue,
@@ -272,7 +273,22 @@ class RenderQueueCounts(BaseModel):
     cancelled: int
 
 
+class ExportRequest(RenderRequest):
+    """`POST /compose/export`: one export operation with a mode. The render options are those of a single render
+    (`RenderRequest`); `output` applies to mode timeline."""
+
+    mode: str  # segments | timeline | highlights
+    video: str | None = None  # segments, and timeline of the recording's own timeline: a path in the root
+    project: str | None = None  # timeline: the timeline project's name
+    timelines: list[str] | None = None  # highlights: the accepted highlights' timeline names
+    only: list[int] | None = None  # segments: segment numbers to write (overrides the include flags)
+    output_dir: str | None = None  # a folder in the root; default <video>_split for segments, else beside the video
+    precise: bool = False  # segments without render options: re-encode for frame-accurate cuts
+    output_format: str | None = None  # segments without render options: force a container/codec
+
+
 class RenderQueueOut(BaseModel):
+    mode: str | None = None  # set by POST /compose/export: the export mode
     batch_id: str | None  # null for the whole queue (GET /compose/render-queue)
     concurrency: int  # renders that run at once; the rest wait as queued
     total: int
@@ -721,6 +737,56 @@ def make_router(provider: StoreProvider, jobs: JobQueue) -> APIRouter:
             )
         except render_queue.RenderQueueError as exc:
             raise queue_http(exc) from None
+
+    @router.post("/compose/export", response_model=RenderQueueOut)
+    def export_modes_route(request: ExportRequest, ctx: RequestContext = ctx_dep) -> RenderQueueOut:
+        """Export with one of three modes and return the render queue's batch (poll and cancel it with
+        `/compose/render-queue/{batch_id}`): `segments` writes each included segment of `video` as its own file,
+        `timeline` renders the whole timeline as one `<project>.mp4`, `highlights` renders each timeline in
+        `timelines` (the accepted highlights) as a vertical short. A file that cannot be written comes back already
+        `failed` with code, message and fix and does not stop the others."""
+        media = ctx.media
+        try:
+            video = None
+            if request.video is not None:
+                video = media.resolve_user_path(request.video)
+                if not media.is_file(video):
+                    raise SourceNotFoundError(f"video not found: {request.video}")
+            options = export_modes.RenderOptions(
+                width=request.width,
+                height=request.height,
+                preset=request.preset,
+                fit=request.fit,
+                captions=request.captions,
+                caption_range=None if request.caption_range is None else request.caption_range.model_dump(),
+                caption_font_size=request.caption_font_size,
+                caption_highlight_color=request.caption_highlight_color,
+                caption_position=request.caption_position,
+                caption_tracks=request.caption_tracks,
+            )
+            return RenderQueueOut(
+                **export_modes.submit_export(
+                    jobs,
+                    ctx.store,
+                    media,
+                    request.mode,
+                    video=video,
+                    project_name=request.project,
+                    timelines=request.timelines,
+                    only=request.only,
+                    output=request.output,
+                    output_dir=request.output_dir,
+                    overwrite=request.overwrite,
+                    precise=request.precise,
+                    output_format=request.output_format,
+                    options=options,
+                    principal=ctx.principal,
+                )
+            )
+        except MediaOutsideRootError as exc:
+            raise api_error(403, exc) from None
+        except (TimelineError, ValueError) as exc:
+            raise _http(exc) from None
 
     @router.get("/compose/render-queue", response_model=RenderQueueOut)
     def render_queue_overview(ctx: RequestContext = ctx_dep) -> RenderQueueOut:

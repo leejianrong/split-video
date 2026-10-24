@@ -1,4 +1,4 @@
-"""Headless operations on a video's split-point project.
+"""Headless operations on a video's split points (the main track of its timeline project).
 
 This is the single place the editor's rules for splitting, moving, labeling
 and exporting segments live, so the browser editor (`editor/app.py`), the
@@ -10,8 +10,8 @@ The model mirrors the frontend's (see `editor/static/state.js`): a project is
 a contiguous list of segments from the first to the last song, so "split N"
 is just the shared boundary between segment N and N+1. Segment and split
 numbers are 1-based, matching the editor's segment table. Nothing here
-persists anything except through a `ProjectStore` (locally, the sidecar file
-next to the video is the one source of truth — there is no running server to
+persists anything except through a `ProjectStore` (locally, the video's timeline project,
+the sidecar file next to the video, is the one source of truth — there is no running server to
 talk to). A project is addressed by its id in the store, not by a file path.
 
 Every function that edits a project is pure over a segment list and returns a
@@ -34,6 +34,7 @@ from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from typing import Any
 
+from split_video import assets, split_model
 from split_video.editor import classify
 from split_video.editor.cache import ClassificationCache, SilenceCache
 from split_video.errors import ProjectError, RevisionConflictError  # noqa: F401  (re-exported)
@@ -43,6 +44,7 @@ from split_video.media_store import MediaStore
 from split_video.naming import build_manifest, manifest_text, resolve_export_filename
 from split_video.segments import Segment, compute_segments
 from split_video.store import ProjectStore, SavedSegment, Versioned
+from split_video.timeline import Project
 
 # Minimum gap kept between any two boundaries, so an add/move can never
 # produce a zero- or negative-length segment. Matches `MIN_GAP` in state.js.
@@ -59,41 +61,87 @@ class ExportConflictError(ProjectError):
 
 
 # --- loading / saving -------------------------------------------------------
+#
+# A recording's splits live in its timeline project (ADR 0003): segment n is clip n of the main track, see
+# `split_model.py`. A legacy split project is migrated by these functions, in memory on every read and onto disk
+# with the first write; the store only keeps the files. One revision number covers both (the store's
+# `load_video_timeline`), so a write's `base_revision` means what it always did.
+
+
+def _stored_segments(store: ProjectStore, project_id: str) -> Versioned[list[SavedSegment] | None]:
+    """What is saved for the video: its timeline project's split view, else a legacy split project's
+    segments; None if neither can be read. (`[]` is a project that was saved with no segments.)"""
+    stored = store.load_video_timeline(project_id)
+    if stored.value is not None:
+        return Versioned(split_model.to_segments(stored.value), stored.revision)
+    return Versioned(store.load_split(project_id), stored.revision)
 
 
 def current_segments(store: ProjectStore, media: MediaStore, project_id: str) -> list[SavedSegment]:
     """The saved segments for project `project_id` (the video's media id), or
     one segment covering the whole recording if nothing has been saved yet (the
     editor's skip-setup state)."""
-    saved = store.load_split(project_id)
+    saved = _stored_segments(store, project_id).value
     if saved:
         return saved
     return [SavedSegment(start=0.0, end=media.probe(project_id).duration)]
 
 
+def video_timeline(store: ProjectStore, media: MediaStore, project_id: str) -> Project:
+    """The video's timeline project as a value (read-only, nothing is written): its saved timeline, a legacy split
+    project migrated in memory, or the whole recording as one clip, with the clips linked to assets."""
+    stored = store.load_video_timeline(project_id).value
+    return _unified(store, media, project_id, stored, current_segments(store, media, project_id))
+
+
 def has_project(store: ProjectStore, project_id: str) -> bool:
-    return bool(store.load_split(project_id))
+    return bool(_stored_segments(store, project_id).value)
 
 
 def current_revision(store: ProjectStore, project_id: str) -> int:
     """The project's stored revision: 0 if nothing was ever saved."""
-    return store.load_split_versioned(project_id).revision
+    return store.load_video_timeline(project_id).revision
+
+
+def load_saved(store: ProjectStore, project_id: str) -> Versioned[list[SavedSegment] | None]:
+    """The saved segments with the revision they were read at; the value is None if nothing was ever saved (the
+    editor then proposes splits), unlike `load_versioned`, which stands in the whole recording."""
+    return _stored_segments(store, project_id)
 
 
 def load_versioned(store: ProjectStore, media: MediaStore, project_id: str) -> Versioned[list[SavedSegment]]:
     """`current_segments` together with the revision they were read at."""
-    stored = store.load_split_versioned(project_id)
+    stored = _stored_segments(store, project_id)
     if stored.value:
         return Versioned(stored.value, stored.revision)
     return Versioned([SavedSegment(start=0.0, end=media.probe(project_id).duration)], stored.revision)
 
 
+def _unified(
+    store: ProjectStore, media: MediaStore | None, project_id: str, stored: Project | None, segments: list[SavedSegment]
+) -> Project:
+    """`stored` (or the legacy split project, or nothing) with `segments` as its main track, linked to assets."""
+    if stored is None:
+        legacy = store.load_split(project_id)
+        stored = split_model.from_legacy(project_id, legacy) if legacy else None
+    project = split_model.apply_segments(stored, project_id, segments)
+    return project if media is None else replace(assets.link_project(media, project), revision=0)
+
+
 def save_segments(
-    store: ProjectStore, project_id: str, segments: list[SavedSegment], base_revision: int | None = None
+    store: ProjectStore,
+    project_id: str,
+    segments: list[SavedSegment],
+    base_revision: int | None = None,
+    media: MediaStore | None = None,
 ) -> int:
     """Replace the project's segments and return the new revision. With `base_revision`, fails
-    with `RevisionConflictError` if the project has moved on since that revision."""
-    return store.save_split(project_id, segments, base_revision)
+    with `RevisionConflictError` if the project has moved on since that revision. With `media` the clips are
+    linked to the video's asset."""
+    saved = store.update_video_timeline(
+        project_id, lambda stored: _unified(store, media, project_id, stored, segments), base_revision
+    )
+    return saved.revision
 
 
 def edit_segments(
@@ -108,11 +156,18 @@ def edit_segments(
     lose each other even without a `base_revision`. With one, the edit only applies if the project
     is still at that revision. Returns the saved segments and the new revision."""
 
-    def apply(saved: list[SavedSegment] | None) -> list[SavedSegment]:
-        current = saved or [SavedSegment(start=0.0, end=media.probe(project_id).duration)]
-        return change(current)
+    def apply(stored: Project | None) -> Project:
+        if stored is not None:
+            current = split_model.to_segments(stored)
+        else:
+            legacy = store.load_split(project_id)
+            current = legacy or []
+        if not current:
+            current = [SavedSegment(start=0.0, end=media.probe(project_id).duration)]
+        return _unified(store, media, project_id, stored, change(current))
 
-    return store.update_split(project_id, apply, base_revision)
+    saved = store.update_video_timeline(project_id, apply, base_revision)
+    return Versioned(split_model.to_segments(saved.value), saved.revision)
 
 
 # --- describing -------------------------------------------------------------

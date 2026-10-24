@@ -58,7 +58,7 @@ def test_split_project_edits_through_the_stores(media):
 
     labelled = project.update_segment(project.current_segments(store, media, "gig.mp4"), 2, label=" Encore ")
     project.save_segments(store, "gig.mp4", labelled)
-    saved = store.load_split("gig.mp4")
+    saved = project.load_saved(store, "gig.mp4").value
     assert saved is not None and [(s.start, s.end, s.label) for s in saved] == [
         (0.0, 40.0, ""),
         (40.0, 100.0, "Encore"),
@@ -70,7 +70,7 @@ def test_split_project_edits_through_the_stores(media):
     merged = project.remove_split(project.current_segments(store, media, "gig.mp4"), 1)
     project.save_segments(store, "gig.mp4", merged)
     assert len(project.current_segments(store, media, "gig.mp4")) == 1
-    assert store.load_split("other.mp4") is None
+    assert project.load_saved(store, "other.mp4").value is None
 
 
 def test_export_plans_and_writes_through_the_media_store(media, monkeypatch):

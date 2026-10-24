@@ -1,5 +1,6 @@
 """Project-aware CLI subcommands: read and edit a video's saved split points
-(the `<video>.split-video-project.json` sidecar the visual editor also uses)
+(the video's timeline project, `<video>.split-video-timeline.json`, which the visual editor also uses;
+an old `.split-video-project.json` is migrated into it on the first edit)
 without a browser. Each is a thin caller of `split_video.project`; the
 editor and the MCP server call the same functions.
 
@@ -76,8 +77,8 @@ def _revision(source: Path) -> int:
 
 
 def _save(source: Path, segments: list[SavedSegment], base_revision: int | None = None) -> int:
-    store, _, source_id = _stores(source)
-    return project.save_segments(store, source_id, segments, base_revision)
+    store, media, source_id = _stores(source)
+    return project.save_segments(store, source_id, segments, base_revision, media)
 
 
 def _edit(

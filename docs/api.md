@@ -49,3 +49,12 @@ an owner yet and go to every authenticated client.
 
 Every failure, on the CLI, the MCP server and the HTTP API, carries a stable `code`, a `message` and a `fix` that names
 the next action (`split-video --json-errors ...` prints it as JSON). The codes are listed in [errors.md](errors.md).
+
+## Split endpoints and the timeline project
+
+`/open`, `/state` and `POST /project` keep their shapes and `If-Match` / `409`
+behaviour. The segments are now the main track of the video's timeline project
+(`<video>.split-video-timeline.json`); a legacy `<video>.split-video-project.json`
+opens as the same segments and is migrated by the first save, which leaves the old file
+in place. The `revision` is one number across both. See
+[the design note](decisions/unified-project-model.md).
