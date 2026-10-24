@@ -87,6 +87,13 @@ def current_segments(store: ProjectStore, media: MediaStore, project_id: str) ->
     return [SavedSegment(start=0.0, end=media.probe(project_id).duration)]
 
 
+def video_timeline(store: ProjectStore, media: MediaStore, project_id: str) -> Project:
+    """The video's timeline project as a value (read-only, nothing is written): its saved timeline, a legacy split
+    project migrated in memory, or the whole recording as one clip, with the clips linked to assets."""
+    stored = store.load_video_timeline(project_id).value
+    return _unified(store, media, project_id, stored, current_segments(store, media, project_id))
+
+
 def has_project(store: ProjectStore, project_id: str) -> bool:
     return bool(_stored_segments(store, project_id).value)
 

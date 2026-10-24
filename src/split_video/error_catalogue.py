@@ -273,6 +273,12 @@ _register(
     "its own `output` name; the other options are those of `render_timeline`.",
 )
 _register(
+    "export.invalid",
+    "The export request is unusable: an unknown mode, or the argument its mode needs is missing.",
+    "Use mode segments (with `video`), timeline (with `project`, or `video` for a recording's own timeline) or "
+    "highlights (with `timelines`, the names of the accepted highlights' timelines).",
+)
+_register(
     "render.size_invalid",
     "The output size is not usable.",
     "Give both width and height (or a preset), as even whole numbers within limits, e.g. `1080x1920`.",

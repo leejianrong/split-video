@@ -12,6 +12,7 @@ from split_video import captions, edit_ops, edit_plan, error_catalogue, presets,
 from split_video import timeline_ops as ops
 from split_video.error_catalogue import REGISTRY, describe, error_dict
 from split_video.errors import RevisionConflictError
+from split_video.export_modes import ExportError
 from split_video.ffmpeg import ExtractError, FfmpegNotFoundError, MediaInfo, ProbeError
 from split_video.frames import FrameAudioOnlyError, FrameTimeError
 from split_video.jobs import JobFailedError, UnknownJobError
@@ -126,6 +127,7 @@ def _samples() -> dict[str, BaseException]:
         "render.output_exists": OutputExistsError("out.mp4 already exists"),
         "render.no_clips": TimelineError("the timeline has no clips to render"),
         "render.request_invalid": RenderRequestError("each render request needs a project"),
+        "export.invalid": ExportError("unknown export mode 'x'"),
         "render.size_invalid": TimelineError("size must look like 1080x1920, not '5'"),
         "ffmpeg.missing": FfmpegNotFoundError("'ffmpeg' not found on PATH; please install ffmpeg."),
         "ffmpeg.failed": ExtractError("ffmpeg failed rendering 'x.mp4'"),

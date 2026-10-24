@@ -26,9 +26,10 @@ from rich.console import Console
 from rich.markup import escape
 from rich.table import Table
 
-from split_video import assets, cli_errors, render_queue, timeline_service
+from split_video import assets, cli_errors, export_modes, render_queue, timeline_service
 from split_video import captions as captions_module
 from split_video.captions import CaptionError
+from split_video.errors import ProjectError
 from split_video.ffmpeg import ExtractError, FfmpegNotFoundError, ProbeError
 from split_video.jobs import (
     MAX_RENDER_CONCURRENCY,
@@ -39,11 +40,11 @@ from split_video.jobs import (
 )
 from split_video.local_media_store import LocalMediaStore
 from split_video.local_store import LocalProjectStore
-from split_video.media_store import MediaStore
+from split_video.media_store import MediaOutsideRootError, MediaStore
 from split_video.render import parse_size
 from split_video.store import ProjectStore
 from split_video.timefmt import format_timestamp, parse_time
-from split_video.timeline import Project, TimelineError
+from split_video.timeline import Project, SourceNotFoundError, TimelineError
 
 console = Console()
 error_console = Console(stderr=True)
@@ -727,38 +728,47 @@ def render_queue_cmd(
     status: dict[str, Any] = {}
     try:
         status = render_queue.submit_batch(jobs, LocalProjectStore(root), LocalMediaStore(root), renders)
-        batch_id = status["batch_id"]
-        reported: set[str] = set()
-        try:
-            while True:
-                status = render_queue.batch_status(jobs, batch_id)
-                for job in status["jobs"]:
-                    if job["state"] in ("done", "failed", "cancelled") and job["job_id"] not in reported:
-                        reported.add(job["job_id"])
-                        if not as_json:
-                            error = job["error"]
-                            detail = f": {error['message']}" if error else ""
-                            error_console.print(
-                                f"[{job['index']}/{status['total']}] {job['output']}: {job['state']}{escape(detail)}",
-                                highlight=False,
-                                soft_wrap=True,
-                            )
-                            if error:  # the same code and fix the JSON carries
-                                error_console.print(
-                                    f"    [red]{escape(error.get('code', ''))}[/red]  "
-                                    f"[yellow]Fix:[/yellow] {escape(error.get('fix', ''))}",
-                                    highlight=False,
-                                    soft_wrap=True,
-                                )
-                if status["finished"]:
-                    break
-                time.sleep(0.25)
-        except KeyboardInterrupt:
-            status = render_queue.cancel_renders(jobs, batch_id=batch_id)
+        status = _wait_and_report(jobs, status, as_json)
     except (render_queue.RenderQueueError, *_EXPECTED_ERRORS) as exc:
         raise _fail(exc, as_json)
     finally:
         jobs.shutdown()
+    _print_summary(status, as_json)
+
+
+def _wait_and_report(jobs: InProcessJobQueue, status: dict[str, Any], as_json: bool) -> dict[str, Any]:
+    """Wait for the batch `status` describes, printing each render as it ends; Ctrl+C cancels what is left."""
+    batch_id = status["batch_id"]
+    reported: set[str] = set()
+    try:
+        while True:
+            status = render_queue.batch_status(jobs, batch_id)
+            for job in status["jobs"]:
+                if job["state"] in ("done", "failed", "cancelled") and job["job_id"] not in reported:
+                    reported.add(job["job_id"])
+                    if not as_json:
+                        error = job["error"]
+                        detail = f": {error['message']}" if error else ""
+                        error_console.print(
+                            f"[{job['index']}/{status['total']}] {job['output']}: {job['state']}{escape(detail)}",
+                            highlight=False,
+                            soft_wrap=True,
+                        )
+                        if error:  # the same code and fix the JSON carries
+                            error_console.print(
+                                f"    [red]{escape(error.get('code', ''))}[/red]  "
+                                f"[yellow]Fix:[/yellow] {escape(error.get('fix', ''))}",
+                                highlight=False,
+                                soft_wrap=True,
+                            )
+            if status["finished"]:
+                return status
+            time.sleep(0.25)
+    except KeyboardInterrupt:
+        return render_queue.cancel_renders(jobs, batch_id=batch_id)
+
+
+def _print_summary(status: dict[str, Any], as_json: bool) -> None:
     if as_json:
         typer.echo(json.dumps(status, indent=2))
     else:
@@ -769,6 +779,94 @@ def render_queue_cmd(
         )
     if status["counts"]["failed"] or status["counts"]["cancelled"]:
         raise typer.Exit(1)
+
+
+def export_cmd(
+    mode: str = typer.Argument(
+        ...,
+        help="segments (each included segment of --video as its own file), timeline (the whole timeline as one video) or highlights (each accepted highlight's timeline as a vertical short).",
+    ),
+    video: str | None = typer.Option(
+        None, "--video", help="The recording (a path in the root): for segments, and for timeline its own timeline."
+    ),
+    project: str | None = typer.Option(None, "--project", help="timeline: the timeline project's name."),
+    timelines: str | None = typer.Option(
+        None, "--timelines", help="highlights: comma-separated names of the accepted highlights' timelines."
+    ),
+    only: str | None = typer.Option(
+        None, "--only", help="segments: comma-separated segment numbers (overrides include/exclude)."
+    ),
+    output: str | None = typer.Option(None, "--output", help="timeline: output filename (default <project>.mp4)."),
+    output_dir: str | None = typer.Option(
+        None,
+        "--output-dir",
+        help="Folder in the root to write to (default: <video>_split for segments, else beside the video or in the root).",
+    ),
+    overwrite: bool = typer.Option(False, "--overwrite", help="Replace files that exist."),
+    precise: bool = typer.Option(
+        False, "--precise/--no-precise", help="segments without render options: re-encode for frame-accurate cuts."
+    ),
+    output_format: str | None = typer.Option(
+        None, "--format", help="segments without render options: force a container/codec (re-encodes)."
+    ),
+    size: str | None = typer.Option(None, "--size", help="Frame size WxH (renders)."),
+    preset: str | None = typer.Option(None, "--preset", help="Export preset; highlights default to vertical-1080."),
+    fit: str | None = typer.Option(None, "--fit", help="letterbox or crop; highlights default to crop."),
+    captions: str | None = typer.Option(
+        None, "--captions", help="Caption style (or off); highlights default to shorts when a transcript exists."
+    ),
+    concurrency: int | None = typer.Option(
+        None,
+        "--concurrency",
+        min=1,
+        max=MAX_RENDER_CONCURRENCY,
+        help="Files written at once (default 2, or SPLIT_VIDEO_RENDER_CONCURRENCY).",
+    ),
+    root: Path = _Root,
+    as_json: bool = _Json,
+) -> None:
+    """Export a recording or timeline: one operation with modes (segments, timeline, highlights).
+
+    Runs on the render queue: files are written a few at a time, a file that fails does not stop the others and
+    the exit code is 1 if any failed. JSON: the render queue's batch status plus `mode`."""
+    root = root.resolve()
+    try:
+        width, height = parse_size(size)
+        only_numbers = [int(n) for n in only.split(",") if n.strip()] if only else None
+        limit = render_concurrency_from_env() if concurrency is None else check_render_concurrency(concurrency)
+    except ValueError as exc:
+        raise _fail(TimelineError(str(exc)), as_json)
+    jobs = InProcessJobQueue(max_workers=limit, kind_limits={RENDER: limit})
+    status: dict[str, Any] = {}
+    try:
+        media = LocalMediaStore(root)
+        video_id = None
+        if video is not None:
+            video_id = media.resolve_user_path(video)
+            if not media.is_file(video_id):
+                raise SourceNotFoundError(f"video not found: {video}")
+        status = export_modes.submit_export(
+            jobs,
+            LocalProjectStore(root),
+            media,
+            mode,
+            video=video_id,
+            project_name=project,
+            timelines=[t.strip() for t in timelines.split(",") if t.strip()] if timelines else None,
+            only=only_numbers,
+            output=output,
+            output_dir=output_dir,
+            overwrite=overwrite,
+            precise=precise,
+            output_format=output_format,
+            options=export_modes.RenderOptions(width=width, height=height, preset=preset, fit=fit, captions=captions),
+        )
+        status = {**_wait_and_report(jobs, status, as_json), "mode": mode}
+    except (ProjectError, MediaOutsideRootError, *_EXPECTED_ERRORS) as exc:
+        raise _fail(exc, as_json)
+    finally:
+        jobs.shutdown()
+    _print_summary(status, as_json)
 
 
 def register(app: typer.Typer) -> None:
@@ -793,6 +891,7 @@ def register(app: typer.Typer) -> None:
         ("migrate", migrate_cmd),
         ("render", render_cmd),
         ("render-queue", render_queue_cmd),
+        ("export", export_cmd),
     ):
         compose_app.command(command_name)(fn)
     app.add_typer(compose_app, name="compose")
