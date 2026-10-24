@@ -14,6 +14,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.staticfiles import StaticFiles
 from starlette.responses import Response
 
+from split_video import project as split_project
 from split_video.editor.auth import (
     SECURITY_DESCRIPTION,
     SECURITY_SCHEME,
@@ -355,7 +356,7 @@ def create_app(
     def _state_response(ctx: RequestContext, project: _ProjectState, path: str) -> StateResponse:
         store, media = ctx.store, ctx.media
         # A never-saved project has no segments: the frontend's onboarding step proposes them (#16).
-        saved = store.load_split_versioned(project.project_id)
+        saved = split_project.load_saved(store, project.project_id)
         return StateResponse(
             filename=media.name(project.source),
             duration=project.total_duration,
@@ -422,7 +423,7 @@ def create_app(
             )
             for s in request.segments
         ]
-        ctx.store.save_split(project.project_id, segments, base)
+        split_project.save_segments(ctx.store, project.project_id, segments, base, media=ctx.media)
         return _state_response(ctx, project, path)
 
     @media_routes.get("/media/source")

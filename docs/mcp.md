@@ -38,3 +38,14 @@ claude mcp add split-video -- docker run -i --rm -v ~/recordings:/data \
 
 You can keep the visual editor open while an agent edits the same project:
 see [Revisions](revisions.md).
+
+## Splits are a timeline project
+
+`list_segments`, `propose_splits`, `add_split`, `move_split`, `remove_split`,
+`label_segment` and `export` keep their arguments and results. The splits are
+stored as the main track of the video's timeline project
+(`<video>.split-video-timeline.json`), one clip per segment, so the same recording
+can also be edited with the timeline tools. A legacy
+`<video>.split-video-project.json` is read as the same segments and migrated by the
+first edit; it is never modified or deleted. `revision` and `base_revision` are one
+number across both. See [the design note](decisions/unified-project-model.md).

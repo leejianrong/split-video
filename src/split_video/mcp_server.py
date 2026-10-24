@@ -3,7 +3,8 @@
 A thin adapter over `split_video.project` — the same functions the browser
 editor and the CLI subcommands call — so there is no running `edit` server
 to start or keep in sync. Every tool reads and writes the video's
-`<video>.split-video-project.json` sidecar; whatever an agent does here is
+`<video>.split-video-timeline.json` sidecar (the video's timeline project; an old
+`.split-video-project.json` is migrated into it on the first edit); whatever an agent does here is
 what the editor shows the next time it opens that video, and vice versa.
 
 Run it over stdio with `split-video mcp [--root DIR]`. Tools only touch
@@ -93,7 +94,7 @@ applause classification (slow on long recordings) to help judge boundaries.
 Videos are paths relative to the server's root directory. Segments and
 splits are numbered from 1; split N is the cut between segments N and N+1.
 Times are seconds. Edits are saved immediately to the video's
-.split-video-project.json file, which the visual editor also reads.
+.split-video-timeline.json file (migrating an old .split-video-project.json), which the visual editor also reads.
 
 Every project has a `revision` (in each result). Pass it back as `base_revision`
 on an edit to be sure nobody changed the project since you read it: on a
@@ -317,7 +318,7 @@ def create_server(
             padding=padding,
         )
         if apply:
-            revision = await run(project.save_segments, store, source, segments, base_revision)
+            revision = await run(project.save_segments, store, source, segments, base_revision, media)
         else:
             revision = await run(project.current_revision, store, source)
         return result(source, segments, revision, applied=apply)

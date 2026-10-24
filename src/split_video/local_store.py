@@ -148,6 +148,11 @@ class LocalProjectStore:
     def split_sidecar_path(self, project_id: str) -> Path:
         return self._split_paths(project_id)[1]
 
+    def video_timeline_path(self, project_id: str) -> Path:
+        """The video's own timeline project: `<video name>.split-video-timeline.json` next to the video."""
+        video, _ = self._split_paths(project_id)
+        return video.parent / f"{video.name}{TIMELINE_SUFFIX}"
+
     def timeline_path(self, name: str) -> Path:
         timeline.validate_name(name)
         return self.root / f"{name}{TIMELINE_SUFFIX}"
@@ -227,10 +232,47 @@ class LocalProjectStore:
         announce_revision(RevisionChange("split", project_id, current + 1, self))
         return Versioned(segments, current + 1)
 
+    # --- a video's timeline project ----------------------------------------------
+
+    def _read_video_timeline(self, project_id: str) -> tuple[Path, Project | None, int]:
+        """The video's timeline file's path, its project (None if absent or unusable) and the revision writes are
+        checked against: the file's own, or the legacy split file's while the file is not there."""
+        path = self.video_timeline_path(project_id)
+        data = _read_json(path)
+        if not isinstance(data, dict):  # missing, or not JSON at all: the legacy project (if any) is the state
+            return path, None, _revision_of(_read_json(self.split_sidecar_path(project_id)))
+        revision = _revision_of(data)
+        try:
+            return path, replace(timeline.from_dict(data), revision=revision), revision
+        except (KeyError, TypeError, ValueError, AttributeError):
+            return path, None, revision
+
+    def load_video_timeline(self, project_id: str) -> Versioned[Project | None]:
+        try:
+            _, project, revision = self._read_video_timeline(project_id)
+        except ValueError:  # an id that can't be a project id
+            return Versioned(None, 0)
+        return Versioned(project, revision)
+
+    def update_video_timeline(
+        self, project_id: str, change: Callable[[Project | None], Project], base_revision: int | None = None
+    ) -> Versioned[Project]:
+        path = self.video_timeline_path(project_id)
+        with announcing_write("split", project_id, self), _write_lock(path):
+            _, stored, current = self._read_video_timeline(project_id)
+            check_base_revision("split project", project_id, current, base_revision)
+            new = change(stored)
+            self._write_timeline(path, new, current + 1)
+        announce_revision(RevisionChange("split", project_id, current + 1, self))
+        return Versioned(replace(new, revision=current + 1), current + 1)
+
     # --- timeline projects -------------------------------------------------------
 
     def list_timelines(self) -> list[str]:
-        return sorted(p.name.removesuffix(TIMELINE_SUFFIX) for p in self.root.glob(f"*{TIMELINE_SUFFIX}"))
+        # A file `<video>.split-video-timeline.json` next to its video is that video's own project (see
+        # `load_video_timeline`), not a named one.
+        names = (p.name.removesuffix(TIMELINE_SUFFIX) for p in self.root.glob(f"*{TIMELINE_SUFFIX}"))
+        return sorted(n for n in names if not (self.root / n).is_file())
 
     def timeline_exists(self, name: str) -> bool:
         return self.timeline_path(name).exists()
@@ -302,10 +344,11 @@ class LocalProjectStore:
             found[("timeline", name)] = self._peek_revision(self.root / f"{name}{TIMELINE_SUFFIX}")
         for project_id in split_ids:
             try:
-                path = self.split_sidecar_path(project_id)
+                unified = self.video_timeline_path(project_id)
+                legacy = self.split_sidecar_path(project_id)
             except ValueError:
                 continue
-            found[("split", project_id)] = self._peek_revision(path)
+            found[("split", project_id)] = self._peek_revision(unified if unified.exists() else legacy)
         return found
 
     def _peek_revision(self, path: Path) -> int:

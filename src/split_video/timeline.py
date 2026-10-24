@@ -34,6 +34,9 @@ from split_video.media_store import MediaOutsideRootError, MediaStore
 # object `{"x","y","w","h"}` (fractions of the source frame, top-left origin) is written only
 # when it is not the full frame, and a file without it loads with the full-frame default
 # (an older build ignores the key it doesn't know). No migration is needed in either direction.
+#
+# Split metadata (SPL-116) is the same kind of change: a clip's optional `label`, `label_color`, `included`
+# (written only when false) and `export_name` hold what a split project's segment had. The version stays 2.
 FORMAT_VERSION = 2
 
 TRACK_KINDS = ("video", "audio")
@@ -87,6 +90,14 @@ class Clip:
     text: str = ""
     font_size: float = 0.08
     color: str = "#ffffff"
+    # Split metadata (SPL-116): a clip cut from a recording by the split tools is one segment. All four are
+    # optional and written only when set: `label` is its display text, `label_color` its band colour
+    # (`#rrggbb`; `color` above is a text clip's), `included` whether "each segment as its own file" writes it,
+    # `export_name` the output file name without extension (None: the numbered default).
+    label: str = ""
+    label_color: str | None = None
+    included: bool = True
+    export_name: str | None = None
 
     @property
     def cropped(self) -> bool:
@@ -210,6 +221,10 @@ def to_dict(project: Project) -> dict[str, Any]:
                         "text": c.text,
                         "font_size": c.font_size,
                         "color": c.color,
+                        **({"label": c.label} if c.label else {}),
+                        **({"label_color": c.label_color} if c.label_color is not None else {}),
+                        **({} if c.included else {"included": False}),
+                        **({"export_name": c.export_name} if c.export_name is not None else {}),
                     }
                     for c in t.clips
                 ],
@@ -261,6 +276,10 @@ def from_dict(data: dict[str, Any]) -> Project:
                 text=str(c.get("text", "")),
                 font_size=float(c.get("font_size", 0.08)),
                 color=str(c.get("color", "#ffffff")),
+                label=str(c.get("label", "")),
+                label_color=None if c.get("label_color") is None else str(c["label_color"]),
+                included=bool(c.get("included", True)),
+                export_name=None if c.get("export_name") is None else str(c["export_name"]),
             )
             for c in t.get("clips", [])
         )
