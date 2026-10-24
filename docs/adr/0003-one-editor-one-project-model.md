@@ -1,7 +1,7 @@
 # 0003: One editor, one project model
 
 Status: accepted (2026-10-23). Board card: SPL-115. Amends 0001 and 0002.
-UX contract: `docs/ux-spec.md` (SPL-91, separate PR).
+UX contract: [docs/ux-spec.md](../ux-spec.md) (SPL-91).
 
 ## Context
 
