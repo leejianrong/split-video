@@ -34,7 +34,7 @@ wheels/
 # opened for editing — see editor/project_store.py
 *.split-video-project.json
 # ...except the legacy split projects the migration tests read
-!tests/fixtures/legacy_split/*.split-video-project.json
+!tests/fixtures/split_legacy/*.split-video-project.json
 
 # Lock files that sit next to the project files while they are written
 *.split-video-project.json.lock

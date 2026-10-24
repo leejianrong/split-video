@@ -1,6 +1,6 @@
 """The timeline project is the one model: a split project opens as a timeline and migrates on first save (SPL-116).
 
-Runs on real legacy split files (`tests/fixtures/legacy_split/`, format versions 1 and 2) against the in-memory
+Runs on real legacy split files (`tests/fixtures/split_legacy/`, format versions 1 and 2) against the in-memory
 and the local stores.
 """
 
@@ -20,7 +20,7 @@ from split_video.media_store import InMemoryMediaStore
 from split_video.store import InMemoryProjectStore, SavedSegment
 from split_video.timeline import Clip
 
-LEGACY = Path(__file__).resolve().parents[1] / "fixtures" / "legacy_split"
+LEGACY = Path(__file__).resolve().parents[1] / "fixtures" / "split_legacy"
 FIXTURES = ["v1_minimal", "v2_labelled", "v2_empty", "v2_unparseable", "v2_gaps_and_overlap"]
 VIDEO = "gig.mp4"
 DURATION = 21.0

@@ -87,7 +87,7 @@ media clips of this video (a compose edit mixed other sources or text in), a spl
 `tests/integration/test_split_contract.py` replays scripted sessions on the CLI (`--json` and table), the MCP tools and
 the HTTP routes against golden outputs recorded on the pre-change code
 (`tests/fixtures/split_contract/golden.json`), on fresh videos and on real legacy split files
-(`tests/fixtures/legacy_split/`, versions 1 and 2).
+(`tests/fixtures/split_legacy/`, versions 1 and 2).
 
 ## Risks and what stays legacy
 

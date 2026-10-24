@@ -3,7 +3,7 @@
 Scripted sessions on the CLI (`--json` and table output), the MCP tools and the HTTP routes, replayed against golden
 outputs that were recorded on the code from BEFORE the timeline project became the one model
 (`tests/fixtures/split_contract/golden.json`). They run on a fresh video and on real legacy split files
-(`tests/fixtures/legacy_split/`). The tests look only at what the surfaces return, never at which file holds the
+(`tests/fixtures/split_legacy/`). The tests look only at what the surfaces return, never at which file holds the
 project, so they must pass unchanged however it is stored.
 
 Regenerate (only for a deliberate contract change, and list the change in the PR):
@@ -27,7 +27,7 @@ from split_video.editor.schemas import StateParams
 from split_video.mcp_server import create_server
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
-LEGACY = FIXTURES / "legacy_split"
+LEGACY = FIXTURES / "split_legacy"
 GOLDEN = FIXTURES / "split_contract" / "golden.json"
 VARIANTS = ["fresh", "v1_minimal", "v2_labelled", "v2_empty", "v2_unparseable", "v2_gaps_and_overlap"]
 DEFAULTS = StateParams(silence_threshold=-35.0, min_silence_duration=2.0, min_song_length=2.0, padding=0.15)
