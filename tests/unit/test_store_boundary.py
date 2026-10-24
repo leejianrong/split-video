@@ -11,6 +11,7 @@ SRC = Path(__file__).resolve().parents[2] / "src" / "split_video"
 GUARDED = [
     "agent_guide/__init__.py",
     "project.py",
+    "split_model.py",
     "timeline_service.py",
     "timeline.py",
     "timeline_ops.py",
@@ -32,6 +33,7 @@ GUARDED = [
     "edit_ops.py",
     "presets.py",
     "captions.py",
+    "export_modes.py",
     "render_queue.py",
     "presets_cli.py",
     "captions_cli.py",
@@ -71,6 +73,7 @@ def test_module_does_not_build_project_paths(module):
 ENGINE = [
     "agent_guide/__init__.py",
     "project.py",
+    "split_model.py",
     "timeline_service.py",
     "timeline.py",
     "timeline_ops.py",
@@ -92,6 +95,7 @@ ENGINE = [
     "render.py",
     "presets.py",
     "captions.py",
+    "export_modes.py",
     "render_queue.py",
     "editor/cache.py",
     "jobs.py",

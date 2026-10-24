@@ -11,5 +11,12 @@ uv run ruff check .
 echo "pre-push: running ruff format --check..."
 uv run ruff format --check .
 
+# Generated files that CI's lint job checks for drift (about 2 s together). Fix with: make openapi schemas errors
+echo "pre-push: checking generated files are up to date..."
+uv run python scripts/export_openapi.py --check
+uv run python scripts/export_edit_plan_schema.py --check
+uv run python scripts/export_edit_ops_schema.py --check
+uv run python scripts/export_error_catalogue.py --check
+
 echo "pre-push: running unit tests..."
 uv run pytest tests/unit
