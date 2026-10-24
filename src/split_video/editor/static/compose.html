@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>split-video compose</title>
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="compose.css" />
+</head>
+<body>
+  <header class="app-header">
+    <div class="app-header__title">
+      <a href="./" class="btn" title="Back to the split editor">&larr; Split editor</a>
+      <span id="project-name" class="filename">Compose</span>
+      <span id="project-duration" class="segment-count"></span>
+    </div>
+    <div class="app-header__actions">
+      <span id="status" class="save-status"></span>
+      <button id="render-btn" class="btn btn-primary" disabled>Render</button>
+    </div>
+  </header>
+
+  <section id="project-picker" class="compose-panel hidden">
+    <h2>Projects</h2>
+    <ul id="project-list" class="browse-list"></ul>
+    <form id="new-project-form" class="compose-row">
+      <input id="new-project-name" placeholder="New project name" required />
+      <button class="btn" type="submit">Create</button>
+    </form>
+  </section>
+
+  <main id="compose-main" class="compose-main hidden">
+    <div class="player-wrap">
+      <video id="video" preload="auto"></video>
+    </div>
+
+    <div class="compose-transport">
+      <button id="play-btn" class="btn" title="Play the sequence (Space)">Play</button>
+      <input id="scrub" type="range" min="0" max="0" step="0.01" value="0" aria-label="Playhead" />
+      <span id="time-label" class="compose-time">0:00.0 / 0:00.0</span>
+    </div>
+
+    <div class="compose-toolbar">
+      <button id="add-clip-btn" class="btn" title="Add a video or audio file to the selected track">+ Add clip</button>
+      <button id="add-video-track-btn" class="btn">+ Video track</button>
+      <button id="add-audio-track-btn" class="btn">+ Audio track</button>
+      <button id="add-text-btn" class="btn" title="Add a text title on the selected overlay track, at the playhead">+ Text</button>
+      <button id="delete-clip-btn" class="btn btn-danger" disabled>Delete clip</button>
+      <span class="compose-toolbar__spacer"></span>
+      <button id="zoom-out-btn" class="btn btn-icon" title="Zoom out" aria-label="Zoom out">&minus;</button>
+      <button id="zoom-fit-btn" class="btn" title="Fit the whole project">Fit</button>
+      <button id="zoom-in-btn" class="btn btn-icon" title="Zoom in" aria-label="Zoom in">+</button>
+    </div>
+    <p class="compose-hint compose-hint--row">Click a lane name to pick where “Add clip” goes. Drag a clip's edges to trim; drag the main track's clips to reorder; drag other clips to move them in time or to another lane. The preview plays the main track; render to hear and see everything.</p>
+
+    <div id="timeline" class="tl" aria-label="Timeline"></div>
+
+    <div id="inspector" class="compose-panel hidden" aria-label="Clip properties"></div>
+
+    <div id="transition-editor" class="compose-panel compose-row hidden">
+      <span id="transition-label"></span>
+      <select id="transition-kind">
+        <option value="cut">Cut</option>
+        <option value="crossfade">Crossfade</option>
+      </select>
+      <label>Duration (s) <input id="transition-duration" type="number" min="0.1" step="0.1" value="1" /></label>
+      <button id="transition-apply" class="btn">Apply</button>
+    </div>
+
+    <div id="clip-picker" class="compose-panel hidden">
+      <div class="file-picker__toolbar">
+        <button id="picker-up" class="btn" disabled>&uarr; Up</button>
+        <span id="picker-path" class="browse-path">/</span>
+      </div>
+      <ul id="picker-list" class="browse-list"></ul>
+    </div>
+
+    <div id="render-status" class="compose-panel hidden"></div>
+  </main>
+
+  <script type="module" src="compose.js"></script>
+</body>
+</html>

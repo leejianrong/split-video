@@ -17,6 +17,16 @@ dependencies = [
     "uvicorn>=0.52.4",
 ]
 
+[project.optional-dependencies]
+# Local speech-to-text with word timestamps (see docs/decisions/transcription.md). Heavy (about 340 MB
+# installed), so not part of the default install or the default Docker image.
+transcribe = [
+    "faster-whisper>=1.1",
+    # faster-whisper 1.2.1 opens audio FILES with av.open(metadata_errors=...), which av 19 removed. This app passes
+    # numpy arrays and was not affected, but `WhisperModel.transcribe("file.ogg")` raises a TypeError with av 19.
+    "av<19",
+]
+
 [project.scripts]
 split-video = "split_video.cli:app"
 
@@ -28,7 +38,19 @@ build-backend = "uv_build"
 dev = [
     "httpx>=0.28.1",
     "pytest>=8.0",
+    "pytest-timeout>=2.4.0",
     "ruff>=0.16.5",
+]
+
+[tool.pytest.ini_options]
+# A hung test (a wedged ffmpeg, a server that never answers) must fail ONE test with a stack dump, not hold the
+# CI job until GitHub's 6 h limit kills it (that happened once, on SPL-110). The whole suite is ~8 minutes, so
+# no single test comes near this. SIGALRM (not "thread") so the run carries on with the remaining tests; a known
+# long test can raise its own limit with @pytest.mark.timeout(n).
+timeout = 300
+timeout_method = "signal"
+markers = [
+    "real_model: runs the real faster-whisper model; skipped without the `transcribe` extra and a downloaded model",
 ]
 
 [tool.ruff]
@@ -38,3 +60,7 @@ line-length = 120
 # typer's Argument()/Option() calls in parameter defaults are the documented
 # idiom for declaring CLI params, not the mutable-default footgun B008 flags.
 extend-immutable-calls = ["typer.Argument", "typer.Option"]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests unpack helper tuples and ignore the parts a given test doesn't need.
+"tests/**" = ["RUF059"]

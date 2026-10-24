@@ -24,14 +24,14 @@ def root(tmp_path, three_songs_clip):
     return shows
 
 
-async def call(client, name, **arguments):
-    result = await client.call_tool(name, arguments)
+async def call(client, tool, /, **arguments):
+    result = await client.call_tool(tool, arguments)
     assert not result.is_error, result.content
     return result.structured_content
 
 
-async def call_error(client, name, **arguments):
-    result = await client.call_tool(name, arguments)
+async def call_error(client, tool, /, **arguments):
+    result = await client.call_tool(tool, arguments)
     assert result.is_error
     return result.content[0].text
 
@@ -41,6 +41,24 @@ async def test_exposes_the_documented_tools(root):
         names = {t.name for t in (await client.list_tools()).tools}
     assert names == {
         "list_videos",
+        "prepare_asset",
+        "transcribe_asset",
+        "get_transcript",
+        "transcript_range",
+        "transcript_search",
+        "analyze_scenes",
+        "get_scenes",
+        "ocr_asset",
+        "get_ocr",
+        "ocr_search",
+        "visual_search",
+        "search_asset",
+        "what_is_happening",
+        "timeline_index",
+        "media_report",
+        "suggest_highlights",
+        "get_frame",
+        "get_contact_sheet",
         "list_segments",
         "propose_splits",
         "add_split",
@@ -49,6 +67,35 @@ async def test_exposes_the_documented_tools(root):
         "label_segment",
         "analyze_audio",
         "export",
+        "list_timelines",
+        "list_assets",
+        "scan_library",
+        "create_timeline",
+        "show_timeline",
+        "add_clip_to_timeline",
+        "trim_timeline_clip",
+        "move_timeline_clip",
+        "remove_timeline_clip",
+        "set_timeline_transition",
+        "render_timeline",
+        "queue_renders",
+        "export_project",
+        "render_queue_status",
+        "cancel_renders",
+        "list_export_presets",
+        "list_caption_styles",
+        "add_timeline_track",
+        "remove_timeline_track",
+        "move_timeline_track",
+        "place_timeline_clip",
+        "set_timeline_clip",
+        "set_clip_crop",
+        "add_timeline_text",
+        "set_timeline_text",
+        "apply_ops",
+        "apply_plan",
+        "get_edit_ops_schema",
+        "get_edit_plan_schema",
     }
 
 
@@ -153,3 +200,93 @@ async def test_analyze_audio_returns_a_summary(root):
     async with Client(create_server(root)) as client:
         summary = await call(client, "analyze_audio", video="gig.mp4")
     assert summary["analyzed"] is True
+
+
+async def test_timeline_tools_build_and_render_a_two_clip_project(root):
+    (root / "second.mp4").write_bytes((root / "gig.mp4").read_bytes())
+    async with Client(create_server(root)) as client:
+        await call(client, "create_timeline", name="mix")
+        await call(client, "add_clip_to_timeline", name="mix", video="gig.mp4", out_point=6)
+        body = await call(client, "add_clip_to_timeline", name="mix", video="second.mp4", out_point=4)
+        clips = body["tracks"][0]["clips"]
+        assert [c["index"] for c in clips] == [1, 2] and clips[1]["start"] == 6
+
+        body = await call(client, "set_timeline_transition", name="mix", clip=2, transition="crossfade", duration=1)
+        assert body["duration"] == 9
+        body = await call(client, "trim_timeline_clip", name="mix", clip=1, in_point=1)
+        assert body["duration"] == 8
+        body = await call(client, "move_timeline_clip", name="mix", clip=2, to_position=1)
+        assert body["tracks"][0]["clips"][0]["source"] == "second.mp4"
+
+        assert (await call(client, "list_timelines"))["projects"] == ["mix"]
+        rendered = await call(client, "render_timeline", name="mix")
+        assert (root / rendered["output"]).is_file()
+        assert "even" in await call_error(client, "render_timeline", name="mix", output="v.mp4", width=361, height=640)
+        await call(client, "render_timeline", name="mix", output="v.mp4", width=360, height=640)
+        from split_video.ffmpeg import probe_media
+
+        assert (probe_media(root / "v.mp4").width, probe_media(root / "v.mp4").height) == (360, 640)
+        assert "already exists" in await call_error(client, "render_timeline", name="mix")
+
+        body = await call(client, "remove_timeline_clip", name="mix", clip=1)
+        assert len(body["tracks"][0]["clips"]) == 1
+
+
+async def test_timeline_tools_reject_bad_input(root):
+    async with Client(create_server(root)) as client:
+        await call(client, "create_timeline", name="mix")
+        assert "outside" in await call_error(client, "add_clip_to_timeline", name="mix", video="../secret.mp4")
+        assert "no clip 3" in await call_error(client, "remove_timeline_clip", name="mix", clip=3)
+        assert "no project" in await call_error(client, "show_timeline", name="nope")
+
+
+async def test_multi_track_tools_build_an_overlay_project(root):
+    (root / "pip.mp4").write_bytes((root / "gig.mp4").read_bytes())
+    async with Client(create_server(root)) as client:
+        await call(client, "create_timeline", name="mix")
+        await call(client, "add_clip_to_timeline", name="mix", video="gig.mp4", out_point=6)
+        assert "no overlay video track" in await call_error(client, "add_timeline_text", name="mix", text="Hi")
+
+        body = await call(client, "add_timeline_track", name="mix", kind="video")
+        assert [t["index"] for t in body["tracks"]] == [1, 2] and body["tracks"][1]["magnetic"] is False
+        body = await call(client, "add_clip_to_timeline", name="mix", video="pip.mp4", track=2, start=1, out_point=3)
+        clip = body["tracks"][1]["clips"][0]
+        assert (clip["start"], clip["duration"]) == (1, 3)
+
+        body = await call(client, "set_timeline_clip", name="mix", clip=1, track=2, opacity=0.5, scale=0.3, muted=True)
+        got = body["tracks"][1]["clips"][0]
+        assert (got["opacity"], got["scale"], got["muted"]) == (0.5, 0.3, True)
+        assert "at least one" in await call_error(client, "set_timeline_clip", name="mix", clip=1)
+
+        body = await call(client, "set_clip_crop", name="mix", clip=1, track=2, aspect="9:16", center_x=0.2, zoom=1.5)
+        crop = body["tracks"][1]["clips"][0][
+            "crop"
+        ]  # the clip is 320x240: 9:16 is 0.421875 of the width, zoomed by 1.5
+        assert crop["h"] == pytest.approx(1 / 1.5, abs=1e-5) and crop["w"] == pytest.approx(0.28125, abs=1e-5)
+        body = await call(client, "set_clip_crop", name="mix", clip=1, track=2, x=0.5, y=0, w=0.5, h=1)
+        assert body["tracks"][1]["clips"][0]["crop"] == {"x": 0.5, "y": 0.0, "w": 0.5, "h": 1.0}
+        assert "crop must have" in await call_error(
+            client, "set_clip_crop", name="mix", clip=1, track=2, x=0.9, y=0, w=0.5, h=1
+        )
+        assert "exactly one" in await call_error(client, "set_clip_crop", name="mix", clip=1, track=2)
+        assert "together" in await call_error(client, "set_clip_crop", name="mix", clip=1, track=2, x=0.1)
+        body = await call(client, "set_clip_crop", name="mix", clip=1, track=2, clear=True)
+        assert body["tracks"][1]["clips"][0]["crop"] is None
+
+        body = await call(client, "place_timeline_clip", name="mix", clip=1, track=2, start=2)
+        assert body["tracks"][1]["clips"][0]["start"] == 2
+        assert "overlap" in await call_error(
+            client, "add_clip_to_timeline", name="mix", video="pip.mp4", track=2, start=3, out_point=2
+        )
+
+        body = await call(client, "add_timeline_text", name="mix", text="Title", start=6, duration=2)
+        assert body["tracks"][1]["clips"][1]["kind"] == "text"
+        body = await call(client, "set_timeline_text", name="mix", clip=2, track=2, text="New", color="#ff0000")
+        assert body["tracks"][1]["clips"][1]["text"] == "New"
+
+        rendered = await call(client, "render_timeline", name="mix")
+        assert (root / rendered["output"]).is_file()
+        body = await call(client, "move_timeline_track", name="mix", track=2, to_position=1)
+        assert body["tracks"][0]["magnetic"] is False
+        body = await call(client, "remove_timeline_track", name="mix", track=1)
+        assert len(body["tracks"]) == 1

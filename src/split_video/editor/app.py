@@ -3,29 +3,63 @@
 from __future__ import annotations
 
 import threading
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from dataclasses import dataclass, field
 from pathlib import Path
+from urllib.parse import quote
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.staticfiles import StaticFiles
-from starlette.responses import FileResponse
+from starlette.responses import Response
 
-from split_video.editor.browse import (
-    PathEscapesRootError,
-    list_directory,
-    resolve_within_root,
+from split_video import project as split_project
+from split_video.editor.auth import (
+    SECURITY_DESCRIPTION,
+    SECURITY_SCHEME,
+    UNAUTHORIZED_RESPONSES,
+    Authenticator,
+    AuthMiddleware,
+    Unauthorized,
+    authenticator_from_env,
+    current_principal,
+    principal_dependency,
+    unauthorized_response,
 )
 from split_video.editor.cache import ClassificationCache, SilenceCache, WaveformCache
+from split_video.editor.caption_styles import make_router as make_caption_styles_router
 from split_video.editor.classify import ClassificationRegion
-from split_video.editor.jobs import (
-    AnalysisJobStore,
-    JobStore,
-    start_audio_analysis,
-    start_export,
+from split_video.editor.compose import make_media_router as make_compose_media_router
+from split_video.editor.compose import make_router as make_compose_router
+from split_video.editor.contact_sheet import make_router as make_contact_sheet_router
+from split_video.editor.context import RequestContext, make_context_dependency
+from split_video.editor.errors import (
+    ERROR_RESPONSE,
+    ApiError,
+    ApiErrorOut,
+    api_error,
+    api_error_handler,
+    validation_error_handler,
 )
-from split_video.editor.project_store import SavedSegment
-from split_video.editor.project_store import load as load_project
-from split_video.editor.project_store import save as save_project
+from split_video.editor.events import EventBus, EventsConfig
+from split_video.editor.events import make_router as make_events_router
+from split_video.editor.frames import make_router as make_frames_router
+from split_video.editor.highlights import make_router as make_highlights_router
+from split_video.editor.job_routes import cancel_job, job_of_kind
+from split_video.editor.job_routes import make_router as make_jobs_router
+from split_video.editor.library import make_router as make_library_router
+from split_video.editor.media_report import make_router as make_media_report_router
+from split_video.editor.media_response import media_response
+from split_video.editor.ocr import make_router as make_ocr_router
+from split_video.editor.ops import make_router as make_ops_router
+from split_video.editor.plan import make_router as make_plan_router
+from split_video.editor.presets import make_router as make_presets_router
+from split_video.editor.proxies import make_router as make_proxies_router
+from split_video.editor.revisions import WRITE_RESPONSES, base_revision, conflict_response
+from split_video.editor.scenes import make_router as make_scenes_router
 from split_video.editor.schemas import (
+    PROJECT_PATH_DESCRIPTION,
     AnalyzeStartResponse,
     AnalyzeStatusResponse,
     BrowseEntryOut,
@@ -48,49 +82,175 @@ from split_video.editor.schemas import (
     StateParams,
     StateResponse,
     WaveformResponse,
+    WhoAmIOut,
 )
-from split_video.ffmpeg import probe_duration
+from split_video.editor.search import make_router as make_search_router
+from split_video.editor.time_index import make_router as make_time_index_router
+from split_video.editor.transcripts import make_router as make_transcripts_router
+from split_video.errors import RevisionConflictError
+from split_video.identity import LOCAL_PRINCIPAL, Principal
+from split_video.job_work import analysis_summary, analysis_work, export_work
+from split_video.jobs import (
+    ANALYSIS,
+    DEFAULT_MAX_WORKERS,
+    EXPORT,
+    RENDER,
+    InProcessJobQueue,
+    JobInfo,
+    JobQueue,
+    check_render_concurrency,
+    render_concurrency_from_env,
+)
+from split_video.local_media_store import LocalMediaStore
+from split_video.local_store import LocalProjectStore
+from split_video.media_store import MediaNotFoundError, MediaOutsideRootError, MediaStore
 from split_video.project import ExportConflictError, ProjectError, plan_export
 from split_video.segments import Segment, compute_segments
 from split_video.silence import SilenceInterval
+from split_video.store import ProjectStore, SavedSegment
+from split_video.store_provider import SharedStoreProvider, StoreProvider
 
 STATIC_DIR = Path(__file__).parent / "static"
 
+# Every JSON/media route lives under this prefix; it is the documented,
+# versioned surface (see openapi.json at the repo root).
+API_PREFIX = "/api/v1"
 
-class _Session:
-    """The one file currently open for editing, if any.
 
-    A local single-user tool only ever edits one file at a time, so this is
-    deliberately just mutable state on the app rather than a per-client
-    session store — `/api/open` swaps it out, everything else reads it.
+_LEGACY_MEDIA_PATHS = ("/media/source", "/media/file")
+
+
+def _is_legacy_path(path: str) -> bool:
+    """A pre-versioning spelling kept as a deprecated alias for one release."""
+    if path in _LEGACY_MEDIA_PATHS or path.startswith("/media/asset/"):
+        return True
+    return path.startswith("/api/") and not path.startswith(f"{API_PREFIX}/")
+
+
+@dataclass
+class _ProjectState:
+    """Everything the editor holds in memory for one source video.
+
+    One instance per resolved source path, owned by the app's project
+    registry (see `create_app`); nothing here is shared between projects.
     """
 
-    def __init__(self) -> None:
-        self.lock = threading.Lock()
-        self.source: Path | None = None
-        self.total_duration: float = 0.0
-        self.cache: SilenceCache | None = None
-        self.waveform_cache: WaveformCache | None = None
-        self.classification_cache: ClassificationCache | None = None
-        self.initial_silences: list[SilenceInterval] = []
-        # SavedSegment (not the plain core `Segment`) since these carry the
-        # editor-only label/color/included/export_name metadata from #19/#18
-        # alongside start/end — see project_store.py.
-        self.initial_segments: list[SavedSegment] = []
-        # Whether `initial_segments` came from a saved project file — see
-        # #14. A fresh (never-saved) file opens with an empty segment list
-        # (the frontend's onboarding step — silence detection and/or audio
-        # analysis, both on demand — is what actually proposes splits; see
-        # #16 for why that used to happen eagerly on open instead, and
-        # blocked the server on a long recording's silence scan).
-        self.resumed = False
+    source: str  # the video's media id in the `MediaStore`
+    # The project's id in the `ProjectStore`: the same id (the video's path relative to the browse root).
+    project_id: str
+    total_duration: float
+    cache: SilenceCache
+    waveform_cache: WaveformCache
+    classification_cache: ClassificationCache
+    # The saved segments and revision are not held here: the project file is the truth (the CLI and
+    # MCP server edit it too), so every state response reads it afresh from the store.
+    lock: threading.Lock = field(default_factory=threading.Lock)
 
 
-def create_app(root: Path, defaults: StateParams) -> FastAPI:
+def _build_project_state(source: str, project_id: str, media: MediaStore) -> _ProjectState:
+    return _ProjectState(
+        source=source,
+        project_id=project_id,
+        total_duration=media.probe(source).duration,
+        cache=SilenceCache(media, source),
+        waveform_cache=WaveformCache(media, source),
+        classification_cache=ClassificationCache(media, source),
+    )
+
+
+def _legacy_status(info: JobInfo) -> str:
+    """The `status` the per-kind polling endpoints have always reported: `queued` reads as `running`
+    (the job has been accepted and is not finished); `cancelled` is the one new value."""
+    return "running" if info.state == "queued" else info.state
+
+
+def _legacy_error(info: JobInfo) -> str | None:
+    return "cancelled" if info.state == "cancelled" else info.error
+
+
+def create_app(
+    root: Path,
+    defaults: StateParams,
+    store: ProjectStore | None = None,
+    media: MediaStore | None = None,
+    jobs: JobQueue | None = None,
+    events: EventsConfig | None = None,
+    provider: StoreProvider | None = None,
+    authenticator: Authenticator | None = None,
+    render_concurrency: int | None = None,
+) -> FastAPI:
     """`root` is either a video file to open immediately (the historical
     `split-video edit <file>` behavior, unchanged) or a directory to pick a
-    video from via the in-browser file picker."""
-    app = FastAPI(title="split-video editor")
+    video from via the in-browser file picker. Projects are read and written
+    through `store` and media (sources, outputs, caches) through `media`; by default
+    both are local-disk stores rooted at the browse root. Export, analysis and render run as jobs on
+    `jobs`, by default an in-process thread-pool queue owned (and shut down) by the app. `events` tunes the
+    `/api/v1/events` stream (poll, keepalive and throttle intervals); the bus is `app.state.events`.
+
+    Every request is made by a `Principal`, decided by `authenticator` (default: from the environment, see
+    `editor/auth.py`: local single-user mode with no checks unless `SPLIT_VIDEO_TOKEN` is set). Routes get
+    their stores from `provider` for that principal; `store`/`media` are the shorthand for a provider that
+    returns the same two stores to everyone (give one or the other, not both). `render_concurrency` caps the renders
+    that run at once on the default queue (default: `SPLIT_VIDEO_RENDER_CONCURRENCY`, else 2; ignored with `jobs`)."""
+    # `version` is the API version, not the package version, so the committed
+    # openapi.json only changes when the API does.
+    own_jobs = jobs is None
+    projects: dict[tuple[str, str], _ProjectState] = {}  # (principal id, source media id)
+    projects_lock = threading.Lock()
+    if jobs is None:
+        # Renders are capped (SPLIT_VIDEO_RENDER_CONCURRENCY, default 2) and the pool has one more worker than that,
+        # so a full queue of renders never keeps a proxy or an analysis from starting.
+        renders = (
+            render_concurrency_from_env()
+            if render_concurrency is None
+            else check_render_concurrency(render_concurrency)
+        )
+        jobs = InProcessJobQueue(max_workers=max(DEFAULT_MAX_WORKERS, renders + 1), kind_limits={RENDER: renders})
+
+    @asynccontextmanager
+    async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+        yield
+        bus.close()  # end open event streams (the server's own shutdown hook does this earlier, see serve.py)
+        if own_jobs and isinstance(jobs, InProcessJobQueue):
+            jobs.shutdown()  # stop running ffmpeg processes with the server
+
+    app = FastAPI(
+        title="split-video editor",
+        version="1",
+        description=(
+            "The split-video editor API. Whole timelines are built from one JSON edit plan with "
+            "`PUT /api/v1/compose/projects/{name}/plan`; its JSON Schema is served at `GET /api/v1/schemas/edit-plan` "
+            "and documented in docs/edit-plan.md. Incremental edits are batched, atomically and with dry-run, with "
+            "`POST /api/v1/compose/projects/{name}/ops` (schema at `GET /api/v1/schemas/edit-ops`, docs/edit-ops.md)."
+        ),
+        lifespan=lifespan,
+        responses={
+            404: {"model": ApiErrorOut, "description": ERROR_RESPONSE},
+            501: {"model": ApiErrorOut, "description": ERROR_RESPONSE},
+        },
+    )
+    authenticator = authenticator_from_env() if authenticator is None else authenticator
+    app.state.authenticator = authenticator
+
+    @app.exception_handler(Unauthorized)
+    async def unauthorized(request: Request, exc: Unauthorized) -> Response:
+        return unauthorized_response()
+
+    # Under /api/ and /media/ nothing is routed before the caller is authenticated (a no-op in local mode).
+    app.add_middleware(AuthMiddleware, authenticator=authenticator)
+
+    app.add_exception_handler(ApiError, api_error_handler)  # type: ignore[arg-type]
+    app.add_exception_handler(RequestValidationError, validation_error_handler)  # type: ignore[arg-type]
+
+    @app.exception_handler(RevisionConflictError)
+    async def revision_conflict(request: Request, exc: RevisionConflictError) -> Response:
+        return conflict_response(exc)
+
+    # Routes are declared once on these two routers (no /api prefix, no
+    # /media prefix) and mounted twice at the bottom: under /api/v1 (the
+    # schema) and as deprecated /api and /media aliases (hidden from it).
+    api = APIRouter()
+    media_routes = APIRouter()
 
     # The static frontend (index.html/*.js/*.css, mounted at the bottom of
     # this function) has no cache-busting — no content hash or version
@@ -106,14 +266,38 @@ def create_app(root: Path, defaults: StateParams) -> FastAPI:
     @app.middleware("http")
     async def no_store_for_static_assets(request: Request, call_next):
         response = await call_next(request)
-        if not request.url.path.startswith(("/api/", "/media/")):
+        path = request.url.path
+        if not path.startswith(("/api/", "/media/")):
             response.headers["Cache-Control"] = "no-store"
+        if _is_legacy_path(path):
+            response.headers["Deprecation"] = "true"
+            response.headers["Link"] = f'<{API_PREFIX}>; rel="successor-version"'
         return response
 
     browse_root = root.parent if root.is_file() else root
-    job_store = JobStore()
-    analysis_job_store = AnalysisJobStore()
-    session = _Session()
+    if provider is not None and (store is not None or media is not None):
+        raise ValueError("give either provider or store/media, not both")
+    if provider is None:
+        provider = SharedStoreProvider(
+            store if store is not None else LocalProjectStore(browse_root.resolve()),
+            media if media is not None else LocalMediaStore(browse_root.resolve()),
+        )
+    app.state.stores = provider
+    request_context = make_context_dependency(provider)
+    context_dependency = Depends(request_context)
+    # Registry of per-project state, keyed by canonical source media id and built
+    # lazily on first use. The project id a client sends is the video's path
+    # relative to the browse root; there is no "currently open" file.
+    default_project_id = root.name if root.is_file() else None
+
+    def _open_project_ids() -> list[str]:
+        with projects_lock:
+            return [p.project_id for p in projects.values()]
+
+    # The bus watches one store: the local principal's. Project events of a per-principal provider's other
+    # stores are not reported (a documented limitation; project events carry no owner either).
+    bus = EventBus(jobs, provider.project_store(LOCAL_PRINCIPAL), _open_project_ids, events)
+    app.state.events = bus
 
     def _segments_out(segments: list[SavedSegment]) -> list[SegmentOut]:
         return [
@@ -138,57 +322,69 @@ def create_app(root: Path, defaults: StateParams) -> FastAPI:
     def _silences_out(silences: list[SilenceInterval]) -> list[SilenceIntervalOut]:
         return [SilenceIntervalOut(start=s.start, end=s.end) for s in silences]
 
-    def _require_open() -> Path:
-        if session.source is None:
-            raise HTTPException(status_code=409, detail="no file is open; call /api/open first")
-        return session.source
+    def _resolve(media: MediaStore, path: str) -> str:
+        try:
+            media_id = media.resolve(path)
+        except MediaOutsideRootError:
+            raise HTTPException(status_code=400, detail="path escapes the browse root")
+        if not media.is_file(media_id):
+            raise HTTPException(status_code=404, detail="file not found")
+        return media_id
 
-    def _open(source: Path) -> None:
-        session.source = source
-        session.total_duration = probe_duration(source)
-        session.cache = SilenceCache(source)
-        session.waveform_cache = WaveformCache(source)
-        session.classification_cache = ClassificationCache(source)
-        session.initial_silences = []
+    def _get_project(ctx: RequestContext, path: str) -> _ProjectState:
+        """The state for project `path`, built on first use (probing and the caches)."""
+        media = ctx.media
+        source = _resolve(media, path)
+        key = (ctx.principal.id, source)
+        with projects_lock:
+            project = projects.get(key)
+        if project is None:
+            # The id is the canonical (symlink-resolved) source id,
+            # so a symlinked video keeps its project beside the real file.
+            built = _build_project_state(source, source, media)  # outside the lock: probes with ffmpeg
+            with projects_lock:
+                project = projects.setdefault(key, built)
+        return project
 
-        saved = load_project(source)
-        if saved is not None:
-            session.initial_segments = saved
-            session.resumed = True
-        else:
-            session.initial_segments = []
-            session.resumed = False
+    def project_dep(
+        path: str = Query(..., description=PROJECT_PATH_DESCRIPTION), ctx: RequestContext = context_dependency
+    ) -> _ProjectState:
+        return _get_project(ctx, path)
 
-    def _state_response() -> StateResponse:
-        source = _require_open()
-        with session.lock:
-            return StateResponse(
-                filename=source.name,
-                duration=session.total_duration,
-                video_url="/media/source",
-                params=defaults,
-                silences=_silences_out(session.initial_silences),
-                segments=_segments_out(session.initial_segments),
-                resumed=session.resumed,
-            )
+    project_dependency = Depends(project_dep)
 
-    if root.is_file():
-        _open(root)
-
-    @app.get("/api/session", response_model=SessionResponse)
-    def get_session() -> SessionResponse:
-        return SessionResponse(
-            file_open=session.source is not None,
-            filename=session.source.name if session.source is not None else None,
+    def _state_response(ctx: RequestContext, project: _ProjectState, path: str) -> StateResponse:
+        store, media = ctx.store, ctx.media
+        # A never-saved project has no segments: the frontend's onboarding step proposes them (#16).
+        saved = split_project.load_saved(store, project.project_id)
+        return StateResponse(
+            filename=media.name(project.source),
+            duration=project.total_duration,
+            video_url=f"{API_PREFIX}/media/source?path={quote(path, safe='/')}",
+            params=defaults,
+            silences=[],
+            segments=_segments_out(saved.value or []),
+            resumed=saved.value is not None,
+            revision=saved.revision,
         )
 
-    @app.get("/api/browse", response_model=BrowseResponse)
-    def browse(path: str = "") -> BrowseResponse:
+    @api.get("/session", response_model=SessionResponse)
+    def get_session() -> SessionResponse:
+        # No per-server "open file": this only tells the frontend which file
+        # (if any) the server was started on, so it can open it directly.
+        return SessionResponse(
+            file_open=default_project_id is not None,
+            filename=default_project_id,
+            path=default_project_id,
+        )
+
+    @api.get("/browse", response_model=BrowseResponse)
+    def browse(path: str = "", ctx: RequestContext = context_dependency) -> BrowseResponse:
         try:
-            listing = list_directory(browse_root, path)
-        except PathEscapesRootError:
+            listing = ctx.media.list_dir(path)
+        except MediaOutsideRootError:
             raise HTTPException(status_code=400, detail="path escapes the browse root")
-        except (FileNotFoundError, NotADirectoryError):
+        except MediaNotFoundError:
             raise HTTPException(status_code=404, detail="directory not found")
         return BrowseResponse(
             cwd=listing.cwd,
@@ -196,24 +392,26 @@ def create_app(root: Path, defaults: StateParams) -> FastAPI:
             entries=[BrowseEntryOut(name=e.name, path=e.path, is_dir=e.is_dir) for e in listing.entries],
         )
 
-    @app.post("/api/open", response_model=StateResponse)
-    def open_file(request: OpenRequest) -> StateResponse:
-        try:
-            resolved = resolve_within_root(browse_root, request.path)
-        except PathEscapesRootError:
-            raise HTTPException(status_code=400, detail="path escapes the browse root")
-        if not resolved.is_file():
-            raise HTTPException(status_code=404, detail="file not found")
-        _open(resolved)
-        return _state_response()
+    @api.post("/open", response_model=StateResponse)
+    def open_file(request: OpenRequest, ctx: RequestContext = context_dependency) -> StateResponse:
+        return _state_response(ctx, _get_project(ctx, request.path), request.path)
 
-    @app.get("/api/state", response_model=StateResponse)
-    def get_state() -> StateResponse:
-        return _state_response()
+    @api.get("/state", response_model=StateResponse)
+    def get_state(
+        path: str = Query(..., description=PROJECT_PATH_DESCRIPTION), ctx: RequestContext = context_dependency
+    ) -> StateResponse:
+        return _state_response(ctx, _get_project(ctx, path), path)
 
-    @app.post("/api/project", response_model=StateResponse)
-    def save_current_project(request: ProjectSaveRequest) -> StateResponse:
-        source = _require_open()
+    @api.post("/project", response_model=StateResponse, responses=WRITE_RESPONSES)
+    def save_current_project(
+        request: ProjectSaveRequest,
+        path: str = Query(..., description=PROJECT_PATH_DESCRIPTION),
+        base: int | None = Depends(base_revision),
+        ctx: RequestContext = context_dependency,
+    ) -> StateResponse:
+        """Replace the project's segments. Send `If-Match` with the revision they were edited from;
+        409 `revision_conflict` if the project changed since (the response says its current revision)."""
+        project = _get_project(ctx, path)
         segments = [
             SavedSegment(
                 start=s.start,
@@ -225,26 +423,23 @@ def create_app(root: Path, defaults: StateParams) -> FastAPI:
             )
             for s in request.segments
         ]
-        save_project(source, segments)
-        with session.lock:
-            session.initial_segments = segments
-            session.resumed = True
-        return _state_response()
+        split_project.save_segments(ctx.store, project.project_id, segments, base, media=ctx.media)
+        return _state_response(ctx, project, path)
 
-    @app.get("/media/source")
-    def get_media() -> FileResponse:
-        return FileResponse(_require_open())
+    @media_routes.get("/media/source")
+    def get_media(
+        request: Request, project: _ProjectState = project_dependency, ctx: RequestContext = context_dependency
+    ) -> Response:
+        return media_response(ctx.media, project.source, request)
 
-    @app.post("/api/detect", response_model=DetectResponse)
-    def detect(request: DetectRequest) -> DetectResponse:
-        _require_open()
-        silences = session.cache.get_raw_silences(request.silence_threshold)
+    @api.post("/detect", response_model=DetectResponse)
+    def detect(request: DetectRequest, project: _ProjectState = project_dependency) -> DetectResponse:
+        silences = project.cache.get_raw_silences(request.silence_threshold)
         return DetectResponse(silences=_silences_out(silences))
 
-    @app.get("/api/waveform", response_model=WaveformResponse)
-    def waveform() -> WaveformResponse:
-        _require_open()
-        peaks = session.waveform_cache.get_peaks()
+    @api.get("/waveform", response_model=WaveformResponse)
+    def waveform(project: _ProjectState = project_dependency) -> WaveformResponse:
+        peaks = project.waveform_cache.get_peaks()
         return WaveformResponse(buckets=peaks.buckets)
 
     def _region_out(region: ClassificationRegion) -> ClassificationRegionOut:
@@ -265,45 +460,56 @@ def create_app(root: Path, defaults: StateParams) -> FastAPI:
             thresholds=cache.get_thresholds(),
         )
 
-    @app.post("/api/analyze", response_model=AnalyzeStartResponse)
-    def analyze() -> AnalyzeStartResponse:
-        source = _require_open()
-        cache = session.classification_cache
+    @api.post("/analyze", response_model=AnalyzeStartResponse)
+    def analyze(
+        project: _ProjectState = project_dependency, ctx: RequestContext = context_dependency
+    ) -> AnalyzeStartResponse:
+        media, owner = ctx.media, ctx.principal.id
+        cache = project.classification_cache
         if cache.is_analyzed:
             # Already have a result — this session, or loaded from a
             # sidecar cache on disk. Report a job that's already "done"
             # instead of re-decoding audio and rerunning inference.
-            job_id, _ = analysis_job_store.create_done(total=0)
-            return AnalyzeStartResponse(job_id=job_id)
-        thresholds = cache.get_thresholds()
-        job_id = start_audio_analysis(analysis_job_store, source, cache, thresholds)
-        return AnalyzeStartResponse(job_id=job_id)
+            return AnalyzeStartResponse(
+                job_id=jobs.record_done(
+                    ANALYSIS, result=analysis_summary(cache), label=media.name(project.source), owner=owner
+                )
+            )
+        work = analysis_work(media, project.source, cache, cache.get_thresholds())
+        return AnalyzeStartResponse(job_id=jobs.submit(ANALYSIS, work, label=media.name(project.source), owner=owner))
 
-    @app.get("/api/analyze/{job_id}", response_model=AnalyzeStatusResponse)
-    def analyze_status(job_id: str) -> AnalyzeStatusResponse:
-        job = analysis_job_store.get(job_id)
-        if job is None:
-            raise HTTPException(status_code=404, detail="unknown job id")
-        with job.lock:
-            return AnalyzeStatusResponse(status=job.status, completed=job.completed, total=job.total, error=job.error)
+    @api.get("/analyze/{job_id}", response_model=AnalyzeStatusResponse)
+    def analyze_status(job_id: str, ctx: RequestContext = context_dependency) -> AnalyzeStatusResponse:
+        job = job_of_kind(jobs, job_id, ANALYSIS, ctx.principal)
+        return AnalyzeStatusResponse(
+            status=_legacy_status(job), completed=int(job.completed), total=int(job.total), error=_legacy_error(job)
+        )
 
-    @app.get("/api/classification", response_model=ClassificationResponse)
-    def classification() -> ClassificationResponse:
-        _require_open()
-        cache = session.classification_cache
+    @api.post("/analyze/{job_id}/cancel", response_model=AnalyzeStatusResponse)
+    def analyze_cancel(job_id: str, ctx: RequestContext = context_dependency) -> AnalyzeStatusResponse:
+        """Stop an analysis job (the same as `POST /jobs/{job_id}/cancel`, answering in the polling shape)."""
+        job = cancel_job(jobs, job_id, ANALYSIS, ctx.principal)
+        return AnalyzeStatusResponse(
+            status=_legacy_status(job), completed=int(job.completed), total=int(job.total), error=_legacy_error(job)
+        )
+
+    @api.get("/classification", response_model=ClassificationResponse)
+    def classification(project: _ProjectState = project_dependency) -> ClassificationResponse:
+        cache = project.classification_cache
         return _classification_out(cache, cache.is_analyzed)
 
-    @app.post("/api/classification/thresholds", response_model=ClassificationResponse)
-    def rethreshold_classification(request: RethresholdRequest) -> ClassificationResponse:
-        _require_open()
-        cache = session.classification_cache
+    @api.post("/classification/thresholds", response_model=ClassificationResponse)
+    def rethreshold_classification(
+        request: RethresholdRequest, project: _ProjectState = project_dependency
+    ) -> ClassificationResponse:
+        cache = project.classification_cache
         try:
             cache.rethreshold(request.thresholds)
         except RuntimeError as exc:
             raise HTTPException(status_code=409, detail=str(exc))
         return _classification_out(cache, True)
 
-    @app.post("/api/segments", response_model=SegmentsResponse)
+    @api.post("/segments", response_model=SegmentsResponse)
     def segments_endpoint(request: SegmentsRequest) -> SegmentsResponse:
         silences = [SilenceInterval(start=s.start, end=s.end) for s in request.silences]
         computed = compute_segments(
@@ -315,27 +521,30 @@ def create_app(root: Path, defaults: StateParams) -> FastAPI:
         )
         return SegmentsResponse(segments=_segments_out(_to_saved(computed)))
 
-    @app.post("/api/export", response_model=ExportStartResponse)
-    def export(request: ExportRequest) -> ExportStartResponse:
-        source = _require_open()
+    @api.post("/export", response_model=ExportStartResponse)
+    def export(
+        request: ExportRequest, project: _ProjectState = project_dependency, ctx: RequestContext = context_dependency
+    ) -> ExportStartResponse:
+        media = ctx.media
         try:
             plan = plan_export(
-                source,
+                media,
+                project.source,
                 [(s.start, s.end, s.name) for s in request.segments],
                 output_format=request.output_format,
                 overwrite=request.overwrite,
             )
         except ExportConflictError as exc:
-            raise HTTPException(status_code=409, detail=str(exc))
+            raise api_error(409, exc)
         except ProjectError as exc:
-            raise HTTPException(status_code=422, detail=str(exc))
+            raise api_error(422, exc)
 
-        job_id = start_export(
-            job_store,
+        work = export_work(
+            media,
             plan,
-            request.precise,
-            request.output_format,
-            request.manifest,
+            precise=request.precise,
+            output_format=request.output_format,
+            write_manifest_file=request.manifest,
             parameters={
                 "min_silence_duration": defaults.min_silence_duration,
                 "min_song_length": defaults.min_song_length,
@@ -343,24 +552,90 @@ def create_app(root: Path, defaults: StateParams) -> FastAPI:
                 "precise": request.precise,
             },
         )
+        job_id = jobs.submit(
+            EXPORT, work, label=media.name(project.source), total=len(plan.segments), owner=ctx.principal.id
+        )
         return ExportStartResponse(job_id=job_id)
 
-    @app.get("/api/export/{job_id}", response_model=ExportStatusResponse)
-    def export_status(job_id: str) -> ExportStatusResponse:
-        job = job_store.get(job_id)
-        if job is None:
-            raise HTTPException(status_code=404, detail="unknown job id")
-        with job.lock:
-            return ExportStatusResponse(
-                status=job.status,
-                completed=job.completed,
-                total=job.total,
-                current_file=job.current_file,
-                output_dir=job.output_dir,
-                manifest_path=job.manifest_path,
-                files=list(job.files),
-                error=job.error,
-            )
+    def _export_status(job: JobInfo) -> ExportStatusResponse:
+        summary = job.result or {}
+        return ExportStatusResponse(
+            status=_legacy_status(job),
+            completed=int(job.completed),
+            total=int(job.total),
+            current_file=job.message,
+            output_dir=summary.get("output_dir"),
+            manifest_path=summary.get("manifest_path"),
+            files=list(summary.get("files", [])),
+            error=_legacy_error(job),
+        )
+
+    @api.get("/export/{job_id}", response_model=ExportStatusResponse)
+    def export_status(job_id: str, ctx: RequestContext = context_dependency) -> ExportStatusResponse:
+        return _export_status(job_of_kind(jobs, job_id, EXPORT, ctx.principal))
+
+    @api.post("/export/{job_id}/cancel", response_model=ExportStatusResponse)
+    def export_cancel(job_id: str, ctx: RequestContext = context_dependency) -> ExportStatusResponse:
+        """Stop an export (the same as `POST /jobs/{job_id}/cancel`): files already written stay, the one in progress is removed."""
+        return _export_status(cancel_job(jobs, job_id, EXPORT, ctx.principal))
+
+    api.include_router(make_jobs_router(jobs))
+    api.include_router(make_compose_router(provider, jobs))
+    media_routes.include_router(make_compose_media_router(provider))
+
+    # New in v1, no deprecated alias.
+    v1_only = APIRouter()
+
+    @v1_only.get("/whoami", response_model=WhoAmIOut)
+    def whoami(principal: Principal = principal_dependency) -> WhoAmIOut:
+        """The principal this request is made as; use it to check that a token works."""
+        return WhoAmIOut(
+            id=principal.id, name=principal.name, kind=principal.kind, auth_required=authenticator.required
+        )
+
+    # Every router goes in with the principal dependency (belt and braces with `AuthMiddleware`) and the
+    # documented 401, so a route added to any of them is protected without doing anything.
+    guard: dict = {"dependencies": [Depends(current_principal)], "responses": UNAUTHORIZED_RESPONSES}
+    app.include_router(api, prefix=API_PREFIX, **guard)
+    app.include_router(media_routes, prefix=API_PREFIX, **guard)
+    app.include_router(v1_only, prefix=API_PREFIX, **guard)
+    # The event stream is new in v1 and has no deprecated alias: it is registered only under /api/v1.
+    app.include_router(make_events_router(bus), prefix=API_PREFIX, **guard)
+    app.include_router(make_library_router(provider, jobs), prefix=API_PREFIX, **guard)
+    app.include_router(make_proxies_router(provider, jobs), prefix=API_PREFIX, **guard)
+    app.include_router(make_transcripts_router(provider, jobs), prefix=API_PREFIX, **guard)
+    app.include_router(make_scenes_router(provider, jobs), prefix=API_PREFIX, **guard)
+    app.include_router(make_ocr_router(provider, jobs), prefix=API_PREFIX, **guard)
+    app.include_router(make_search_router(provider), prefix=API_PREFIX, **guard)
+    app.include_router(make_time_index_router(provider), prefix=API_PREFIX, **guard)
+    app.include_router(make_media_report_router(provider, jobs), prefix=API_PREFIX, **guard)
+    app.include_router(make_highlights_router(provider), prefix=API_PREFIX, **guard)
+    app.include_router(make_frames_router(provider), prefix=API_PREFIX, **guard)
+    app.include_router(make_contact_sheet_router(provider), prefix=API_PREFIX, **guard)
+    app.include_router(make_plan_router(provider), prefix=API_PREFIX, **guard)
+    app.include_router(make_ops_router(provider), prefix=API_PREFIX, **guard)
+    app.include_router(make_presets_router(), prefix=API_PREFIX, **guard)
+    app.include_router(make_caption_styles_router(), prefix=API_PREFIX, **guard)
+    # Deprecated aliases for one release: /api/... and /media/... as they were
+    # before versioning. Not in the OpenAPI schema; responses carry a
+    # `Deprecation` header (set by the middleware above). Registered after /api/v1 so it can't shadow it.
+    app.include_router(api, prefix="/api", include_in_schema=False, **guard)
+    app.include_router(media_routes, include_in_schema=False, **guard)
+
+    default_openapi = app.openapi
+
+    def openapi() -> dict:
+        if app.openapi_schema is None:
+            schema = default_openapi()
+            schema.setdefault("components", {}).setdefault("securitySchemes", {})[SECURITY_SCHEME] = {
+                "type": "http",
+                "scheme": "bearer",
+                "description": SECURITY_DESCRIPTION,
+            }
+            schema["security"] = [{SECURITY_SCHEME: []}]
+        return app.openapi_schema
+
+    app.openapi = openapi  # type: ignore[method-assign]
 
     # Mounted last: Starlette matches routes in registration order, and this
     # catch-all static mount must not shadow the /api/* and /media/* routes.

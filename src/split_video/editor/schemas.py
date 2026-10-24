@@ -2,7 +2,16 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from pydantic import BaseModel
+
+# Project identification convention: every endpoint that works on a video
+# takes the project id as a `path` *query parameter* (GET and POST alike;
+# request bodies never carry it). The id is the video's path relative to the
+# browse root, the same string `/api/open` takes. The server keeps no
+# "currently open" file. Escaping the root gives 400, a missing file 404.
+PROJECT_PATH_DESCRIPTION = "Project id: the video's path relative to the browse root."
 
 
 class SilenceIntervalOut(BaseModel):
@@ -29,8 +38,11 @@ class StateParams(BaseModel):
 
 
 class SessionResponse(BaseModel):
+    # The file the server was started on, if any (None when started on a
+    # directory). Informational only: no per-server state is kept for it.
     file_open: bool
     filename: str | None = None
+    path: str | None = None  # project id to pass as `path` to open that file
 
 
 class BrowseEntryOut(BaseModel):
@@ -57,6 +69,8 @@ class StateResponse(BaseModel):
     silences: list[SilenceIntervalOut]
     segments: list[SegmentOut]
     resumed: bool = False
+    # The project file's revision (0 if never saved). Send it back as `If-Match` on writes.
+    revision: int = 0
 
 
 class DetectRequest(BaseModel):
@@ -154,3 +168,39 @@ class ExportStatusResponse(BaseModel):
     manifest_path: str | None = None
     files: list[str] | None = None
     error: str | None = None
+
+
+class JobOut(BaseModel):
+    """One job, whatever its kind (see `split_video.jobs.JobInfo`)."""
+
+    id: str
+    kind: str  # export | analysis | render | library_scan | proxy | transcription | scene_analysis | ocr
+    state: str  # queued | running | done | error | cancelled
+    label: str | None = None
+    completed: float
+    total: float  # 0 while unknown; the unit depends on the kind
+    fraction: float  # completed / total, 0.0..1.0
+    message: str | None = None  # the item being worked on
+    result: Any = None  # JSON summary: partial while running, final when done
+    error: str | None = None
+    error_code: str | None = None  # the failure's exception class name (set with `error`)
+    error_info: dict[str, str] | None = None  # the failure as {code, message, fix} (docs/errors.md)
+    created_at: float  # unix seconds
+    started_at: float | None = None
+    finished_at: float | None = None
+    cancel_requested: bool = False
+    owner: str | None = None  # the id of the principal that submitted it (`local` in local mode)
+    group: str | None = None  # shared by jobs submitted together (a render batch id); null for a lone job
+
+
+class JobListOut(BaseModel):
+    jobs: list[JobOut]  # newest first
+
+
+class WhoAmIOut(BaseModel):
+    """The principal making the request (`split_video.identity.Principal`)."""
+
+    id: str
+    name: str | None = None
+    kind: str  # local | token
+    auth_required: bool  # whether the server was started with SPLIT_VIDEO_TOKEN

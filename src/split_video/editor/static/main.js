@@ -22,7 +22,11 @@ function updateHeader() {
 // they survive closing and reopening the editor. Every add/move/delete/
 // recompute is already a discrete, infrequent user action — no debouncing
 // needed on top of that.
-function createSaveIndicator() {
+//
+// Every save carries the revision the page last saw. If the project file changed since (the CLI, an
+// agent, another tab), the server refuses the save; `onConflict` then reloads what is on disk and the
+// status line says so, instead of silently overwriting the other change.
+function createSaveIndicator({ onConflict }) {
   const el = document.getElementById("save-status");
   let saveCount = 0;
 
@@ -34,6 +38,17 @@ function createSaveIndicator() {
       await api.saveProject(derivedSegments());
       if (thisSave === saveCount) el.textContent = "Saved";
     } catch (err) {
+      if (err.isRevisionConflict) {
+        try {
+          await onConflict();
+          el.classList.add("error");
+          el.textContent = api.CONFLICT_MESSAGE;
+        } catch (reloadErr) {
+          el.classList.add("error");
+          el.textContent = `Save failed: ${reloadErr.message}`;
+        }
+        return;
+      }
       if (thisSave === saveCount) {
         el.classList.add("error");
         el.textContent = `Save failed: ${err.message}`;
@@ -73,6 +88,7 @@ async function main() {
     return;
   }
 
+  api.setProjectPath(session.path);
   filePicker.classList.add("hidden");
   appMain.classList.remove("hidden");
   await bootEditor();
@@ -134,7 +150,18 @@ async function bootEditor() {
   loadSegments(initialSegments);
   updateHeader();
 
-  const saveIndicator = createSaveIndicator();
+  // Assigned below, once the views exist; only called later, when a save hits a conflict.
+  let timeline;
+  let segmentTable;
+  const saveIndicator = createSaveIndicator({
+    onConflict: async () => {
+      const latest = await api.getState(); // also takes the new revision
+      loadSegments(latest.segments);
+      updateHeader();
+      timeline.render();
+      segmentTable.render();
+    },
+  });
   if (data.resumed) document.getElementById("save-status").textContent = "Resumed saved splits";
 
   const videoEl = document.getElementById("video");
@@ -148,10 +175,6 @@ async function bootEditor() {
     overlayEl: document.getElementById("app-overlay"),
   });
 
-  // Assigned right below — referenced here only inside a callback that
-  // fires later (on a user edit), by which point both exist.
-  let timeline;
-  let segmentTable;
   function handleSegmentsChanged() {
     updateHeader();
     timeline.render();

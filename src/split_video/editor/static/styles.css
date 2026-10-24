@@ -971,3 +971,7 @@ button, input, output {
 .error {
   color: var(--danger);
 }
+
+a.btn {
+  text-decoration: none;
+}

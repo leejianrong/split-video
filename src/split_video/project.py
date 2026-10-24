@@ -1,4 +1,4 @@
-"""Headless operations on a video's split-point project.
+"""Headless operations on a video's split points (the main track of its timeline project).
 
 This is the single place the editor's rules for splitting, moving, labeling
 and exporting segments live, so the browser editor (`editor/app.py`), the
@@ -10,8 +10,9 @@ The model mirrors the frontend's (see `editor/static/state.js`): a project is
 a contiguous list of segments from the first to the last song, so "split N"
 is just the shared boundary between segment N and N+1. Segment and split
 numbers are 1-based, matching the editor's segment table. Nothing here
-persists anything except through `project_store`, whose sidecar file next to
-the video is the one source of truth — there is no running server to talk to.
+persists anything except through a `ProjectStore` (locally, the video's timeline project,
+the sidecar file next to the video, is the one source of truth — there is no running server to
+talk to). A project is addressed by its id in the store, not by a file path.
 
 Every function that edits a project is pure over a segment list and returns a
 new one; `save_segments` is what writes it. Bad input raises `ProjectError`
@@ -21,22 +22,29 @@ map it to its own error style.
 
 from __future__ import annotations
 
+import base64
+import binascii
 import itertools
+import json
+import posixpath
 import re
 from collections.abc import Callable
+from contextlib import closing
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any
 
+from split_video import assets, split_model
 from split_video.editor import classify
 from split_video.editor.cache import ClassificationCache, SilenceCache
-from split_video.editor.project_store import SavedSegment
-from split_video.editor.project_store import load as load_project
-from split_video.editor.project_store import save as save_project
-from split_video.ffmpeg import extract_pcm_audio, extract_segment, probe_duration
-from split_video.naming import build_manifest, resolve_export_filename, write_manifest
+from split_video.errors import ProjectError, RevisionConflictError  # noqa: F401  (re-exported)
+from split_video.ffmpeg import ProbeError, extract_segment, iter_pcm_chunks
+from split_video.jobs import CancelToken, JobCancelledError
+from split_video.media_store import MediaStore
+from split_video.naming import build_manifest, manifest_text, resolve_export_filename
 from split_video.segments import Segment, compute_segments
+from split_video.store import ProjectStore, SavedSegment, Versioned
+from split_video.timeline import Project
 
 # Minimum gap kept between any two boundaries, so an add/move can never
 # produce a zero- or negative-length segment. Matches `MIN_GAP` in state.js.
@@ -48,32 +56,118 @@ _COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 UNSET: Any = object()
 
 
-class ProjectError(ValueError):
-    """The request can't be applied (bad index, overlapping segments, ...)."""
-
-
 class ExportConflictError(ProjectError):
     """Output files already exist and overwriting wasn't asked for."""
 
 
 # --- loading / saving -------------------------------------------------------
+#
+# A recording's splits live in its timeline project (ADR 0003): segment n is clip n of the main track, see
+# `split_model.py`. A legacy split project is migrated by these functions, in memory on every read and onto disk
+# with the first write; the store only keeps the files. One revision number covers both (the store's
+# `load_video_timeline`), so a write's `base_revision` means what it always did.
 
 
-def current_segments(source: Path) -> list[SavedSegment]:
-    """The saved segments for `source`, or one segment covering the whole
-    recording if nothing has been saved yet (the editor's skip-setup state)."""
-    saved = load_project(source)
+def _stored_segments(store: ProjectStore, project_id: str) -> Versioned[list[SavedSegment] | None]:
+    """What is saved for the video: its timeline project's split view, else a legacy split project's
+    segments; None if neither can be read. (`[]` is a project that was saved with no segments.)"""
+    stored = store.load_video_timeline(project_id)
+    if stored.value is not None:
+        return Versioned(split_model.to_segments(stored.value), stored.revision)
+    return Versioned(store.load_split(project_id), stored.revision)
+
+
+def current_segments(store: ProjectStore, media: MediaStore, project_id: str) -> list[SavedSegment]:
+    """The saved segments for project `project_id` (the video's media id), or
+    one segment covering the whole recording if nothing has been saved yet (the
+    editor's skip-setup state)."""
+    saved = _stored_segments(store, project_id).value
     if saved:
         return saved
-    return [SavedSegment(start=0.0, end=probe_duration(source))]
+    return [SavedSegment(start=0.0, end=media.probe(project_id).duration)]
 
 
-def has_project(source: Path) -> bool:
-    return bool(load_project(source))
+def video_timeline(store: ProjectStore, media: MediaStore, project_id: str) -> Project:
+    """The video's timeline project as a value (read-only, nothing is written): its saved timeline, a legacy split
+    project migrated in memory, or the whole recording as one clip, with the clips linked to assets."""
+    stored = store.load_video_timeline(project_id).value
+    return _unified(store, media, project_id, stored, current_segments(store, media, project_id))
 
 
-def save_segments(source: Path, segments: list[SavedSegment]) -> None:
-    save_project(source, segments)
+def has_project(store: ProjectStore, project_id: str) -> bool:
+    return bool(_stored_segments(store, project_id).value)
+
+
+def current_revision(store: ProjectStore, project_id: str) -> int:
+    """The project's stored revision: 0 if nothing was ever saved."""
+    return store.load_video_timeline(project_id).revision
+
+
+def load_saved(store: ProjectStore, project_id: str) -> Versioned[list[SavedSegment] | None]:
+    """The saved segments with the revision they were read at; the value is None if nothing was ever saved (the
+    editor then proposes splits), unlike `load_versioned`, which stands in the whole recording."""
+    return _stored_segments(store, project_id)
+
+
+def load_versioned(store: ProjectStore, media: MediaStore, project_id: str) -> Versioned[list[SavedSegment]]:
+    """`current_segments` together with the revision they were read at."""
+    stored = _stored_segments(store, project_id)
+    if stored.value:
+        return Versioned(stored.value, stored.revision)
+    return Versioned([SavedSegment(start=0.0, end=media.probe(project_id).duration)], stored.revision)
+
+
+def _unified(
+    store: ProjectStore, media: MediaStore | None, project_id: str, stored: Project | None, segments: list[SavedSegment]
+) -> Project:
+    """`stored` (or the legacy split project, or nothing) with `segments` as its main track, linked to assets."""
+    if stored is None:
+        legacy = store.load_split(project_id)
+        stored = split_model.from_legacy(project_id, legacy) if legacy else None
+    project = split_model.apply_segments(stored, project_id, segments)
+    return project if media is None else replace(assets.link_project(media, project), revision=0)
+
+
+def save_segments(
+    store: ProjectStore,
+    project_id: str,
+    segments: list[SavedSegment],
+    base_revision: int | None = None,
+    media: MediaStore | None = None,
+) -> int:
+    """Replace the project's segments and return the new revision. With `base_revision`, fails
+    with `RevisionConflictError` if the project has moved on since that revision. With `media` the clips are
+    linked to the video's asset."""
+    saved = store.update_video_timeline(
+        project_id, lambda stored: _unified(store, media, project_id, stored, segments), base_revision
+    )
+    return saved.revision
+
+
+def edit_segments(
+    store: ProjectStore,
+    media: MediaStore,
+    project_id: str,
+    change: Callable[[list[SavedSegment]], list[SavedSegment]],
+    base_revision: int | None = None,
+) -> Versioned[list[SavedSegment]]:
+    """Load the project's segments (the whole recording as one if nothing is saved), apply `change`
+    and save the result, all atomically under the store's write lock, so concurrent edits never
+    lose each other even without a `base_revision`. With one, the edit only applies if the project
+    is still at that revision. Returns the saved segments and the new revision."""
+
+    def apply(stored: Project | None) -> Project:
+        if stored is not None:
+            current = split_model.to_segments(stored)
+        else:
+            legacy = store.load_split(project_id)
+            current = legacy or []
+        if not current:
+            current = [SavedSegment(start=0.0, end=media.probe(project_id).duration)]
+        return _unified(store, media, project_id, stored, change(current))
+
+    saved = store.update_video_timeline(project_id, apply, base_revision)
+    return Versioned(split_model.to_segments(saved.value), saved.revision)
 
 
 # --- describing -------------------------------------------------------------
@@ -116,7 +210,8 @@ def contiguous(computed: list[Segment]) -> list[SavedSegment]:
 
 
 def propose_segments(
-    source: Path,
+    media: MediaStore,
+    source: str,
     *,
     silence_threshold: float = -35.0,
     min_silence_duration: float = 2.0,
@@ -126,8 +221,8 @@ def propose_segments(
     """Splits proposed by silence detection — the same scan + post-processing
     the editor's setup step runs (and cached the same way, so a later `edit`
     reuses the scan). Does not save; pair with `save_segments`."""
-    duration = probe_duration(source)
-    silences = SilenceCache(source).get_raw_silences(silence_threshold)
+    duration = media.probe(source).duration
+    silences = SilenceCache(media, source).get_raw_silences(silence_threshold)
     computed = compute_segments(silences, duration, min_silence_duration, min_song_length, padding)
     return contiguous(computed)
 
@@ -227,10 +322,10 @@ def update_segment(
 
 @dataclass(frozen=True)
 class ExportPlan:
-    source: Path
+    source: str  # media ids, as in the `MediaStore`
     segments: list[tuple[float, float]]
     filenames: list[str]
-    output_dir: Path
+    output_dir: str
 
 
 def select_for_export(segments: list[SavedSegment], only: list[int] | None = None) -> list[SavedSegment]:
@@ -258,7 +353,8 @@ def validate_pairs(pairs: list[tuple[float, float]]) -> None:
 
 
 def plan_export(
-    source: Path,
+    media: MediaStore,
+    source: str,
     segments: list[tuple[float, float, str | None]],
     *,
     output_format: str | None = None,
@@ -269,15 +365,17 @@ def plan_export(
     written. Raises `ExportConflictError` if files exist and `overwrite` is off."""
     pairs = [(start, end) for start, end, _ in segments]
     validate_pairs(pairs)
-    output_dir = source.with_name(f"{source.stem}_split")
-    ext = source.suffix if output_format is None else f".{output_format.lstrip('.')}"
+    output_dir = media.export_dir(source)
+    name = media.name(source)
+    stem, suffix = posixpath.splitext(name)
+    ext = suffix if output_format is None else f".{output_format.lstrip('.')}"
     filenames = [
-        resolve_export_filename(i + 1, len(pairs), source.stem, ext, name) for i, (_, _, name) in enumerate(segments)
+        resolve_export_filename(i + 1, len(pairs), stem, ext, custom) for i, (_, _, custom) in enumerate(segments)
     ]
     if len(set(filenames)) != len(filenames):
         raise ProjectError("export names must be unique across segments")
     if not overwrite:
-        conflicts = [f for f in filenames if (output_dir / f).exists()]
+        conflicts = [f for f in filenames if media.exists(media.join(output_dir, f))]
         if conflicts:
             raise ExportConflictError(
                 f"{len(conflicts)} output file(s) already exist (pass overwrite to replace): {', '.join(conflicts)}"
@@ -286,6 +384,7 @@ def plan_export(
 
 
 def run_export(
+    media: MediaStore,
     plan: ExportPlan,
     *,
     precise: bool = False,
@@ -294,32 +393,44 @@ def run_export(
     parameters: dict[str, Any] | None = None,
     on_file_start: Callable[[str], None] | None = None,
     on_file_done: Callable[[str], None] | None = None,
-) -> tuple[list[Path], Path | None]:
+    cancel: CancelToken | None = None,
+) -> tuple[list[str], str | None]:
     """Write the planned files (and `manifest.json`). Blocking; the editor
-    calls this on a worker thread, the CLI and MCP server call it inline.
-    Returns the written paths and the manifest path, if one was written."""
-    plan.output_dir.mkdir(parents=True, exist_ok=True)
+    runs it as a job, the CLI and MCP server call it inline.
+    Returns the written media ids and the manifest's, if one was written.
+
+    With a `cancel` token (a job's `JobContext`), cancelling stops before the next file or
+    terminates the ffmpeg extracting the current one (its partial file is deleted) and raises
+    `JobCancelledError`. Files already finished stay, and no manifest is written."""
     objs = [Segment(index=i + 1, start=a, end=b) for i, (a, b) in enumerate(plan.segments)]
-    written: list[Path] = []
+    written: list[str] = []
     for seg, filename in zip(objs, plan.filenames):
-        out_path = plan.output_dir / filename
+        out_id = media.join(plan.output_dir, filename)
+        if cancel is not None:
+            cancel.raise_if_cancelled()
         if on_file_start:
             on_file_start(filename)
-        extract_segment(plan.source, seg.start, seg.end, out_path, precise, output_format)
-        written.append(out_path)
+        try:
+            with media.local_path(plan.source) as source, media.write_local(out_id) as out_path:
+                extract_segment(source, seg.start, seg.end, out_path, precise, output_format, cancel=cancel)
+        except JobCancelledError:
+            media.delete(out_id)
+            raise
+        written.append(out_id)
         if on_file_done:
-            on_file_done(str(out_path))
+            on_file_done(out_id)
 
     manifest_path = None
     if write_manifest_file:
         data = build_manifest(
-            source_path=plan.source,
+            source_name=media.name(plan.source),
             segments=objs,
             filenames=plan.filenames,
             parameters=parameters if parameters is not None else {"precise": precise},
             generated_at=datetime.now(timezone.utc),
         )
-        manifest_path = write_manifest(data, plan.output_dir)
+        manifest_path = media.join(plan.output_dir, "manifest.json")
+        media.write_bytes(manifest_path, manifest_text(data).encode())
     return written, manifest_path
 
 
@@ -327,17 +438,107 @@ def run_export(
 
 
 def run_analysis(
-    source: Path,
+    media: MediaStore,
+    source: str,
     cache: ClassificationCache,
     thresholds: dict[str, float],
     on_progress: Callable[[int, int], None] | None = None,
+    cancel: CancelToken | None = None,
 ) -> None:
     """Run YAMNet over `source` and store the result in `cache` (which writes
-    the sidecar cache file). Blocking and potentially slow on a long recording."""
+    the sidecar cache file). Blocking and potentially slow on a long recording.
+
+    With a `cancel` token (a job's `JobContext`) it stops, raising `JobCancelledError` and
+    storing nothing, while decoding the audio (ffmpeg is terminated) or between inference frames.
+    `on_progress(frames_done, frames_total)` follows the real decode position (the total is estimated from
+    the probed duration and corrected at the end)."""
+    if cancel is not None:
+        cancel.raise_if_cancelled()
     model, labels = classify.get_model_and_labels()
-    pcm = extract_pcm_audio(source, sample_rate=classify.SAMPLE_RATE)
-    regions, frame_bucket_scores, total_duration = classify.classify_audio(pcm, model, labels, thresholds, on_progress)
+
+    def frame_done(completed: int, total: int) -> None:
+        if cancel is not None:
+            cancel.raise_if_cancelled()
+        if on_progress:
+            on_progress(completed, total)
+
+    try:
+        expected_samples: int | None = int(media.probe(source).duration * classify.SAMPLE_RATE)
+    except ProbeError:
+        expected_samples = None  # only used to size the progress total
+    # Streamed: the audio is decoded a few seconds at a time while the model runs, so memory does not
+    # grow with the recording.
+    with (
+        media.local_path(source) as path,
+        closing(iter_pcm_chunks(path, classify.SAMPLE_RATE, cancel=cancel)) as chunks,
+    ):
+        regions, frame_bucket_scores, total_duration = classify.classify_stream(
+            chunks, model, labels, thresholds, frame_done, expected_samples
+        )
     cache.store_result(frame_bucket_scores, total_duration, regions)
+
+
+REGION_PAGE_DEFAULT = 200
+# about 54 KB of MCP text at 500 regions: under the 64 KB tool-response cap (docs/tool-response-caps.md)
+REGION_PAGE_MAX = 500
+
+
+def _page_cursor(position: int, total: int) -> str:
+    raw = json.dumps({"i": position, "n": total}, separators=(",", ":")).encode()
+    return base64.urlsafe_b64encode(raw).decode().rstrip("=")
+
+
+def _page_start(cursor: str | None, total: int) -> int:
+    if not cursor:
+        return 0
+    try:
+        data = json.loads(base64.urlsafe_b64decode(cursor + "=" * (-len(cursor) % 4)))
+        position, count = int(data["i"]), int(data["n"])
+    except (ValueError, KeyError, TypeError, binascii.Error):
+        raise ValueError("cursor is not one returned by this tool: start without it") from None
+    if count != total or not 0 <= position <= total:
+        raise ValueError("cursor no longer matches the analysis (it was made again): start without it")
+    return position
+
+
+def page_classification(
+    cache: ClassificationCache, limit: int | None = None, cursor: str | None = None
+) -> dict[str, Any]:
+    """`summarize_classification` bounded for a tool result: the whole-recording summary (`seconds_by_bucket`,
+    `regions_by_bucket`, `total_seconds`, `total_regions`) plus one page of at most `limit` regions (default
+    `REGION_PAGE_DEFAULT`, at most `REGION_PAGE_MAX`) from `cursor`, with `count`, `truncated`, `next_cursor` and
+    `notices`. Concatenating the pages gives exactly the `regions` of `summarize_classification`."""
+    if limit is None:
+        limit = REGION_PAGE_DEFAULT
+    if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= REGION_PAGE_MAX:
+        raise ValueError(f"limit must be a whole number from 1 to {REGION_PAGE_MAX}")
+    full = summarize_classification(cache)
+    regions = full.pop("regions")
+    total = len(regions)
+    at = _page_start(cursor, total)
+    page = regions[at : at + limit]
+    end = at + len(page)
+    by_bucket: dict[str, int] = {}
+    for r in regions:
+        by_bucket[r["bucket"]] = by_bucket.get(r["bucket"], 0) + 1
+    more = end < total
+    notices = []
+    if more:
+        notices.append(
+            f"regions {at + 1}-{end} of {total}: call again with cursor=next_cursor to read the rest "
+            "(seconds_by_bucket and regions_by_bucket already cover the whole recording)"
+        )
+    return {
+        **full,
+        "total_seconds": round(sum(full["seconds_by_bucket"].values()), 1),
+        "regions_by_bucket": dict(sorted(by_bucket.items())),
+        "total_regions": total,
+        "count": len(page),
+        "regions": page,
+        "truncated": at > 0 or more,
+        "next_cursor": _page_cursor(end, total) if more else None,
+        "notices": notices,
+    }
 
 
 def summarize_classification(cache: ClassificationCache) -> dict[str, Any]:

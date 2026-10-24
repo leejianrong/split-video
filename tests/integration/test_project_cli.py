@@ -103,7 +103,7 @@ def test_cli_edits_are_visible_to_the_editor_api(three_songs_clip):
             StateParams(silence_threshold=-35.0, min_silence_duration=2.0, min_song_length=2.0, padding=0.15),
         )
     )
-    state = client.get("/api/state").json()
+    state = client.get("/api/state", params={"path": three_songs_clip.name}).json()
     assert state["resumed"] is True
     first = state["segments"][0]
     assert (first["label"], first["end"]) == ("Opener", 8)

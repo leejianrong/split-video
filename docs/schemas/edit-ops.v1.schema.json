@@ -1,0 +1,681 @@
+{
+  "$defs": {
+    "add_clip": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "anyOf": [
+            {
+              "required": [
+                "asset"
+              ]
+            },
+            {
+              "required": [
+                "source"
+              ]
+            }
+          ]
+        }
+      ],
+      "description": "Add a clip of an asset to a track (`timeline_service.add_clip`).",
+      "properties": {
+        "asset": {
+          "description": "Asset id (`a_` + 16 hex digits, see list_assets). Preferred over `source`.",
+          "type": "string"
+        },
+        "id": {
+          "description": "Id for the new clip, so later ops in this batch can name it (letters, digits, `_`, `-`, `.`). Generated deterministically from the batch and this op's position when absent; the result reports it.",
+          "maxLength": 64,
+          "type": "string"
+        },
+        "in": {
+          "default": 0.0,
+          "description": "Seconds into the source where the clip starts.",
+          "minimum": 0.0,
+          "type": "number"
+        },
+        "index": {
+          "description": "Magnetic track: zero-based position to insert at (default: the end). Not allowed on other tracks.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "op": {
+          "const": "add_clip",
+          "description": "The operation.",
+          "type": "string"
+        },
+        "out": {
+          "description": "Seconds into the source where it ends (default: the end of the asset).",
+          "exclusiveMinimum": 0.0,
+          "type": "number"
+        },
+        "source": {
+          "description": "A path relative to the workspace root that is already an asset.",
+          "type": "string"
+        },
+        "start": {
+          "description": "Other tracks: where the clip begins (default: after the last clip).",
+          "minimum": 0.0,
+          "type": "number"
+        },
+        "track": {
+          "description": "Id of the track (from show_timeline, or the `id` of an earlier op in this batch); default: the main video track.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "op"
+      ],
+      "type": "object"
+    },
+    "add_text_clip": {
+      "additionalProperties": false,
+      "description": "Add a title to an overlay video track (`timeline_service.add_text_clip`).",
+      "properties": {
+        "color": {
+          "default": "#ffffff",
+          "description": "Text colour as #rrggbb (text clips only).",
+          "pattern": "^#[0-9a-fA-F]{6}$",
+          "type": "string"
+        },
+        "duration": {
+          "description": "How long the title shows, seconds (at least 0.1).",
+          "minimum": 0.1,
+          "type": "number"
+        },
+        "font_size": {
+          "default": 0.08,
+          "description": "Text height as a fraction of the frame height (text clips only).",
+          "maximum": 0.5,
+          "minimum": 0.01,
+          "type": "number"
+        },
+        "id": {
+          "description": "Id for the new clip, so later ops in this batch can name it (letters, digits, `_`, `-`, `.`). Generated deterministically from the batch and this op's position when absent; the result reports it.",
+          "maxLength": 64,
+          "type": "string"
+        },
+        "op": {
+          "const": "add_text_clip",
+          "description": "The operation.",
+          "type": "string"
+        },
+        "start": {
+          "default": 0.0,
+          "description": "Where the title begins on the timeline.",
+          "minimum": 0.0,
+          "type": "number"
+        },
+        "text": {
+          "description": "The title's words (not blank).",
+          "maxLength": 1000,
+          "type": "string"
+        },
+        "track": {
+          "description": "Id of the track (from show_timeline, or the `id` of an earlier op in this batch).",
+          "type": "string"
+        },
+        "x": {
+          "default": 0.5,
+          "description": "Overlay centre, as a fraction of the frame width.",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "type": "number"
+        },
+        "y": {
+          "default": 0.85,
+          "description": "Overlay centre, as a fraction of the frame height (text: 0.85).",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "type": "number"
+        }
+      },
+      "required": [
+        "op",
+        "track",
+        "text",
+        "duration"
+      ],
+      "type": "object"
+    },
+    "add_track": {
+      "additionalProperties": false,
+      "description": "Append an empty track on top of the stack (`timeline_service.add_track`).",
+      "properties": {
+        "id": {
+          "description": "Id for the new track, so later ops in this batch can name it (letters, digits, `_`, `-`, `.`). Generated deterministically from the batch and this op's position when absent; the result reports it.",
+          "maxLength": 64,
+          "type": "string"
+        },
+        "kind": {
+          "description": "`video` or `audio`.",
+          "enum": [
+            "video",
+            "audio"
+          ],
+          "type": "string"
+        },
+        "magnetic": {
+          "default": false,
+          "description": "Keep clips back to back (like the main track). Default false: clips are placed with `start`.",
+          "type": "boolean"
+        },
+        "op": {
+          "const": "add_track",
+          "description": "The operation.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "op",
+        "kind"
+      ],
+      "type": "object"
+    },
+    "move_clip": {
+      "additionalProperties": false,
+      "description": "Move a clip within its magnetic track (`timeline_service.move_clip`).",
+      "properties": {
+        "clip": {
+          "description": "Id of the clip (from show_timeline, or the `id` of an earlier op in this batch).",
+          "type": "string"
+        },
+        "op": {
+          "const": "move_clip",
+          "description": "The operation.",
+          "type": "string"
+        },
+        "to_index": {
+          "description": "Zero-based position to move to (the list order of the track).",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "op",
+        "clip",
+        "to_index"
+      ],
+      "type": "object"
+    },
+    "move_track": {
+      "additionalProperties": false,
+      "description": "Reorder tracks; later tracks draw on top (`timeline_service.move_track`).",
+      "properties": {
+        "op": {
+          "const": "move_track",
+          "description": "The operation.",
+          "type": "string"
+        },
+        "to_index": {
+          "description": "Zero-based position to move to (the list order of the track).",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "track": {
+          "description": "Id of the track (from show_timeline, or the `id` of an earlier op in this batch).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "op",
+        "track",
+        "to_index"
+      ],
+      "type": "object"
+    },
+    "place_clip": {
+      "additionalProperties": false,
+      "description": "Put a clip at a start time on a free track, optionally on another track (`timeline_service.place_clip`).",
+      "properties": {
+        "clip": {
+          "description": "Id of the clip (from show_timeline, or the `id` of an earlier op in this batch).",
+          "type": "string"
+        },
+        "op": {
+          "const": "place_clip",
+          "description": "The operation.",
+          "type": "string"
+        },
+        "start": {
+          "description": "New start on the timeline, seconds (default: unchanged).",
+          "minimum": 0.0,
+          "type": "number"
+        },
+        "track": {
+          "description": "Id of the track (from show_timeline, or the `id` of an earlier op in this batch) to move the clip to (same kind; default: its own track).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "op",
+        "clip"
+      ],
+      "type": "object"
+    },
+    "remove_clip": {
+      "additionalProperties": false,
+      "description": "Remove a clip (`timeline_service.remove_clip`).",
+      "properties": {
+        "clip": {
+          "description": "Id of the clip (from show_timeline, or the `id` of an earlier op in this batch).",
+          "type": "string"
+        },
+        "op": {
+          "const": "remove_clip",
+          "description": "The operation.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "op",
+        "clip"
+      ],
+      "type": "object"
+    },
+    "remove_track": {
+      "additionalProperties": false,
+      "description": "Remove a track and its clips (`timeline_service.remove_track`).",
+      "properties": {
+        "op": {
+          "const": "remove_track",
+          "description": "The operation.",
+          "type": "string"
+        },
+        "track": {
+          "description": "Id of the track (from show_timeline, or the `id` of an earlier op in this batch).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "op",
+        "track"
+      ],
+      "type": "object"
+    },
+    "set_clip_properties": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "anyOf": [
+            {
+              "required": [
+                "gain"
+              ]
+            },
+            {
+              "required": [
+                "muted"
+              ]
+            },
+            {
+              "required": [
+                "x"
+              ]
+            },
+            {
+              "required": [
+                "y"
+              ]
+            },
+            {
+              "required": [
+                "scale"
+              ]
+            },
+            {
+              "required": [
+                "opacity"
+              ]
+            },
+            {
+              "required": [
+                "brightness"
+              ]
+            },
+            {
+              "required": [
+                "contrast"
+              ]
+            },
+            {
+              "required": [
+                "saturation"
+              ]
+            },
+            {
+              "required": [
+                "crop"
+              ]
+            }
+          ]
+        }
+      ],
+      "description": "Change gain, mute, overlay placement, colour or crop of a clip (`timeline_service.set_clip_properties`).",
+      "properties": {
+        "brightness": {
+          "description": "Brightness adjustment (ffmpeg `eq`).",
+          "maximum": 1.0,
+          "minimum": -1.0,
+          "type": "number"
+        },
+        "clip": {
+          "description": "Id of the clip (from show_timeline, or the `id` of an earlier op in this batch).",
+          "type": "string"
+        },
+        "contrast": {
+          "description": "Contrast multiplier.",
+          "maximum": 3.0,
+          "minimum": 0.0,
+          "type": "number"
+        },
+        "crop": {
+          "additionalProperties": false,
+          "description": "Media clips on video tracks: the part of the source frame to show, as fractions of the frame with the origin at its top-left. Absent = the whole frame. x, y in 0..1; w, h from 0.02 to 1; x+w and y+h at most 1. Applied before the clip is scaled to fit the output frame, so for a vertical short compute it with the `crop_for_aspect` helper (CLI `compose crop --aspect 9:16`, MCP `set_clip_crop`, GET /api/v1/assets/{id}/reframe) rather than by hand. `null` removes the crop.",
+          "properties": {
+            "h": {
+              "description": "Height (fraction of the source height).",
+              "type": "number"
+            },
+            "w": {
+              "description": "Width (fraction of the source width).",
+              "type": "number"
+            },
+            "x": {
+              "description": "Left edge (fraction of the source width).",
+              "type": "number"
+            },
+            "y": {
+              "description": "Top edge (fraction of the source height).",
+              "type": "number"
+            }
+          },
+          "required": [
+            "x",
+            "y",
+            "w",
+            "h"
+          ],
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "gain": {
+          "description": "Volume multiplier.",
+          "maximum": 4.0,
+          "minimum": 0.0,
+          "type": "number"
+        },
+        "muted": {
+          "description": "Silence the clip's audio.",
+          "type": "boolean"
+        },
+        "op": {
+          "const": "set_clip_properties",
+          "description": "The operation.",
+          "type": "string"
+        },
+        "opacity": {
+          "description": "Overlay opacity.",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "type": "number"
+        },
+        "saturation": {
+          "description": "Saturation multiplier.",
+          "maximum": 3.0,
+          "minimum": 0.0,
+          "type": "number"
+        },
+        "scale": {
+          "description": "Overlay width as a fraction of the frame width.",
+          "maximum": 4.0,
+          "minimum": 0.05,
+          "type": "number"
+        },
+        "x": {
+          "description": "Overlay centre, as a fraction of the frame width.",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "type": "number"
+        },
+        "y": {
+          "description": "Overlay centre, as a fraction of the frame height (text: 0.85).",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "type": "number"
+        }
+      },
+      "required": [
+        "op",
+        "clip"
+      ],
+      "type": "object"
+    },
+    "set_text_properties": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "anyOf": [
+            {
+              "required": [
+                "text"
+              ]
+            },
+            {
+              "required": [
+                "font_size"
+              ]
+            },
+            {
+              "required": [
+                "color"
+              ]
+            }
+          ]
+        }
+      ],
+      "description": "Change the words, size or colour of a text clip (`timeline_service.set_text_properties`).",
+      "properties": {
+        "clip": {
+          "description": "Id of the clip (from show_timeline, or the `id` of an earlier op in this batch).",
+          "type": "string"
+        },
+        "color": {
+          "description": "Text colour as #rrggbb (text clips only).",
+          "pattern": "^#[0-9a-fA-F]{6}$",
+          "type": "string"
+        },
+        "font_size": {
+          "description": "Text height as a fraction of the frame height (text clips only).",
+          "maximum": 0.5,
+          "minimum": 0.01,
+          "type": "number"
+        },
+        "op": {
+          "const": "set_text_properties",
+          "description": "The operation.",
+          "type": "string"
+        },
+        "text": {
+          "description": "The title's words (not blank).",
+          "maxLength": 1000,
+          "type": "string"
+        }
+      },
+      "required": [
+        "op",
+        "clip"
+      ],
+      "type": "object"
+    },
+    "set_transition": {
+      "additionalProperties": false,
+      "description": "Set how a clip joins the one before it (`timeline_service.set_transition`).",
+      "properties": {
+        "clip": {
+          "description": "Id of the clip (from show_timeline, or the `id` of an earlier op in this batch).",
+          "type": "string"
+        },
+        "duration": {
+          "default": 0.0,
+          "description": "Crossfade seconds; required above 0 with `crossfade`, ignored for `cut`.",
+          "minimum": 0.0,
+          "type": "number"
+        },
+        "op": {
+          "const": "set_transition",
+          "description": "The operation.",
+          "type": "string"
+        },
+        "transition": {
+          "description": "How this clip joins the one before it. `crossfade` only on magnetic tracks, never on the first clip.",
+          "enum": [
+            "cut",
+            "crossfade"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "op",
+        "clip",
+        "transition"
+      ],
+      "type": "object"
+    },
+    "trim_clip": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "anyOf": [
+            {
+              "required": [
+                "in"
+              ]
+            },
+            {
+              "required": [
+                "out"
+              ]
+            }
+          ]
+        }
+      ],
+      "description": "Change which part of its source a clip uses (`timeline_service.trim_clip`).",
+      "properties": {
+        "clip": {
+          "description": "Id of the clip (from show_timeline, or the `id` of an earlier op in this batch).",
+          "type": "string"
+        },
+        "in": {
+          "description": "New in point, seconds into the source.",
+          "minimum": 0.0,
+          "type": "number"
+        },
+        "op": {
+          "const": "trim_clip",
+          "description": "The operation.",
+          "type": "string"
+        },
+        "out": {
+          "description": "New out point, seconds into the source.",
+          "exclusiveMinimum": 0.0,
+          "type": "number"
+        }
+      },
+      "required": [
+        "op",
+        "clip"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "urn:split-video:edit-ops:1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "A batch of timeline edits applied in order and atomically to an existing project: all of them or none. Strict: unknown ops and fields are rejected. Constraints this schema cannot express (clip and track ids exist, assets exist, in/out within the asset, no overlaps, crossfade room) are checked by the server and reported with stable codes; see docs/edit-ops.md. At most 1000 ops.",
+  "properties": {
+    "base_revision": {
+      "description": "The revision of the project these ops were written against; the batch fails with a 409 / revision conflict, writing nothing, if it has moved on. null or absent: apply to the latest version.",
+      "minimum": 0,
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "continue_on_error": {
+      "default": false,
+      "description": "Dry run only: keep going after a failing op and report every independent problem (ops that use an id from a failed op are `ops.skipped_dependency`). By default the first failing op stops the batch.",
+      "type": "boolean"
+    },
+    "meta": {
+      "description": "Free-form notes for the caller; echoed in the response, never stored or validated.",
+      "type": "object"
+    },
+    "ops": {
+      "description": "The operations, applied in order.",
+      "items": {
+        "oneOf": [
+          {
+            "$ref": "#/$defs/add_clip"
+          },
+          {
+            "$ref": "#/$defs/trim_clip"
+          },
+          {
+            "$ref": "#/$defs/move_clip"
+          },
+          {
+            "$ref": "#/$defs/remove_clip"
+          },
+          {
+            "$ref": "#/$defs/set_transition"
+          },
+          {
+            "$ref": "#/$defs/set_clip_properties"
+          },
+          {
+            "$ref": "#/$defs/add_text_clip"
+          },
+          {
+            "$ref": "#/$defs/set_text_properties"
+          },
+          {
+            "$ref": "#/$defs/add_track"
+          },
+          {
+            "$ref": "#/$defs/remove_track"
+          },
+          {
+            "$ref": "#/$defs/move_track"
+          },
+          {
+            "$ref": "#/$defs/place_clip"
+          }
+        ]
+      },
+      "maxItems": 1000,
+      "minItems": 1,
+      "type": "array"
+    },
+    "project": {
+      "description": "Name of the existing timeline project to edit.",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": 1,
+      "description": "Version of this ops format. Additive optional fields keep the version; a breaking change bumps it.",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "schema_version",
+    "project",
+    "ops"
+  ],
+  "title": "split-video edit operations, schema_version 1",
+  "type": "object"
+}

@@ -1,0 +1,170 @@
+{
+  "version": 1,
+  "asset": "a_e37c5eab78c34f0f",
+  "time": 205.0,
+  "window": {
+    "start": 200.0,
+    "end": 210.0
+  },
+  "duration": 300.0,
+  "audio": {
+    "class": "applause_crowd",
+    "raw_class": null,
+    "share": 0.984,
+    "secondary": "speech",
+    "regions": [
+      {
+        "start": 200.0,
+        "end": 200.16,
+        "class": "speech",
+        "score": 0.9
+      },
+      {
+        "start": 200.16,
+        "end": 210.0,
+        "class": "applause_crowd",
+        "score": 0.9
+      }
+    ],
+    "regions_truncated": false
+  },
+  "loudness": {
+    "mean_db": -36.3,
+    "max_db": -3.0,
+    "min_db": -40.0,
+    "window_seconds": 1.0,
+    "curve": [
+      {
+        "t": 200.0,
+        "db": -40.0
+      },
+      {
+        "t": 201.0,
+        "db": -40.0
+      },
+      {
+        "t": 202.0,
+        "db": -40.0
+      },
+      {
+        "t": 203.0,
+        "db": -40.0
+      },
+      {
+        "t": 204.0,
+        "db": -40.0
+      },
+      {
+        "t": 205.0,
+        "db": -3.0
+      },
+      {
+        "t": 206.0,
+        "db": -40.0
+      },
+      {
+        "t": 207.0,
+        "db": -40.0
+      },
+      {
+        "t": 208.0,
+        "db": -40.0
+      },
+      {
+        "t": 209.0,
+        "db": -40.0
+      }
+    ]
+  },
+  "silence": {
+    "threshold_db": -35.0,
+    "inside": false,
+    "inside_exact": false,
+    "intervals": [],
+    "truncated": false
+  },
+  "speech": {
+    "words": [],
+    "text": "",
+    "word_count": 0,
+    "words_per_minute": 0.0,
+    "truncated": false
+  },
+  "visual": {
+    "scene_change": null,
+    "scene_changes": 0,
+    "scene_index": 2,
+    "shot_start": 150.0,
+    "activity": {
+      "mean": 0.1,
+      "max": 0.1,
+      "curve": [
+        {
+          "t": 200.0,
+          "value": 0.1
+        },
+        {
+          "t": 201.0,
+          "value": 0.1
+        },
+        {
+          "t": 202.0,
+          "value": 0.1
+        },
+        {
+          "t": 203.0,
+          "value": 0.1
+        },
+        {
+          "t": 204.0,
+          "value": 0.1
+        },
+        {
+          "t": 205.0,
+          "value": 0.1
+        },
+        {
+          "t": 206.0,
+          "value": 0.1
+        },
+        {
+          "t": 207.0,
+          "value": 0.1
+        },
+        {
+          "t": 208.0,
+          "value": 0.1
+        },
+        {
+          "t": 209.0,
+          "value": 0.1
+        }
+      ]
+    },
+    "description": null,
+    "text": {
+      "time": 140.0,
+      "until": 300.0,
+      "age_seconds": 65.0,
+      "stale": true,
+      "note": "this text may no longer be on screen: the picture changed at 150 s, after this text was read; it was read 65 s before this time (more than 60 s)",
+      "text": "def main():\n    run_stream()",
+      "lines": [
+        "def main():",
+        "    run_stream()"
+      ],
+      "truncated": false,
+      "more": 0
+    }
+  },
+  "available": {
+    "audio": true,
+    "loudness": true,
+    "silence": true,
+    "speech": true,
+    "scenes": true,
+    "ocr": true,
+    "description": false
+  },
+  "missing": []
+}

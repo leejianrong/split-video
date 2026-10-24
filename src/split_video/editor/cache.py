@@ -8,18 +8,18 @@ reported (see `split_video.segments.compute_segments`). So a single ffmpeg
 scan per distinct threshold, using a very small `d=`, catches every
 candidate gap regardless of length — everything else is free.
 
-`WaveformCache` has no such parameter to key on — the peak envelope doesn't
-depend on anything user-tunable — so it only ever computes once per file.
+`WaveformCache` has no such parameter to key on — the peak envelope and loudness curve
+don't depend on anything user-tunable — so it only ever computes once per file.
 
 `ClassificationCache` is populated by an explicit background job (see
-`editor/jobs.py`'s `start_audio_analysis`) rather than lazily on first
+`job_work.analysis_work`) rather than lazily on first
 request — inference over a long recording takes real time, so it's opt-in
 via the editor's "Analyze audio" action. Its `rethreshold` re-derives
 regions from the cached per-frame bucket scores, so retuning a threshold
 doesn't require rerunning ffmpeg or the model.
 
-All three also persist what they compute to a sidecar cache file next to
-the source (see `cache_store`), so a later `edit` of the same file loads
+All three also persist what they compute through the `MediaStore` (locally a
+sidecar cache file next to the source), so a later `edit` of the same file loads
 straight from disk instead of re-decoding audio or rerunning inference.
 That's purely a startup-time shortcut: `__init__` seeds in-memory state
 from any matching on-disk cache, and each real compute saves back, but the
@@ -30,27 +30,30 @@ otherwise unchanged.
 from __future__ import annotations
 
 import threading
-from pathlib import Path
+from contextlib import closing
 
-from split_video.editor import cache_store, classify
+from split_video.editor import classify
 from split_video.editor.classify import ClassificationRegion
-from split_video.ffmpeg import detect_silence, extract_pcm_audio
+from split_video.ffmpeg import WAVEFORM_SAMPLE_RATE, ProbeError, detect_silence, iter_pcm_chunks
+from split_video.jobs import CancelToken
+from split_video.media_store import MediaStore
 from split_video.silence import SilenceInterval
-from split_video.waveform import WaveformPeaks, compute_peaks
+from split_video.waveform import Loudness, WaveformPeaks, stream_waveform
 
 RAW_SCAN_MIN_SILENCE_DURATION = 0.05
 
 
 class SilenceCache:
-    """Scoped to one `split-video edit` server process for one source file."""
+    """Scoped to one `split-video edit` server process for one source (a media id)."""
 
-    def __init__(self, source: Path) -> None:
+    def __init__(self, media: MediaStore, source: str) -> None:
+        self._media = media
         self._source = source
         self._lock = threading.Lock()
         self._raw: dict[float, list[SilenceInterval]] = self._load()
 
     def _load(self) -> dict[float, list[SilenceInterval]]:
-        payload = cache_store.load(self._source, "silence")
+        payload = self._media.load_cache(self._source, "silence")
         if payload is None:
             return {}
         return {
@@ -63,48 +66,94 @@ class SilenceCache:
             str(threshold): [[interval.start, interval.end] for interval in intervals]
             for threshold, intervals in self._raw.items()
         }
-        cache_store.save(self._source, "silence", payload)
+        self._media.save_cache(self._source, "silence", payload)
 
-    def get_raw_silences(self, threshold: float) -> list[SilenceInterval]:
+    def stored(self) -> dict[float, list[SilenceInterval]]:
+        """The raw scans already stored, by threshold (dB). Never scans: empty if nothing was stored."""
+        with self._lock:
+            return {threshold: list(intervals) for threshold, intervals in self._raw.items()}
+
+    def get_raw_silences(self, threshold: float, cancel: CancelToken | None = None) -> list[SilenceInterval]:
+        """The raw scan at `threshold`, made (one ffmpeg pass) and stored if there is none yet. A cancelled `cancel`
+        token stops the pass with `JobCancelledError` and stores nothing."""
         with self._lock:
             if threshold in self._raw:
                 return self._raw[threshold]
-            intervals = detect_silence(self._source, f"{threshold}dB", RAW_SCAN_MIN_SILENCE_DURATION)
+            with self._media.local_path(self._source) as path:
+                intervals = detect_silence(path, f"{threshold}dB", RAW_SCAN_MIN_SILENCE_DURATION, cancel=cancel)
             self._raw[threshold] = intervals
             self._save()
             return intervals
 
 
 class WaveformCache:
-    """Scoped to one `split-video edit` server process for one source file."""
+    """Scoped to one `split-video edit` server process for one source (a media id).
 
-    def __init__(self, source: Path) -> None:
+    One streamed decode pass produces both the peak envelope and the loudness curve (see
+    `waveform.stream_waveform`), and both are saved in the "waveform" cache entry. Entries written
+    before the loudness curve existed load fine: the peaks are served as they are and the curve is
+    computed (and the entry rewritten) the first time `get_loudness` is asked for."""
+
+    def __init__(self, media: MediaStore, source: str) -> None:
+        self._media = media
         self._source = source
         self._lock = threading.Lock()
-        self._peaks: WaveformPeaks | None = self._load()
+        self._peaks: WaveformPeaks | None = None
+        self._loudness: Loudness | None = None
+        self._load()
 
-    def _load(self) -> WaveformPeaks | None:
-        payload = cache_store.load(self._source, "waveform")
+    def _load(self) -> None:
+        payload = self._media.load_cache(self._source, "waveform")
         if payload is None:
-            return None
-        return WaveformPeaks(buckets=[(lo, hi) for lo, hi in payload["buckets"]])
+            return
+        self._peaks = WaveformPeaks(buckets=[(lo, hi) for lo, hi in payload["buckets"]])
+        loudness = payload.get("loudness")  # absent in entries from before SPL-41
+        if loudness is not None:
+            self._loudness = Loudness(window_seconds=loudness["window_seconds"], db=list(loudness["db"]))
 
     def _save(self) -> None:
         assert self._peaks is not None
-        cache_store.save(self._source, "waveform", {"buckets": [list(bucket) for bucket in self._peaks.buckets]})
+        payload: dict = {"buckets": [list(bucket) for bucket in self._peaks.buckets]}
+        if self._loudness is not None:
+            payload["loudness"] = {"window_seconds": self._loudness.window_seconds, "db": self._loudness.db}
+        self._media.save_cache(self._source, "waveform", payload)
+
+    def _compute(self, cancel: CancelToken | None = None) -> None:
+        try:
+            expected: int | None = int(self._media.probe(self._source).duration * WAVEFORM_SAMPLE_RATE)
+        except ProbeError:
+            expected = None  # unknown length: the peaks are then kept raw (see waveform.PeakAccumulator)
+        with self._media.local_path(self._source) as path, closing(iter_pcm_chunks(path, cancel=cancel)) as chunks:
+            self._peaks, self._loudness = stream_waveform(chunks, WAVEFORM_SAMPLE_RATE, expected)
+        self._save()
+
+    def stored_loudness(self) -> Loudness | None:
+        """The loudness curve if one is stored, else None. Never decodes audio (unlike `get_loudness`)."""
+        with self._lock:
+            return self._loudness
 
     def get_peaks(self) -> WaveformPeaks:
         with self._lock:
             if self._peaks is None:
-                self._peaks = compute_peaks(extract_pcm_audio(self._source))
-                self._save()
+                self._compute()
+            assert self._peaks is not None
             return self._peaks
+
+    def get_loudness(self, cancel: CancelToken | None = None) -> Loudness:
+        """The loudness curve, decoding the audio once (streamed) to make and store it if there is none. A cancelled
+        `cancel` token stops the decode with `JobCancelledError` and stores nothing."""
+        with self._lock:
+            if self._loudness is None:
+                self._compute(cancel)
+            assert self._loudness is not None
+            return self._loudness
 
 
 class ClassificationCache:
-    """Scoped to one `split-video edit` server process for one source file."""
+    """Scoped to one `split-video edit` server process for one source (a media id)."""
 
-    def __init__(self, source: Path) -> None:
+    def __init__(self, media: MediaStore, source: str) -> None:
+        self._media = media
         self._source = source
         self._lock = threading.Lock()
         self._thresholds: dict[str, float] = dict(classify.DEFAULT_THRESHOLDS)
@@ -116,7 +165,7 @@ class ClassificationCache:
         )
 
     def _load(self) -> tuple[list[dict[str, float]] | None, float]:
-        payload = cache_store.load(self._source, "classification")
+        payload = self._media.load_cache(self._source, "classification")
         if payload is None:
             return None, 0.0
         buckets = payload["buckets"]
@@ -134,12 +183,18 @@ class ClassificationCache:
             "frame_scores": [[scores[bucket] for bucket in buckets] for scores in self._frame_bucket_scores],
             "total_duration": self._total_duration,
         }
-        cache_store.save(self._source, "classification", payload)
+        self._media.save_cache(self._source, "classification", payload)
 
     @property
     def is_analyzed(self) -> bool:
         with self._lock:
             return self._frame_bucket_scores is not None
+
+    @property
+    def total_duration(self) -> float:
+        """Seconds of audio that were classified (0.0 before an analysis)."""
+        with self._lock:
+            return float(self._total_duration)
 
     def get_thresholds(self) -> dict[str, float]:
         with self._lock:

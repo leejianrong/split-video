@@ -8,13 +8,32 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import typer
-import uvicorn
 from rich.console import Console
 from rich.table import Table
 
-from split_video import project_cli
+from split_video import (
+    captions_cli,
+    cli_errors,
+    compose_cli,
+    contact_sheet_cli,
+    frames_cli,
+    highlights_cli,
+    library_cli,
+    media_report_cli,
+    ocr_cli,
+    ops_cli,
+    plan_cli,
+    presets_cli,
+    project_cli,
+    scenes_cli,
+    search_cli,
+    time_index_cli,
+    transcribe_cli,
+)
 from split_video.editor.app import create_app
+from split_video.editor.auth import TOKEN_ENV, authenticator_from_env
 from split_video.editor.schemas import StateParams
+from split_video.editor.serve import serve
 from split_video.ffmpeg import (
     ExtractError,
     FfmpegNotFoundError,
@@ -23,6 +42,7 @@ from split_video.ffmpeg import (
     extract_segment,
     probe_duration,
 )
+from split_video.jobs import MAX_RENDER_CONCURRENCY
 from split_video.naming import build_manifest, segment_filename, write_manifest
 from split_video.segments import compute_segments
 from split_video.timefmt import format_timestamp
@@ -30,6 +50,18 @@ from split_video.timefmt import format_timestamp
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 console = Console()
 error_console = Console(stderr=True)
+
+
+@app.callback()
+def _root(
+    json_errors: bool = typer.Option(
+        False,
+        "--json-errors",
+        help="When a command fails, also print the error as JSON ({code, message, fix, details}) on stdout "
+        "(the same as SPLIT_VIDEO_JSON_ERRORS=1; commands with --json do it already). See docs/errors.md.",
+    ),
+) -> None:
+    cli_errors.force_json(json_errors)
 
 
 @app.command()
@@ -86,11 +118,9 @@ def split(
         total_duration = probe_duration(source)
         silences = detect_silence(source, silence_threshold, min_silence_duration)
     except FfmpegNotFoundError as exc:
-        error_console.print(f"[red]Error:[/red] {exc}")
-        raise typer.Exit(code=1)
+        raise cli_errors.fail(exc) from None
     except ProbeError as exc:
-        error_console.print(f"[red]Error:[/red] {exc}")
-        raise typer.Exit(code=1)
+        raise cli_errors.fail(exc) from None
 
     if verbose:
         for s in silences:
@@ -144,12 +174,11 @@ def split(
         try:
             extract_segment(source, seg.start, seg.end, out_path, precise, output_format)
         except ExtractError as exc:
-            error_console.print(f"[red]Error:[/red] {exc}")
-            raise typer.Exit(code=1)
+            raise cli_errors.fail(exc) from None
 
     if manifest:
         manifest_data = build_manifest(
-            source_path=source,
+            source_name=source.name,
             segments=segments,
             filenames=filenames,
             parameters={
@@ -201,6 +230,13 @@ def edit(
     no_browser: bool = typer.Option(
         False, "--no-browser", help="Don't automatically open a browser tab (required inside Docker)."
     ),
+    render_concurrency: int | None = typer.Option(
+        None,
+        "--render-concurrency",
+        min=1,
+        max=MAX_RENDER_CONCURRENCY,
+        help="Renders that run at once (the rest wait in the render queue). Default 2, or SPLIT_VIDEO_RENDER_CONCURRENCY.",
+    ),
 ) -> None:
     """Launch a local browser-based editor for adjusting song split points."""
     defaults = StateParams(
@@ -209,17 +245,23 @@ def edit(
         min_song_length=min_song_length,
         padding=silence_padding,
     )
-    editor_app = create_app(source, defaults)
+    authenticator = authenticator_from_env()
+    editor_app = create_app(source, defaults, authenticator=authenticator, render_concurrency=render_concurrency)
 
     url = f"http://{host}:{port}/"
     if source.is_dir():
         console.print(f"Editor running at [bold]{url}[/bold] — pick a video in the browser. Press Ctrl+C to stop.")
     else:
         console.print(f"Editor running at [bold]{url}[/bold] — press Ctrl+C to stop.")
+    if authenticator.required:
+        # Never the token itself.
+        console.print(
+            f"API token authentication is enabled ({TOKEN_ENV} is set): /api/ and /media/ need a bearer token."
+        )
     if not no_browser:
         threading.Timer(1.0, webbrowser.open, args=[url]).start()
 
-    uvicorn.run(editor_app, host=host, port=port, log_level="warning")
+    serve(editor_app, host, port)
 
 
 @app.command("mcp")
@@ -231,11 +273,41 @@ def mcp_cmd(
         file_okay=False,
         help="Directory the MCP tools may read and write videos under. Paths outside it are refused.",
     ),
+    render_concurrency: int | None = typer.Option(
+        None,
+        "--render-concurrency",
+        min=1,
+        max=MAX_RENDER_CONCURRENCY,
+        help="Queued renders (queue_renders) that run at once. Default 2, or SPLIT_VIDEO_RENDER_CONCURRENCY.",
+    ),
 ) -> None:
     """Run an MCP server over stdio so an AI agent can inspect, edit and export a video's splits."""
     from split_video.mcp_server import create_server
 
-    create_server(root).run("stdio")
+    create_server(root, render_concurrency=render_concurrency).run("stdio")
+
+
+@app.command("agent-guide")
+def agent_guide_cmd() -> None:
+    """Print the agent guide (SKILL.md): how an AI agent drives split-video from a long recording to highlights and shorts."""
+    from split_video.agent_guide import guide_text
+
+    typer.echo(guide_text(), nl=False)
 
 
 project_cli.register(app)
+compose_cli.register(app)
+app.command("presets")(presets_cli.presets_cmd)
+app.command("caption-styles")(captions_cli.caption_styles_cmd)
+library_cli.register(app)
+transcribe_cli.register(app)
+app.command("scenes")(scenes_cli.scenes_cmd)
+ocr_cli.register(app)
+search_cli.register(app)
+time_index_cli.register(app)
+media_report_cli.register(app)
+highlights_cli.register(app)
+plan_cli.register(app)
+ops_cli.register(app)
+app.command("frame")(frames_cli.frame_cmd)
+app.command("contact-sheet")(contact_sheet_cli.contact_sheet_cmd)

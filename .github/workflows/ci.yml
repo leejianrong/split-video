@@ -17,11 +17,12 @@ concurrency:
 jobs:
   lint:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v10.2.0
+        uses: astral-sh/setup-uv@v10.3.1
         with:
           enable-cache: true
 
@@ -34,8 +35,27 @@ jobs:
       - name: ruff format --check
         run: uv run ruff format --check .
 
+      - name: openapi.json is up to date
+        run: |
+          uv run python scripts/export_openapi.py
+          git diff --exit-code -- openapi.json
+
+      - name: edit plan schema is up to date
+        run: uv run python scripts/export_edit_plan_schema.py --check
+
+      - name: edit ops schema is up to date
+        run: uv run python scripts/export_edit_ops_schema.py --check
+
+      - name: error catalogue is up to date
+        run: uv run python scripts/export_error_catalogue.py --check
+
   test:
     runs-on: ubuntu-latest
+    # The identical suite took 8, 12 and 24.6 minutes on GitHub-hosted runners, and one run was cancelled at the old
+    # 25 minute limit: runner speed varies about 3x. The real-model tests are opt-in and skipped. Real hangs are caught
+    # per test (pytest-timeout 300 s, the SPL-110 ffmpeg watchdog), so this job limit is only the backstop; without it
+    # a wedged ffmpeg held the job for GitHub's 6 h default (SPL-110).
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v7
 
@@ -45,7 +65,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends ffmpeg
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v10.2.0
+        uses: astral-sh/setup-uv@v10.3.1
         with:
           enable-cache: true
 
@@ -74,7 +94,7 @@ jobs:
       # On a push to main: `latest` + `sha-<short>`, same as before. On a
       # `vX.Y.Z` tag push: also `X.Y.Z` and `X.Y` (type=semver no-ops on a
       # branch push, so these two lines are inert outside a tag build) --
-      # see the Development section of README for the release steps.
+      # see CONTRIBUTING.md (Releasing) for the release steps.
       - name: Extract image metadata
         id: meta
         uses: docker/metadata-action@v6

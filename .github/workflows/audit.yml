@@ -1,0 +1,36 @@
+name: Dependency audit
+
+# Scans the locked dependencies for known vulnerabilities (PyPI advisory database, via pip-audit).
+# Kept out of ci.yml on purpose: a new advisory against an unchanged lockfile must not turn every
+# unrelated PR red, and this job is not a required check. It runs when the dependencies change, weekly
+# (to catch advisories published later) and on demand. Dependabot alerts are the other half of this:
+# they open the update PRs; this is the red/green signal a PR author sees.
+on:
+  pull_request:
+    paths: [uv.lock, pyproject.toml, .github/workflows/audit.yml]
+  schedule:
+    - cron: "17 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10.3.1
+
+      - name: Export the locked dependencies
+        run: uv export --frozen --no-emit-project --all-extras --no-hashes -o requirements-audit.txt
+
+      - name: pip-audit
+        run: uvx pip-audit==2.9.0 -r requirements-audit.txt --no-deps --disable-pip --progress-spinner off
