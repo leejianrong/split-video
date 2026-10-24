@@ -123,7 +123,16 @@ def cli_session(root: Path) -> dict:
     run("remove_split_missing", "remove-split", video, 7)
     run("stale_edit", "label", video, 1, "--label", "stale", "--base-revision", 0)
     run("segments_after", "segments", video)
-    run("fresh_base_revision_ok", "label", video, 1, "--label", "kept", "--base-revision", steps["segments_after"]["out"]["revision"])
+    run(
+        "fresh_base_revision_ok",
+        "label",
+        video,
+        1,
+        "--label",
+        "kept",
+        "--base-revision",
+        steps["segments_after"]["out"]["revision"],
+    )
     run("label_for_export", "label", video, 1, "--export-name", "Part One")
     run("export_only", "export", video, "--only", "2", "--format", "mp4", "--no-manifest")
     run("export_default", "export", video, "--overwrite")
@@ -180,7 +189,9 @@ async def mcp_session(root: Path) -> dict:
         await run("list_after", "list_segments", video="gig.mp4")
         await run("list_videos_after", "list_videos")
         revision = steps["list_after"]["ok"]["revision"]
-        await run("fresh_base_revision_ok", "label_segment", video="gig.mp4", segment=1, label="kept", base_revision=revision)
+        await run(
+            "fresh_base_revision_ok", "label_segment", video="gig.mp4", segment=1, label="kept", base_revision=revision
+        )
         await run("label_for_export", "label_segment", video="gig.mp4", segment=1, export_name="Part One")
         await run("export_only", "export", video="gig.mp4", only=[2], manifest=False)
         await run("export_default", "export", video="gig.mp4", overwrite=True)
@@ -239,12 +250,24 @@ def http_session(root: Path) -> dict:
     record("save_stale", client.post("/api/v1/project", params=path, json=first, headers=if_match(revision)))
     saved_revision = steps["save"]["body"]["revision"]
     record("save_no_if_match", client.post("/api/v1/project", params=path, json=first))
-    record("save_bare_integer", client.post("/api/v1/project", params=path, json=first, headers={"If-Match": str(saved_revision + 1)}))
+    record(
+        "save_bare_integer",
+        client.post("/api/v1/project", params=path, json=first, headers={"If-Match": str(saved_revision + 1)}),
+    )
     record("save_bad_if_match", client.post("/api/v1/project", params=path, json=first, headers={"If-Match": "abc"}))
     record("save_empty", client.post("/api/v1/project", params=path, json={"segments": []}))
     record("state_after_empty", client.get("/api/v1/state", params=path))
-    record("save_gaps", client.post("/api/v1/project", params=path, json={"segments": [{"start": 1.0, "end": 3.0}, {"start": 5.0, "end": 9.0}, {"start": 8.0, "end": 12.0}]}))
-    record("save_invalid_body", client.post("/api/v1/project", params=path, json={"segments": [{"start": "x", "end": 1}]}))
+    record(
+        "save_gaps",
+        client.post(
+            "/api/v1/project",
+            params=path,
+            json={"segments": [{"start": 1.0, "end": 3.0}, {"start": 5.0, "end": 9.0}, {"start": 8.0, "end": 12.0}]},
+        ),
+    )
+    record(
+        "save_invalid_body", client.post("/api/v1/project", params=path, json={"segments": [{"start": "x", "end": 1}]})
+    )
     record("state_missing_file", client.get("/api/v1/state", params={"path": "nope.mp4"}))
     record("state_escape", client.get("/api/v1/state", params={"path": "../x.mp4"}))
     body = {"silences": [{"start": 7.0, "end": 10.0}, {"start": 15.0, "end": 18.0}], "duration": 21.0}

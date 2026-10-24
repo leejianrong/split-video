@@ -2,7 +2,7 @@
 
 
 
-Every project (split points and compose timelines) carries a revision
+Every project (a video's splits, which are its timeline project since SPL-116, and compose timelines) carries a revision
 number, stored in its file next to `version`. A project that was never saved,
 or whose file predates revisions, is revision 0; each save adds 1. The
 editor, `show`/`segments` output, `--json`, MCP results and API responses all
@@ -44,3 +44,6 @@ some network filesystems such as NFS without lock support, and some
 Docker Desktop file shares): there writers in different processes can race;
 the revision check still catches stale writers that pass `base_revision`, but
 two simultaneous writes to the same file could drop one.
+
+A split project migrated from a legacy `.split-video-project.json` keeps counting from the
+legacy file's revision: it reads as N before the first save and the first save writes N+1.

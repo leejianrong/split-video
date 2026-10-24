@@ -17,7 +17,7 @@ BUCKETS = ("music", "singing", "speech", "applause_crowd", "laughter", "silence_
 
 
 def sidecar_path(video: Path) -> Path:
-    return LocalProjectStore(video.parent).split_sidecar_path(video.name)
+    return LocalProjectStore(video.parent).video_timeline_path(video.name)
 
 
 def _spans(segments):

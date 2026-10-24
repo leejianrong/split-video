@@ -53,12 +53,15 @@ If thresholds alone don't get every split right, use the
 
 ## Project commands (scripting the editor's splits)
 
-The same saved splits the visual editor keeps in `<video>.split-video-project.json`
-can be read and changed from the command line — handy for scripts and AI
+The same saved splits the visual editor keeps (since SPL-116 in the video's timeline
+project, `<video>.split-video-timeline.json` next to the video; see
+[the design note](decisions/unified-project-model.md)) can be read and changed from the command line — handy for scripts and AI
 agents. An edit made here shows up the next time the editor opens that
 video, and vice versa. Segments and splits are numbered from 1, as in the
 editor's segment table (split 1 is the cut between segments 1 and 2), and
-every command takes `--json`:
+every command takes `--json`. An old `<video>.split-video-project.json` opens as the
+same segments, labels and exclusions and is migrated by the first edit, which
+writes the timeline file next to it and leaves the old file untouched:
 
 ```bash
 split-video propose liveshow.mp4 --min-song-length 60 --apply   # detect splits, save them

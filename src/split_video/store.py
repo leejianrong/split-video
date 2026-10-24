@@ -162,9 +162,11 @@ def check_base_revision(kind: str, project_id: str, current: int, base_revision:
 
 @runtime_checkable
 class ProjectStore(Protocol):
-    """Load and save split-point projects and timeline projects by id."""
+    """Load and save timeline projects, by name or as a video's own, and read legacy split-point projects."""
 
-    # --- split-point projects, keyed by the video's root-relative path --------
+    # --- legacy split-point projects, keyed by the video's root-relative path --
+    # Since SPL-116 the engine reads these only to migrate them into the video's timeline project and never
+    # writes them; `save_split` and `update_split` remain to author legacy files in tests.
 
     def load_split(self, project_id: str) -> list[SavedSegment] | None:
         """The saved segments for the video `project_id`, or None if there
@@ -194,10 +196,28 @@ class ProjectStore(Protocol):
         the store for the same project."""
         ...
 
+    # --- a video's timeline project, keyed by the video's id (SPL-116) --------
+
+    def load_video_timeline(self, project_id: str) -> Versioned[Project | None]:
+        """The timeline project of the video `project_id` (its splits are the main track's clips), or None if
+        there is none yet or it can't be read. The revision is the one writes are checked against: the
+        project's own, or, while there is no timeline project yet, the legacy split project's (0 if neither
+        exists), so numbering continues across the migration. Never raises for a missing or damaged file."""
+        ...
+
+    def update_video_timeline(
+        self, project_id: str, change: Callable[[Project | None], Project], base_revision: int | None = None
+    ) -> Versioned[Project]:
+        """Atomic read-modify-write of the video's timeline project: `change` gets the stored one (None if
+        there is none yet, whatever a legacy split project holds: the engine migrates that) and returns the new
+        one, saved as the revision after the one `load_video_timeline` reports. Nothing is written if `change`
+        raises. Holds the write lock while `change` runs: it may read the store but not write the project."""
+        ...
+
     # --- timeline projects, keyed by name -------------------------------------
 
     def list_timelines(self) -> list[str]:
-        """Names of all timeline projects, sorted."""
+        """Names of all timeline projects, sorted (a video's own timeline project is not listed)."""
         ...
 
     def timeline_exists(self, name: str) -> bool: ...
@@ -234,8 +254,8 @@ class ProjectStore(Protocol):
 
     def peek_revisions(self, split_ids: Iterable[str] = ()) -> dict[tuple[str, str], int]:
         """Cheaply read the current revision of every timeline project and of each split project in
-        `split_ids`, keyed `("timeline", name)` / `("split", project_id)`. A split project with
-        nothing saved is revision 0; an id the store can't use is left out. Never raises for
+        `split_ids`, keyed `("timeline", name)` / `("split", project_id)` (the revision `load_video_timeline`
+        reports). A split project with nothing saved is revision 0; an id the store can't use is left out. Never raises for
         damaged files. This is how a server notices edits made by other processes (the CLI, the MCP
         server), which `announce_revision` can't tell it about; it takes no write lock."""
         ...
@@ -247,6 +267,7 @@ class InMemoryProjectStore:
     def __init__(self) -> None:
         self._splits: dict[str, tuple[list[SavedSegment], int]] = {}
         self._timelines: dict[str, tuple[Project, int]] = {}
+        self._video_timelines: dict[str, tuple[Project, int]] = {}
         # Re-entrant so `change` callbacks can read (never write) the project they are editing.
         self._lock = threading.RLock()
 
@@ -287,6 +308,35 @@ class InMemoryProjectStore:
         check_base_revision("split project", project_id, current, base_revision)
         self._splits[project_id] = (segments, current + 1)
         return current + 1
+
+    # --- a video's timeline project ---------------------------------------------------
+
+    def _video_revision(self, project_id: str) -> int:
+        found = self._video_timelines.get(project_id)
+        if found is not None:
+            return found[1]
+        legacy = self._splits.get(project_id)
+        return 0 if legacy is None else legacy[1]
+
+    def load_video_timeline(self, project_id: str) -> Versioned[Project | None]:
+        with self._lock:
+            found = self._video_timelines.get(project_id)
+            revision = self._video_revision(project_id)
+        if found is None:
+            return Versioned(None, revision)
+        return Versioned(replace(copy.deepcopy(found[0]), revision=revision), revision)
+
+    def update_video_timeline(
+        self, project_id: str, change: Callable[[Project | None], Project], base_revision: int | None = None
+    ) -> Versioned[Project]:
+        with announcing_write("split", project_id, self), self._lock:
+            found = self._video_timelines.get(project_id)
+            current = self._video_revision(project_id)
+            check_base_revision("split project", project_id, current, base_revision)
+            new = change(None if found is None else replace(copy.deepcopy(found[0]), revision=current))
+            self._video_timelines[project_id] = (new, current + 1)
+        announce_revision(RevisionChange("split", project_id, current + 1, self))
+        return Versioned(replace(new, revision=current + 1), current + 1)
 
     # --- timeline projects --------------------------------------------------------
 
@@ -354,6 +404,5 @@ class InMemoryProjectStore:
         with self._lock:
             found: dict[tuple[str, str], int] = {("timeline", n): rev for n, (_, rev) in self._timelines.items()}
             for project_id in split_ids:
-                split = self._splits.get(project_id)
-                found[("split", project_id)] = 0 if split is None else split[1]
+                found[("split", project_id)] = self._video_revision(project_id)
         return found

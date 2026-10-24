@@ -53,7 +53,11 @@ In the editor:
   `S` split at the playhead, Delete/Backspace remove the selected split,
   and `?` lists them all in the editor.
 - Your splits, labels, and export choices are saved to a sidecar
-  `<video>.split-video-project.json` file next to the video as you go —
+  `<video>.split-video-timeline.json` file next to the video as you go (the
+  video as clips on the main track of a timeline project, one clip per
+  segment; a project saved by an older version as
+  `<video>.split-video-project.json` opens as the same segments and is
+  migrated on the first save, the old file left in place) —
   closing the editor and reopening the same recording resumes exactly
   where you left off, no setup step shown again. Silence detection, the
   waveform, and audio classification are separately cached to disk in a
