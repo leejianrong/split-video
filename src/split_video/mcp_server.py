@@ -300,13 +300,15 @@ def create_server(
         min_silence_duration: float = 2.0,
         min_song_length: float = 30.0,
         padding: float = 0.15,
+        label_prefix: str | None = None,
         apply: bool = False,
         base_revision: int | None = None,
     ) -> dict[str, Any]:
         """Propose splits by detecting silent gaps between songs. With apply=false (default) this only
         returns the proposal; apply=true saves it as the project, REPLACING any saved splits, labels and
         exclusions. silence_threshold is in dB; the other numbers are seconds. If it finds too few or too
-        many songs, adjust silence_threshold (try -30 to -40) or min_song_length and call again. With apply=true,
+        many songs, adjust silence_threshold (try -30 to -40) or min_song_length and call again. `label_prefix`
+        (for example "Song") labels the pieces "Song 1", "Song 2" and so on. With apply=true,
         `base_revision` (optional) makes the save fail with revision_conflict if the project changed since."""
         source = resolve(video)
         segments = await run(
@@ -317,6 +319,7 @@ def create_server(
             min_silence_duration=min_silence_duration,
             min_song_length=min_song_length,
             padding=padding,
+            label_prefix=label_prefix,
         )
         if apply:
             revision = await run(project.save_segments, store, source, segments, base_revision, media)

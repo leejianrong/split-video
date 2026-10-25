@@ -58,3 +58,19 @@ behaviour. The segments are now the main track of the video's timeline project
 opens as the same segments and is migrated by the first save, which leaves the old file
 in place. The `revision` is one number across both. See
 [the design note](decisions/unified-project-model.md).
+
+## Import, split jobs and a video's own timeline (the Media tab)
+
+These are what the editor's Media tab calls; each is a plain `/api/v1` route that agents can use too (all new in v1, so
+no deprecated alias).
+
+| Route | What it does |
+|---|---|
+| `POST /assets/upload?name=&folder=` | The raw request body is a media file: it is written into the workspace through the `MediaStore`, probed and registered. `201` with the asset. A bad name or type is `400` / `415` (`upload.invalid_name`, `upload.unsupported_type`, `upload.empty`), an unreadable file `422` (`media.unreadable`); nothing is left on disk after a failure. A name that is taken becomes `gig (2).mp4`. Files already in the workspace need no upload: `POST /assets/register`. |
+| `POST /assets/{id}/split` | Queues a `split` job: find the silent gaps (cached next to the video), cut there and save the pieces as the video's segments, replacing the saved ones. Body (all optional): `silence_threshold`, `min_silence_duration`, `min_song_length`, `padding`, `label_prefix` (`"Song"` labels the pieces Song 1, Song 2 ...). Progress is thousandths of the audio; result `{video, segments, revision, labels}`; cancel with `POST /jobs/{id}/cancel` (nothing is saved). `If-Match` makes a stale save a job error. CLI `propose --apply` and MCP `propose_splits` run the same operation inline. |
+| `GET /project/timeline?path=` | The video's own timeline in the compose shape (tracks, clips with `label`, `revision`). A video with nothing saved is its recording as one clip, revision 0; reading writes nothing. The compose routes address timelines by a plain name and cannot name a video in a folder; these take the video's path like `/state`. |
+| `POST /project/clips?path=` | Add the library asset (`{"asset": "a_...", "index": null}`) to the main video track, at `index` (default: the end), and save. `If-Match` as everywhere. Audio-only assets are `422 media.audio_only`. After this the main track holds more than the recording's own clips, so splitting that video says `segments.main_track_edited` (edit it with the compose tools). |
+
+There is no CLI or MCP command for `POST /project/clips` yet: the compose commands add a clip to a named timeline, which
+cannot be a video in a folder.
+

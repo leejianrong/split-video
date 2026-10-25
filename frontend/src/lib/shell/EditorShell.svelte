@@ -1,6 +1,7 @@
 <script lang="ts">
   import { registerAction } from '../a11y/dispatcher';
   import { limitsOf, MIN_WINDOW, type TabId } from '../state/layout';
+  import { connectLive } from '../state/live';
   import { ui } from '../state/ui.svelte';
   import Button from '../ui/Button.svelte';
   import Dialog from '../ui/Dialog.svelte';
@@ -19,6 +20,9 @@
   const panelLimits = $derived(limitsOf('panel', sizes, ui.viewport));
   const inspectorLimits = $derived(limitsOf('inspector', sizes, ui.viewport));
   const timelineLimits = $derived(limitsOf('timeline', sizes, ui.viewport));
+
+  // One event stream for the editor's life: job progress and project changes (agent and CLI edits) arrive on it.
+  $effect(() => connectLive());
 
   $effect(() => registerAction('project.export', () => void (ui.exportOpen = true)));
 </script>

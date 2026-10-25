@@ -152,6 +152,9 @@ def propose_cmd(
     min_silence_duration: float = typer.Option(2.0, "--min-silence-duration", help="Shortest gap between songs (s)."),
     min_song_length: float = typer.Option(30.0, "--min-song-length", help="Shortest song kept on its own (s)."),
     silence_padding: float = typer.Option(0.15, "--silence-padding", help="Silence kept on each side of a cut (s)."),
+    label_prefix: str | None = typer.Option(
+        None, "--label-prefix", help='Label the pieces "<prefix> 1", "<prefix> 2" ... (for example Song).'
+    ),
     apply: bool = typer.Option(False, "--apply", help="Save the proposal as the project, replacing any saved splits."),
     base_revision: int | None = _BaseRevision,
     as_json: bool = _Json,
@@ -166,6 +169,7 @@ def propose_cmd(
             min_silence_duration=min_silence_duration,
             min_song_length=min_song_length,
             padding=silence_padding,
+            label_prefix=label_prefix,
         )
         revision = _save(source, segments, base_revision) if apply else _revision(source)
     except _EXPECTED_ERRORS as exc:

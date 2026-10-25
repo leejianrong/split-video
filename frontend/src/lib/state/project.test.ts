@@ -1,9 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const open = vi.fn();
+const timeline = vi.fn();
+const addClip = vi.fn();
 vi.mock('../api/generated/sdk.gen', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api/generated/sdk.gen')>()),
   openFileApiV1OpenPost: (...args: unknown[]) => open(...args),
+  getVideoTimelineApiV1ProjectTimelineGet: (...args: unknown[]) => timeline(...args),
+  addAssetClipApiV1ProjectClipsPost: (...args: unknown[]) => addClip(...args),
 }));
 
 import { ApiError } from '../api/client';
@@ -22,8 +26,23 @@ const state = (filename: string, revision = 3) => ({
   },
 });
 
+const clipOf = (id: string, source: string) => ({ id, source, asset: `a_${id}`, duration: 10 });
+const timelineOf = (revision: number, sources: string[] = ['gig.mp4']) => ({
+  data: {
+    name: 'gig.mp4',
+    revision,
+    duration: 10 * sources.length,
+    tracks: [
+      { id: 't1', kind: 'video', magnetic: true, clips: sources.map((s, i) => clipOf(`c${i}`, s)) },
+    ],
+  },
+});
+
 beforeEach(() => {
   open.mockReset();
+  timeline.mockReset();
+  addClip.mockReset();
+  timeline.mockResolvedValue(timelineOf(3));
 });
 
 describe('ProjectStore', () => {
@@ -96,5 +115,142 @@ describe('ProjectStore', () => {
     expect(store.status).toBe('idle');
     expect(store.id).toBeNull();
     expect(store.error).toBeNull();
+  });
+
+  describe('timeline and edits', () => {
+    const openStore = async () => {
+      open.mockResolvedValue(state('gig.mp4', 3));
+      const store = new ProjectStore();
+      await store.open('gig.mp4');
+      return store;
+    };
+
+    it('reads the timeline with the project, and survives the timeline failing', async () => {
+      const store = await openStore();
+      expect(timeline).toHaveBeenCalledWith({ query: { path: 'gig.mp4' } });
+      expect(store.timeline?.tracks[0]?.clips).toHaveLength(1);
+      timeline.mockRejectedValue(new Error('nope'));
+      open.mockResolvedValue(state('gig.mp4', 3));
+      const other = new ProjectStore();
+      await other.open('gig.mp4');
+      expect(other.status).toBe('ready');
+      expect(other.timeline).toBeNull();
+      expect(other.revision).toBe(3);
+    });
+
+    it('adds an asset with If-Match and takes the new revision and timeline', async () => {
+      const store = await openStore();
+      addClip.mockResolvedValue(timelineOf(4, ['gig.mp4', 'intro.mp4']));
+      expect(await store.addAsset('a_9')).toBe(true);
+      const call = addClip.mock.calls[0]?.[0];
+      expect(call).toMatchObject({
+        query: { path: 'gig.mp4' },
+        body: { asset: 'a_9', index: null },
+        headers: { 'If-Match': '"3"' },
+      });
+      expect(store.revision).toBe(4);
+      expect(store.project?.revision).toBe(4);
+      expect(store.timeline?.tracks[0]?.clips.map((c) => c.source)).toEqual([
+        'gig.mp4',
+        'intro.mp4',
+      ]);
+      expect(store.editError).toBeNull();
+    });
+
+    it('runs edits one at a time, each from the revision the last one returned', async () => {
+      const store = await openStore();
+      const order: string[] = [];
+      let finishFirst: (value: unknown) => void = () => {};
+      addClip.mockImplementationOnce(() => {
+        order.push('first started');
+        return new Promise((resolve) => (finishFirst = resolve));
+      });
+      addClip.mockImplementationOnce(() => {
+        order.push('second started');
+        return Promise.resolve(timelineOf(5));
+      });
+      const first = store.addAsset('a_1');
+      const second = store.addAsset('a_2');
+      await Promise.resolve();
+      expect(order).toEqual(['first started']);
+      finishFirst(timelineOf(4));
+      await Promise.all([first, second]);
+      expect(order).toEqual(['first started', 'second started']);
+      expect(addClip.mock.calls[1]?.[0].headers['If-Match']).toBe('"4"');
+      expect(store.revision).toBe(5);
+    });
+
+    it('on a 409 reloads the project, says it changed elsewhere and does not re-apply', async () => {
+      const store = await openStore();
+      addClip.mockImplementation(() =>
+        Promise.reject(
+          new ApiError({
+            code: 'revision.conflict',
+            message: 'stale',
+            fix: 'reload',
+            status: 409,
+            currentRevision: 6,
+          }),
+        ),
+      );
+      open.mockResolvedValue(state('gig.mp4', 6));
+      timeline.mockResolvedValue(timelineOf(6, ['gig.mp4', 'agent-added.mp4']));
+      expect(await store.addAsset('a_9')).toBe(false);
+      expect(addClip).toHaveBeenCalledTimes(1);
+      expect(store.editError?.message).toMatch(/changed somewhere else/);
+      expect(store.editError?.fix).toMatch(/Fix:/);
+      expect(store.revision).toBe(6);
+      expect(store.timeline?.tracks[0]?.clips).toHaveLength(2);
+    });
+
+    it('keeps the catalogue fix when the server refuses the edit', async () => {
+      const store = await openStore();
+      addClip.mockImplementation(() =>
+        Promise.reject(
+          new ApiError({
+            code: 'timeline.invalid',
+            message: 'no video stream',
+            fix: 'Use a video.',
+            status: 422,
+          }),
+        ),
+      );
+      expect(await store.addAsset('a_audio')).toBe(false);
+      expect(store.editError).toMatchObject({ code: 'timeline.invalid', fix: 'Use a video.' });
+      expect(store.revision).toBe(3);
+    });
+
+    it('reloads on a project event for it that is newer, and ignores old or foreign ones', async () => {
+      const store = await openStore();
+      open.mockClear();
+      store.handleProjectEvent({
+        kind: 'split',
+        project_id: 'gig.mp4',
+        revision: 3,
+        source: 'local',
+      });
+      store.handleProjectEvent({
+        kind: 'split',
+        project_id: 'other.mp4',
+        revision: 9,
+        source: 'external',
+      });
+      expect(open).not.toHaveBeenCalled();
+      open.mockResolvedValue(state('gig.mp4', 4));
+      timeline.mockResolvedValue(timelineOf(4));
+      store.handleProjectEvent({
+        kind: 'split',
+        project_id: 'gig.mp4',
+        revision: 4,
+        source: 'external',
+      });
+      await vi.waitFor(() => expect(store.revision).toBe(4));
+    });
+
+    it('does nothing without an open project', async () => {
+      const store = new ProjectStore();
+      expect(await store.addAsset('a_1')).toBe(false);
+      expect(addClip).not.toHaveBeenCalled();
+    });
   });
 });

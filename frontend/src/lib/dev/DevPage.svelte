@@ -9,6 +9,7 @@
   import Icon, { ICONS, type IconName } from '../ui/icons/Icon.svelte';
   import IconButton from '../ui/IconButton.svelte';
   import Panel from '../ui/Panel.svelte';
+  import ProgressBar from '../ui/ProgressBar.svelte';
   import Select from '../ui/Select.svelte';
   import ShortcutHelp from '../ui/ShortcutHelp.svelte';
   import Slider from '../ui/Slider.svelte';
@@ -221,6 +222,18 @@
         <Slider label="Volume" bind:value={volume} min={-60} max={12} format={(v) => `${v} dB`} />
         <Slider label="Zoom" bind:value={zoom} min={1} max={10} step={1} format={(v) => `${v}x`} />
         <Slider label="Disabled" value={30} disabled />
+      </div>
+    </section>
+
+    <section id="progress" aria-labelledby="h-progress">
+      <h2 id="h-progress">Progress</h2>
+      <p class="note">
+        A bar that exposes its value; with no value it is indeterminate (the work has no known
+        size).
+      </p>
+      <div class="stack narrow">
+        <ProgressBar value={0.72} label="Preparing preview" />
+        <ProgressBar value={null} label="Listening for silence" />
       </div>
     </section>
 
