@@ -54,6 +54,7 @@ Every failure of the CLI, the MCP server and the HTTP API carries the same four 
 | `source.outside_root` | 400 | 1 | A path resolves outside the workspace root. | Use a path inside the root (no `..`, no absolute path outside it), or start the server or CLI with `--root` set to the folder that holds the file. |
 | `media.unreadable` | 422 | 1 | ffprobe could not read the file as media. | Check the file plays (`ffprobe FILE`) and is not still being written; re-export or re-download it if it is damaged. |
 | `media.audio_only` | 422 | 1 | The operation needs a picture and the asset is audio-only. | Pick an asset with a video stream (`list_assets` shows has_video), or use an audio-only operation. |
+| `track.locked` | 422 | 1 | The track is locked (the lock toggle of its lane), so its clips cannot be edited. | Unlock it first: `apply_ops` with `set_track_flags` and `locked: false` (the lock button on the lane header in the editor), then repeat the edit. |
 | `upload.invalid_name` | 400 | 1 | An uploaded file has no usable name (empty, hidden, or too long). | Rename the file to a plain name such as `gig.mp4`, then import it again. |
 | `upload.unsupported_type` | 415 | 1 | An uploaded file does not have a supported video or audio extension. | Use a video or audio file with one of these extensions: {supported}. |
 | `upload.empty` | 400 | 1 | An upload carried no bytes. | Make sure the file is not empty (it may still be recording or copying), then import it again. |

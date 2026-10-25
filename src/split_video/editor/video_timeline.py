@@ -1,4 +1,4 @@
-"""HTTP routes for a recording's own timeline: `GET /project/timeline` and `POST /project/clips`.
+"""HTTP routes for a recording's own timeline: `GET /project/timeline`, `POST /project/clips` and `POST /project/ops`.
 
 The editor opens a video (`POST /open`, project id = its path) and its project is the video's own timeline
 (ADR 0003). The compose routes address timelines by a plain name, which cannot name a video in a folder, so these two
@@ -6,19 +6,24 @@ take the video's `path` like `/state` does. `GET` shows the whole timeline in th
 clips, revision), reading nothing into existence: a video with nothing saved is its recording as one clip, revision 0.
 `POST` adds a library asset (`asset`, an id from `GET /assets`) as a clip on the main video track, at `index` (default:
 the end), and saves; send `If-Match` with the revision it was based on (409 `revision_conflict` otherwise).
+`POST /project/ops` applies an edit-ops document (docs/edit-ops.md: trim_clip, move_clip, place_clip, set_track_flags,
+...) to that timeline with the same engine, atomically, with `If-Match` and `?dry_run=`; its answer is the ops result of
+`POST /compose/projects/{name}/ops`, and the editor reads the timeline again with `GET /project/timeline`.
 """
 
 from __future__ import annotations
 
 from dataclasses import replace
+from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from pydantic import BaseModel
 
-from split_video import project
+from split_video import edit_ops, project
 from split_video.editor.compose import ProjectOut, project_out
 from split_video.editor.context import RequestContext, make_context_dependency
 from split_video.editor.errors import api_error
+from split_video.editor.ops import OPS_RESPONSES, OpsResultOut, invalid_response
 from split_video.editor.revisions import WRITE_RESPONSES, base_revision
 from split_video.errors import ProjectError, RevisionConflictError
 from split_video.ffmpeg import ProbeError
@@ -77,6 +82,40 @@ def make_router(provider: StoreProvider) -> APIRouter:
             raise  # the app's handler answers it: 409 with the current revision
         except (AssetNotFoundError, SourceNotFoundError) as exc:
             raise api_error(404, exc) from None
+        except (TimelineError, MediaError, ProbeError, ProjectError) as exc:
+            raise api_error(422, exc) from None
+
+    @router.post(
+        "/project/ops",
+        response_model=OpsResultOut,
+        response_model_exclude_none=True,
+        responses=OPS_RESPONSES,
+    )
+    def apply_video_ops(
+        ops: Annotated[Any, Body(description="An ops document; GET /api/v1/schemas/edit-ops is its JSON Schema.")],
+        path: str = Query(..., description=PATH_DESCRIPTION),
+        dry_run: bool = False,
+        base: int | None = Depends(base_revision),
+        ctx: RequestContext = ctx_dep,
+    ) -> Any:
+        """Apply a batch of timeline edits (see `POST /compose/projects/{name}/ops`) to the video's own timeline,
+        atomically: every op or none, saved once, with the caller's `If-Match` revision. `project` may be left out
+        of the body; if given it must be the `path`. A video with nothing saved is first its recording as one
+        clip. 422 carries the report (a locked track is `ops.track.locked`), 409 a stale revision."""
+        source = source_of(ctx, path)
+        try:
+            return edit_ops.apply_ops(
+                ctx.media,
+                ctx.store,
+                edit_ops.with_project(ops, path),
+                dry_run=dry_run,
+                base_revision=base,
+                target=project.video_ops_target(ctx.store, ctx.media, source),
+            )
+        except edit_ops.OpsInvalidError as exc:
+            return invalid_response(exc)
+        except RevisionConflictError:
+            raise  # the app's handler answers it: 409 with the current revision
         except (TimelineError, MediaError, ProbeError, ProjectError) as exc:
             raise api_error(422, exc) from None
 

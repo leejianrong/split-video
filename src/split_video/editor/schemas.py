@@ -174,7 +174,7 @@ class JobOut(BaseModel):
     """One job, whatever its kind (see `split_video.jobs.JobInfo`)."""
 
     id: str
-    kind: str  # export | analysis | render | library_scan | proxy | transcription | scene_analysis | ocr | split
+    kind: str  # export | analysis | render | library_scan | proxy | transcription | scene_analysis | ocr | split | waveform
     state: str  # queued | running | done | error | cancelled
     label: str | None = None
     completed: float

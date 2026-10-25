@@ -18,6 +18,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from split_video import edit_ops
+from split_video.edit_ops import with_project
 from split_video.editor.compose import _http as http_error
 from split_video.editor.context import RequestContext, make_context_dependency
 from split_video.editor.errors import body_of
@@ -77,25 +78,6 @@ OPS_RESPONSES: dict[int | str, dict] = {
         "description": "The batch has problems; they are in `errors`. Nothing was written.",
     },
 }
-
-
-def with_project(doc: Any, name: str) -> Any:
-    """`doc` addressed to the project `name` of the URL: `project` is filled in when absent, and a different one is an
-    `OpsInvalidError` (the URL and the document would disagree)."""
-    if not isinstance(doc, dict):
-        return doc
-    if "project" not in doc:
-        return {**doc, "project": name}
-    if doc["project"] != name:
-        report = edit_ops.OpsReport()
-        report.error(
-            "/project",
-            "ops.project.mismatch",
-            f"the document is for project {doc['project']!r} but the URL names {name!r}",
-            "make them the same, or leave `project` out of the body",
-        )
-        raise edit_ops.OpsInvalidError(report)
-    return doc
 
 
 def invalid_response(exc: edit_ops.OpsInvalidError) -> JSONResponse:

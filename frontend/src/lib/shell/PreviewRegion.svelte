@@ -1,5 +1,6 @@
 <script lang="ts">
   import { formatClock } from '../format';
+  import { playhead } from '../state/playhead.svelte';
   import { project } from '../state/project.svelte';
   import Button from '../ui/Button.svelte';
   import Icon from '../ui/icons/Icon.svelte';
@@ -13,7 +14,7 @@
 <main class="preview" data-region="preview" aria-label="Preview">
   <div class="header">
     <h2>Preview</h2>
-    <span class="readout" data-testid="readout">0:00:00 / {total}</span>
+    <span class="readout" data-testid="readout">{formatClock(playhead.time)} / {total}</span>
     <Button size="sm" disabled aria-label="Fit">Fit <Icon name="chevronDown" size={14} /></Button>
   </div>
   <div class="stage">

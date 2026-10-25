@@ -3,11 +3,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const open = vi.fn();
 const timeline = vi.fn();
 const addClip = vi.fn();
+const applyOps = vi.fn();
 vi.mock('../api/generated/sdk.gen', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api/generated/sdk.gen')>()),
   openFileApiV1OpenPost: (...args: unknown[]) => open(...args),
   getVideoTimelineApiV1ProjectTimelineGet: (...args: unknown[]) => timeline(...args),
   addAssetClipApiV1ProjectClipsPost: (...args: unknown[]) => addClip(...args),
+  applyVideoOpsApiV1ProjectOpsPost: (...args: unknown[]) => applyOps(...args),
 }));
 
 import { ApiError } from '../api/client';
@@ -42,6 +44,7 @@ beforeEach(() => {
   open.mockReset();
   timeline.mockReset();
   addClip.mockReset();
+  applyOps.mockReset();
   timeline.mockResolvedValue(timelineOf(3));
 });
 
@@ -245,6 +248,43 @@ describe('ProjectStore', () => {
         source: 'external',
       });
       await vi.waitFor(() => expect(store.revision).toBe(4));
+    });
+
+    it('applies edit ops with If-Match, then reads the timeline for the new revision', async () => {
+      const store = await openStore();
+      applyOps.mockResolvedValue({ data: { revision: 4 } });
+      timeline.mockResolvedValue(timelineOf(4));
+      const ops = [{ op: 'trim_clip', clip: 'c0', out: 5 }];
+      expect(await store.applyOps(ops)).toBe(true);
+      expect(applyOps).toHaveBeenCalledWith({
+        query: { path: 'gig.mp4' },
+        body: { schema_version: 1, ops },
+        headers: { 'If-Match': '"3"' },
+      });
+      expect(store.revision).toBe(4);
+      applyOps.mockResolvedValue({ data: { revision: 5 } });
+      timeline.mockResolvedValue(timelineOf(5));
+      await store.applyOps([{ op: 'move_clip', clip: 'c0', to_index: 0 }]);
+      expect(applyOps.mock.calls[1]?.[0].headers['If-Match']).toBe('"4"');
+    });
+
+    it('a stale revision on an ops edit reloads and shows the conflict, without re-applying', async () => {
+      const store = await openStore();
+      applyOps.mockRejectedValue(
+        new ApiError({
+          code: 'revision.conflict',
+          message: 'stale',
+          status: 409,
+          currentRevision: 7,
+        }),
+      );
+      open.mockResolvedValue(state('gig.mp4', 7));
+      timeline.mockResolvedValue(timelineOf(7, ['gig.mp4', 'agent.mp4']));
+      expect(await store.applyOps([{ op: 'trim_clip', clip: 'c0', out: 5 }])).toBe(false);
+      expect(applyOps).toHaveBeenCalledTimes(1);
+      expect(store.editError?.message).toMatch(/changed somewhere else/);
+      expect(store.revision).toBe(7);
+      expect(store.timeline?.tracks[0]?.clips).toHaveLength(2);
     });
 
     it('does nothing without an open project', async () => {

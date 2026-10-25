@@ -33,6 +33,14 @@
     skipForward: 'M18 5v14M4 5v14l11-7z',
     chevronDown: 'm6 9 6 6 6-6',
     upload: 'M12 16V4M7 9l5-5 5 5M4 16v4h16v-4',
+    lock: 'M7 11V8a5 5 0 0 1 10 0v3M5 11h14v10H5zM12 15v3',
+    unlock: 'M7 11V8a5 5 0 0 1 9.5-2.2M5 11h14v10H5zM12 15v3',
+    eye: 'M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z',
+    eyeOff:
+      'M3 3l18 18M10.6 6.1A9.6 9.6 0 0 1 12 5c6 0 10 7 10 7a17 17 0 0 1-3.2 4M6.5 6.9A17 17 0 0 0 2 12s4 7 10 7a9.5 9.5 0 0 0 4-.9M9.9 9.9a3 3 0 0 0 4.2 4.2',
+    volume: 'M4 9v6h4l5 4V5L8 9zM16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12',
+    volumeOff: 'M4 9v6h4l5 4V5L8 9zM17 9l5 6M22 9l-5 6',
+    fit: 'M4 12h16M8 8l-4 4 4 4M16 8l4 4-4 4M4 5v14M20 5v14',
   } as const;
   export type IconName = keyof typeof ICONS;
 </script>

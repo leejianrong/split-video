@@ -146,6 +146,29 @@ describe('error mapping', () => {
     expect(error.code).toBe('timeline.exists');
   });
 
+  it('reports the first problem of a refused edit batch', () => {
+    const error = toApiError(
+      {
+        code: 'ops.invalid',
+        message: 'the batch has 1 problem; nothing was written',
+        fix: 'Fix every entry of `errors`',
+        errors: [
+          {
+            path: '/ops/0/clip',
+            code: 'ops.track.locked',
+            message: 'track 3f9a is locked; unlock it to edit its clips',
+            hint: 'unlock the track first',
+          },
+        ],
+      },
+      422,
+    );
+    expect(error.code).toBe('ops.invalid');
+    expect(error.message).toBe('track 3f9a is locked; unlock it to edit its clips');
+    expect(error.fix).toBe('Fix: unlock the track first');
+    expect(error.details).toEqual({ problem: 'ops.track.locked' });
+  });
+
   it('maps the 401 body through its `error` field', () => {
     const error = toApiError({ detail: 'No valid bearer token', error: 'unauthorized' }, 401);
     expect(error).toMatchObject({

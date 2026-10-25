@@ -114,7 +114,10 @@ def apply_segments(existing: Project | None, video_id: str, segments: list[Saved
     template = old[0] if old else Clip(id="", source=video_id, in_point=0.0, out_point=0.0)
     claimed: set[str] = set()
     clips: list[Clip] = []
-    for seg in segments:
+    # Nothing saved yet: ids come from the video and the position, like `from_legacy`'s, so reading the unsaved
+    # timeline twice gives the same clip ids and an edit based on the first read finds its clip in the second.
+    fresh = existing is None
+    for position, seg in enumerate(segments):
         exact = next(
             (c for c in old if c.id not in claimed and (c.in_point, c.out_point) == (seg.start, seg.end)), None
         )
@@ -127,12 +130,16 @@ def apply_segments(existing: Project | None, video_id: str, segments: list[Saved
             best = None
         base = best if best is not None else template
         clip_id = best.id if best is not None and best.id not in claimed else new_id()
+        if fresh:
+            clip_id = _stable_id(video_id, "clip", position)
         claimed.add(clip_id)
         clips.append(_segment_clip(replace(base, id=clip_id, transition="cut", transition_duration=0.0), seg))
     track = (
         replace(project.tracks[index], clips=tuple(clips))
         if index is not None
-        else Track(id=new_id(), kind="video", clips=tuple(clips), magnetic=True)
+        else Track(
+            id=_stable_id(video_id, "main") if fresh else new_id(), kind="video", clips=tuple(clips), magnetic=True
+        )
     )
     track = normalize_track(track)
     tracks = (

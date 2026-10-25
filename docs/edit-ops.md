@@ -85,6 +85,20 @@ op's `results[].ids`, but no op in the batch can refer to it, so name anything y
 digits, `_`, `-`, `.`, at most 64 characters; clip ids and track ids are separate namespaces; an id the project already
 uses is `ops.id.duplicate`. Positions (`index`, `to_index`) are **zero-based**.
 
+### Editing a recording's own timeline
+
+The editor edits the timeline of the video that is open (the one `Split by silence` fills with labelled clips), which is
+not a named project. The same batches work on it: HTTP `POST /api/v1/project/ops?path=VIDEO[&dry_run=true]`, CLI
+`split-video apply-ops OPS --video VIDEO`, MCP `apply_ops(ops, video=VIDEO)`. `project` may be left out of the document
+(given, it must name the video). Clip ids and the revision come from `GET /api/v1/project/timeline?path=VIDEO`,
+`split-video compose show --video VIDEO` and MCP `show_timeline(video=VIDEO)`. A video with nothing saved is first its
+recording as one clip (its clip id is stable from the first read, so a batch based on that read finds its clip). In
+Python: `edit_ops.apply_ops(..., target=project.video_ops_target(store, media, video))`.
+
+On the main track (magnetic) `trim_clip` closes the gap by itself: trimming the end of clip 3 by 10 s moves clips 4, 5, ... 10 s
+earlier. That is how the timeline's trim handles work, one `trim_clip` per drag. `move_clip` reorders, `place_clip` moves a
+clip on a free track in time or to another track of its kind, `set_track_flags` is the lane header's lock, hide and mute.
+
 ### Operations
 
 Every operation maps 1:1 to a single edit (`timeline_service.<op>` over `timeline_ops.<op>`), and obeys the same rules.
@@ -105,6 +119,7 @@ clip ranges of the [plan](edit-plan.md#clip).
 | `remove_track` | `track` | Remove a track and its clips. The last video track stays. |
 | `move_track` | `track`, `to_index` | Reorder tracks (later draws on top). |
 | `place_clip` | `clip`, `start`, `track` | Put a clip at `start` on a free track, optionally moving it to another free track of the same kind. |
+| `set_track_flags` | `track`, `locked`, `hidden`, `muted` (at least one) | The timeline's lane toggles. A **locked** track refuses every edit of its clips (`ops.track.locked`) until unlocked; a **hidden** video track is left out of the preview and the export (not the main track, not audio tracks); a **muted** track is silent. Only the flags you give change. The flags are saved with the track and are not part of an edit plan. |
 
 `render` and project creation are not edits and are not ops.
 
@@ -214,7 +229,7 @@ describes them); field-level problems use the `ops.field.*` family.
 | `ops.field.range` | A number outside its range (`gain`, `x`, `index` below 0, `duration` below 0.1 for a title, ...). |
 | `ops.field.pattern` | `color` is not `#rrggbb`. |
 | `ops.field.length` | `text` or an id is too long. |
-| `ops.op.unknown` | `op` is not one of the twelve; the hint lists them. |
+| `ops.op.unknown` | `op` is not one of the thirteen; the hint lists them. |
 | `ops.op.no_changes` | A `trim_clip`, `set_clip_properties` or `set_text_properties` that gives nothing to change. |
 | `ops.ops.empty` / `ops.ops.too_many` | No ops / more than 1000. |
 | `ops.project.name_invalid` | Not a usable project name. |
@@ -232,6 +247,8 @@ describes them); field-level problems use the `ops.field.*` family.
 | `ops.clip.source_missing` | `trim_clip` on a clip whose asset is not in the asset table (its duration is unknown). |
 | `ops.clip.track_kind_mismatch` / `ops.clip.dest_is_magnetic` | `place_clip` to a track of another kind / to the magnetic main track. |
 | `ops.track.last_video` | `remove_track` of the only video track. |
+| `ops.track.locked` | An edit of a clip on a locked track (or adding to / removing it); `set_track_flags` with `locked: false` first. |
+| `ops.track.main_hidden` / `ops.track.hidden_audio` | `hidden` on the main video track / on an audio track (mute those instead). |
 | `ops.rule.violated` | A rule of the editor this table does not name yet (the message says which). Not expected. |
 | `plan.asset.invalid_id` / `plan.asset.unknown` | `asset` is not an asset id / not in the asset table. |
 | `plan.source.unknown` / `plan.source.outside_root` / `plan.clip.media_source_missing` | `source` is not a known asset (never registered by a batch) / escapes the workspace / neither `asset` nor `source`. |

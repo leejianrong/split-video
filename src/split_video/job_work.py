@@ -12,9 +12,20 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from split_video import captions, library, media_report, ocr, project, proxy, scenes, timeline_service, transcribe
+from split_video import (
+    assets,
+    captions,
+    library,
+    media_report,
+    ocr,
+    project,
+    proxy,
+    scenes,
+    timeline_service,
+    transcribe,
+)
 from split_video.editor import classify
-from split_video.editor.cache import ClassificationCache
+from split_video.editor.cache import ClassificationCache, WaveformCache
 from split_video.jobs import PROXY, JobContext, JobQueue
 from split_video.media_store import MediaStore
 from split_video.store import ProjectStore
@@ -187,6 +198,23 @@ def proxy_work(media: MediaStore, asset_id: str, *, force: bool = False) -> Call
 
         ctx.progress(0, proxy.STEPS)
         return proxy.prepare(media, asset_id, force=force, on_progress=on_progress, cancel=ctx)
+
+    return work
+
+
+def waveform_work(media: MediaStore, asset_id: str) -> Callable[[JobContext], dict[str, Any]]:
+    """Decode the asset's audio once (streamed, never all in memory) and store its peak envelope and loudness curve
+    in the waveform cache next to the file (`WaveformCache`), which the timeline draws. Cancel stops ffmpeg and
+    stores nothing. The result is `{asset, buckets, loudness_windows}`."""
+
+    def work(ctx: JobContext) -> dict[str, Any]:
+        asset = assets.get_asset(media, asset_id)
+        cache = WaveformCache(media, asset.path)
+        ctx.progress(0, 1)
+        peaks = cache.get_peaks(ctx)
+        loudness = cache.get_loudness(ctx)
+        ctx.progress(1, 1)
+        return {"asset": asset.id, "buckets": len(peaks.buckets), "loudness_windows": len(loudness.db)}
 
     return work
 

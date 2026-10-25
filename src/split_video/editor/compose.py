@@ -89,6 +89,7 @@ class ClipOut(BaseModel):
     font_size: float
     color: str
     label: str = ""  # a main-track segment's name ("Song 2"); empty if it has none
+    label_color: str | None = None  # the segment's band colour (`#rrggbb`) if it has one
 
 
 class TrackOut(BaseModel):
@@ -96,6 +97,9 @@ class TrackOut(BaseModel):
     kind: str
     magnetic: bool
     clips: list[ClipOut]
+    locked: bool = False  # the lane's lock toggle: no edit may touch its clips
+    hidden: bool = False  # a hidden video track is not drawn in the preview or the export
+    muted: bool = False  # a muted track is silent
 
 
 class ProjectOut(BaseModel):
@@ -348,6 +352,7 @@ def clip_out(c: Clip, row: assets.Located | None) -> ClipOut:
         font_size=c.font_size,
         color=c.color,
         label=c.label,
+        label_color=c.label_color,
     )
 
 
@@ -362,7 +367,15 @@ def project_out(media: MediaStore, name: str, project: Project) -> ProjectOut:
         revision=project.revision,
         duration=timeline_module.ms(project.duration),
         tracks=[
-            TrackOut(id=t.id, kind=t.kind, magnetic=t.magnetic, clips=[clip_out(c, rows.get(c.id)) for c in t.clips])
+            TrackOut(
+                id=t.id,
+                kind=t.kind,
+                magnetic=t.magnetic,
+                clips=[clip_out(c, rows.get(c.id)) for c in t.clips],
+                locked=t.locked,
+                hidden=t.hidden,
+                muted=t.muted,
+            )
             for t in project.tracks
         ],
     )
