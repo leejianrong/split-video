@@ -69,6 +69,12 @@ def _asset_for_new_clip(media: MediaStore, path: str | None, asset: str | None) 
         raise TimelineError(str(exc)) from None
 
 
+def find_asset(media: MediaStore, asset: str) -> assets.Asset:
+    """The asset with id `asset` for a new clip (relinked if its file moved); the usual timeline errors if it is
+    unknown or its file is gone."""
+    return _asset_for_new_clip(media, None, asset)
+
+
 # --- loading / saving -------------------------------------------------------
 
 

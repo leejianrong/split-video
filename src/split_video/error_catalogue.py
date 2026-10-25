@@ -128,6 +128,14 @@ _register(
     "Send a non-empty list sorted by start time, with unique export names; `list_segments` shows a valid one.",
 )
 
+_register(
+    "segments.main_track_edited",
+    "The main track holds more than the recording's own clips (another recording or a title), so splits cannot be "
+    "rebuilt from segments.",
+    "Edit this timeline with the compose tools (`show_timeline`, `apply_ops`, CLI `split-video compose`), or remove "
+    "the clips that were added; splitting only works while the main track holds the recording itself.",
+)
+
 # --- timelines: clips, tracks, projects ---------------------------------------------------------------------------
 
 _register(
@@ -213,6 +221,27 @@ _register(
     "media.audio_only",
     "The operation needs a picture and the asset is audio-only.",
     "Pick an asset with a video stream (`list_assets` shows has_video), or use an audio-only operation.",
+)
+
+# --- imports --------------------------------------------------------------------------------------------------------
+
+_register(
+    "upload.invalid_name",
+    "An uploaded file has no usable name (empty, hidden, or too long).",
+    "Rename the file to a plain name such as `gig.mp4`, then import it again.",
+    status=400,
+)
+_register(
+    "upload.unsupported_type",
+    "An uploaded file does not have a supported video or audio extension.",
+    "Use a video or audio file with one of these extensions: {supported}.",
+    status=415,
+)
+_register(
+    "upload.empty",
+    "An upload carried no bytes.",
+    "Make sure the file is not empty (it may still be recording or copying), then import it again.",
+    status=400,
 )
 
 # --- revisions ----------------------------------------------------------------------------------------------------

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import threading
@@ -302,17 +303,25 @@ def _parse_rate(text: object) -> float | None:
     return round(value, 3) if value > 0 else None
 
 
+_STATS_TIME = re.compile(r"time=(\d+):(\d\d):(\d\d(?:\.\d+)?)")
+
+
 def detect_silence(
-    path: Path, threshold: str, min_silence_duration: float, cancel: CancelToken | None = None
+    path: Path,
+    threshold: str,
+    min_silence_duration: float,
+    cancel: CancelToken | None = None,
+    on_progress: Callable[[float], None] | None = None,
 ) -> list[SilenceInterval]:
     """Run ffmpeg's silencedetect over the audio. The log is read line by line as ffmpeg writes it and
     only the parsed intervals are kept, so memory does not grow with the length of the recording. The
-    video is not decoded (`-vn`). A cancelled job terminates ffmpeg and gets `JobCancelledError`."""
+    video is not decoded (`-vn`). A cancelled job terminates ffmpeg and gets `JobCancelledError`.
+    `on_progress(seconds)` is called with how far into the audio ffmpeg has got (read from its status line)."""
     ffmpeg = _require_binary("ffmpeg")
     cmd = [
         ffmpeg,
         "-nostdin",
-        "-nostats",
+        *([] if on_progress else ["-nostats"]),
         "-i",
         str(path),
         "-vn",
@@ -331,6 +340,9 @@ def detect_silence(
         assert proc.stderr is not None
         for line in proc.stderr:
             parser.feed(line)
+            if on_progress and (stats := _STATS_TIME.search(line)):
+                hours, minutes, seconds = stats.groups()
+                on_progress(int(hours) * 3600 + int(minutes) * 60 + float(seconds))
         proc.wait()
     finally:
         detach()

@@ -17,6 +17,7 @@ from split_video.editor import classify
 from split_video.editor.cache import ClassificationCache
 from split_video.jobs import PROXY, JobContext, JobQueue
 from split_video.media_store import MediaStore
+from split_video.store import ProjectStore
 from split_video.timeline import Project
 
 # A render reports a 0..1 fraction; as a job it counts thousandths of the output.
@@ -89,6 +90,49 @@ def analysis_work(
         ctx.progress(0, total=estimate)
         project.run_analysis(media, source, cache, thresholds, ctx.progress, cancel=ctx)
         return analysis_summary(cache)
+
+    return work
+
+
+# A silence scan reports seconds of audio done; as a job it counts thousandths of the audio.
+SPLIT_STEPS = 1000
+
+
+def split_work(
+    media: MediaStore,
+    store: ProjectStore,
+    source: str,
+    *,
+    silence_threshold: float = -35.0,
+    min_silence_duration: float = 2.0,
+    min_song_length: float = 30.0,
+    padding: float = 0.15,
+    label_prefix: str | None = None,
+    base_revision: int | None = None,
+) -> Callable[[JobContext], dict[str, Any]]:
+    """Split the video at its silences and save the segments (`project.split_by_silence`). Progress counts
+    thousandths of the audio; the result is `{video, segments, revision, labels}`. A cancelled job saves nothing."""
+
+    def work(ctx: JobContext) -> dict[str, Any]:
+        duration = max(media.probe(source).duration, 1e-9)
+
+        def on_progress(seconds: float) -> None:
+            ctx.progress(min(round(seconds / duration * SPLIT_STEPS), SPLIT_STEPS - 1), SPLIT_STEPS)
+
+        ctx.progress(0, SPLIT_STEPS, "Listening for silence")
+        return project.split_by_silence(
+            store,
+            media,
+            source,
+            silence_threshold=silence_threshold,
+            min_silence_duration=min_silence_duration,
+            min_song_length=min_song_length,
+            padding=padding,
+            label_prefix=label_prefix,
+            base_revision=base_revision,
+            cancel=ctx,
+            on_progress=on_progress,
+        )
 
     return work
 
