@@ -2,7 +2,7 @@ IMAGE := split-video
 PORT  ?= 8765
 DIR   ?= $(PWD)
 
-.PHONY: help build dev test fetch-model frontend frontend-dev openapi schemas errors
+.PHONY: help build dev test fetch-model frontend frontend-dev api-client openapi schemas errors
 
 .DEFAULT_GOAL := help
 
@@ -29,6 +29,9 @@ frontend: ## Build the Svelte app into src/split_video/editor/static_app (served
 
 frontend-dev: ## Vite dev server on :5173, proxying /api and /media to `split-video edit` on :8765
 	cd frontend && npm run dev
+
+api-client: ## Regenerate the TypeScript API client from openapi.json (run after `make openapi`)
+	cd frontend && npm run api:generate
 
 test: ## Run the test suite locally via uv
 	uv run pytest

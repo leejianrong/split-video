@@ -19,6 +19,7 @@
     "src/**/*.svelte",
     "vite.config.ts",
     "svelte.config.js",
-    "eslint.config.js"
+    "eslint.config.js",
+    "openapi-ts.config.ts"
   ]
 }

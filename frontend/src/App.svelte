@@ -1,4 +1,6 @@
-<script lang="ts"></script>
+<script lang="ts">
+  import ServerStatus from './lib/shell/ServerStatus.svelte';
+</script>
 
 <!--
   SCAFFOLD (SPL-59). Placeholder shell: the six regions from docs/ux-spec.md#layout as empty frames, no features.
@@ -8,6 +10,7 @@
   <header class="topbar" data-region="top-bar">
     <strong>split-video</strong>
     <span class="scaffold">Scaffold: the new editor shell (SPL-59). No features yet.</span>
+    <ServerStatus />
   </header>
   <nav class="tabrail" data-region="tab-rail" aria-label="Tabs">Tab rail</nav>
   <aside class="panel" data-region="panel" aria-label="Panel">Panel</aside>
