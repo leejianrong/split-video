@@ -20,14 +20,17 @@ automatically if you haven't run `make fetch-model`. Set
 
 The Svelte app lives in `frontend/` and needs Node 24 (`frontend/.nvmrc`); see
 [docs/frontend.md](docs/frontend.md). Before a PR that touches it run `npm run lint`, `npm run check`,
-`npm run test` and `npm run build` there (CI's `frontend` job does the same).
+`npm run test` and `npm run build` there (CI's `frontend` job does the same). A change to routes or schemas also
+needs `make openapi schemas errors` followed by `make api-client` (`npm run api:generate`), and the regenerated
+`frontend/src/lib/api/generated/` goes in the same PR; CI fails when it is stale.
 
 ## Pre-push hook
 
 A git hook mirrors the cheap parts of CI before every push: `ruff check`,
 `ruff format --check`, the generated-file drift checks (`openapi.json`, the
 two schemas in `docs/schemas/`, `docs/errors.md`; fix with
-`make openapi schemas errors`) `npm run lint` and `npm run check` in `frontend/` when `frontend/node_modules` exists, and `tests/unit` (about 3 minutes; it needs
+`make openapi schemas errors`), when `frontend/node_modules` exists `npm run lint`, `npm run check` and the
+generated API client drift check in `frontend/` (fix with `make api-client`), and `tests/unit` (about 3 minutes; it needs
 `ffmpeg` on the PATH, like the rest of the suite). Install it once per clone:
 
 ```bash

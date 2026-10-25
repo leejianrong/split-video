@@ -5,7 +5,14 @@ import globals from 'globals';
 import ts from 'typescript-eslint';
 
 export default ts.config(
-  { ignores: ['node_modules/', 'dist/', '../src/split_video/editor/static_app/'] },
+  {
+    ignores: [
+      'node_modules/',
+      'dist/',
+      'src/lib/api/generated/',
+      '../src/split_video/editor/static_app/',
+    ],
+  },
   js.configs.recommended,
   ...ts.configs.recommended,
   ...svelte.configs.recommended,

@@ -49,8 +49,8 @@ jobs:
       - name: error catalogue is up to date
         run: uv run python scripts/export_error_catalogue.py --check
 
-  # Svelte frontend (docs/adr/0004-frontend-stack-and-structure.md). The `api:generate` drift step arrives with the
-  # client generation card. Adding this job as a required check is a repository setting.
+  # Svelte frontend (docs/adr/0004-frontend-stack-and-structure.md). Adding this job as a required check is a
+  # repository setting.
   frontend:
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -77,6 +77,14 @@ jobs:
 
       - name: Unit tests (vitest)
         run: npm run test
+
+      # The typed API client is generated from the committed openapi.json (no Python needed). Fix a failure
+      # with `make api-client` and commit the result.
+      - name: Generated API client is up to date
+        run: |
+          npm run api:generate
+          git diff --exit-code -- src/lib/api/generated
+          test -z "$(git status --porcelain -- src/lib/api/generated)" || { git status --porcelain -- src/lib/api/generated; exit 1; }
 
       - name: Build
         run: npm run build

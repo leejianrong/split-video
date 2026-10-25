@@ -22,6 +22,17 @@ uv run python scripts/export_error_catalogue.py --check
 if [ -d frontend/node_modules ]; then
     echo "pre-push: running frontend lint and check..."
     (cd frontend && npm run lint && npm run check)
+
+    echo "pre-push: checking the generated API client is up to date..."
+    (
+        cd frontend
+        npm run --silent api:generate >/dev/null
+        if ! git diff --quiet -- src/lib/api/generated ||
+            [ -n "$(git ls-files --others --exclude-standard -- src/lib/api/generated)" ]; then
+            echo "The generated API client is stale. Fix with: make api-client, then commit it." >&2
+            exit 1
+        fi
+    )
 fi
 
 echo "pre-push: running unit tests..."
