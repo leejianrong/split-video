@@ -1,25 +1,110 @@
-/* Scaffold tokens (SPL-59). Region sizes are the wireframe sizes from docs/ux-spec.md#layout. */
+/*
+  Design tokens (SPL-61). Dark theme only (docs/ux-spec.md decision 10), teal accent. Every colour is a custom
+  property so a second theme stays possible, but none is shipped. Component CSS uses these and nothing else:
+  a test fails on a hard-coded colour under src/lib. Text and control pairs are checked for WCAG AA by
+  src/lib/styles/contrast.test.ts (add the pair there when a component uses a new one).
+*/
 :root {
+  /* Surfaces, darkest to lightest */
   --color-bg: #0f1115;
   --color-surface: #171a21;
   --color-surface-raised: #1f232c;
+  --color-surface-hover: #272c37;
+  --color-surface-active: #313745;
+
+  /* Borders: subtle dividers, and a strong one for control outlines (3:1 against surfaces) */
   --color-border: #2c313c;
+  --color-border-strong: #727b8e;
+
+  /* Text */
   --color-text: #e8eaed;
   --color-text-muted: #a0a6b2;
-  --color-accent: #2dd4bf;
-  --color-accent-text: #04201c;
+  --color-text-disabled: #6b7280;
 
+  /* Accent (teal) */
+  --color-accent: #2dd4bf;
+  --color-accent-hover: #5eead4;
+  --color-accent-active: #14b8a6;
+  --color-accent-text: #04201c;
+  --color-accent-subtle: #123a3a;
+
+  /* Status: the plain colour is for text and icons on dark surfaces, the solid one carries white text */
+  --color-danger: #ff7b72;
+  --color-danger-solid: #c4302b;
+  --color-danger-hover: #a8261f;
+  --color-danger-text: #ffffff;
+  --color-warn: #f5b942;
+  --color-ok: #4ade80;
+
+  --color-focus: #5eead4;
+  --color-overlay: rgb(5 6 8 / 72%);
+
+  /* Spacing */
+  --space-0: 2px;
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
   --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
 
+  /* Radii */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+  --radius-full: 999px;
+
+  /* Type (ux-spec: text is at least 12 px) */
   --font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  --font-size-xs: 12px;
+  --font-size-sm: 13px;
   --font-size-base: 14px;
+  --font-size-md: 16px;
+  --font-size-lg: 18px;
+  --font-size-xl: 22px;
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --font-weight-bold: 600;
+  --line-height-tight: 1.25;
+  --line-height-base: 1.45;
 
+  /* Layering */
+  --z-base: 0;
+  --z-sticky: 10;
+  --z-dropdown: 20;
+  --z-dialog: 40;
+  --z-toast: 50;
+  --z-tooltip: 60;
+
+  /* Focus ring: teal, 2 px, on every control (ux-spec #accessibility) */
+  --focus-ring-width: 2px;
+  --focus-ring-offset: 2px;
+
+  /* Elevation and motion */
+  --shadow-popover: 0 4px 16px rgb(0 0 0 / 45%);
+  --shadow-dialog: 0 12px 40px rgb(0 0 0 / 60%);
+  --duration-fast: 120ms;
+  --duration-base: 200ms;
+
+  /* Control heights */
+  --control-height-sm: 28px;
+  --control-height-md: 32px;
+  --control-height-lg: 40px;
+
+  /* Regions: wireframe sizes at 1440 x 900 and their limits (docs/ux-spec.md#layout) */
   --size-topbar-height: 48px;
   --size-tabrail-width: 72px;
   --size-panel-width: 308px;
+  --size-panel-min: 260px;
+  --size-panel-max: 480px;
   --size-inspector-width: 340px;
+  --size-inspector-min: 280px;
+  --size-inspector-max: 440px;
   --size-timeline-height: 292px;
+  --size-timeline-min: 200px;
+  --size-preview-min: 480px;
+  --size-toolbar-height: 40px;
+  --size-lane-header-width: 120px;
 }
