@@ -3,7 +3,7 @@
 Status: draft for M3 (SPL-91). Decision: [ADR 0003](adr/0003-one-editor-one-project-model.md) (SPL-115).
 Layout figures come from the accepted wireframes (1440 x 900 canvas); anything
 the wireframes do not settle was decided by the owner on 2026-10-24 and is
-recorded under [Decisions](#decisions).
+recorded under [Decisions](#decisions). Frontend stack: [ADR 0004](adr/0004-frontend-stack-and-structure.md).
 
 UI cards link to a section with "Implements docs/ux-spec.md#timeline". Anchors
 below are stable: do not rename a heading without updating its links.

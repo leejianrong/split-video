@@ -2,6 +2,7 @@
 
 Status: accepted (2026-10-23). Board card: SPL-115. Amends 0001 and 0002.
 UX contract: [docs/ux-spec.md](../ux-spec.md) (SPL-91).
+Frontend stack and structure for the rebuild: [0004](0004-frontend-stack-and-structure.md).
 
 ## Context
 
