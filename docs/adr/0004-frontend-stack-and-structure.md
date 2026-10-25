@@ -1,6 +1,7 @@
 # 0004: Frontend stack and structure
 
 Status: accepted (2026-10-25). Board card: SPL-58. Refines 0002 (the "Frontend" bullet) and builds on 0003.
+Amended 2026-10-25 (SPL-62): the Routing section now says the hash selects one of four views, not only the project id.
 UX contract: [docs/ux-spec.md](../ux-spec.md).
 
 ## Context
@@ -66,7 +67,8 @@ frontend/
       timeline/               lanes, ruler, playhead, snapping, virtualised drawing
       preview/                player and overlays
       export/                 export dialog and render queue
-      firstrun/               goal chooser
+      firstrun/               start page and goal chooser
+      library/                the library view
       a11y/                   shortcut registry, focus helpers, live region
       styles/                 tokens.css, base.css
     test/                     Vitest setup and fixtures
@@ -153,14 +155,23 @@ The wheel must contain the built app, because pip users get no Node. Decision:
 
 ### Routing
 
-**None.** The shell is one screen. The first-run page and dialogs are conditional components driven by state
-(`project === null` shows first run; the export dialog is `ui.dialog`). Open project and selected tab are not in
-the URL for M3. Why: there is nothing to link to (single user, local), a router adds a dependency and a
-history-fallback requirement on FastAPI, and the old pages' `?video=` style deep links are not a documented
-surface. One exception is allowed without a library: the open project id in the **hash** (`#/p/<project id>`),
-read once at start and written on open, so a reload or a CLI-printed link reopens the same project. If real
-routes appear later (hosted, multiple projects), adding a router is a contained change because no component reads
-`location`, only the `project` store does.
+**No router library.** The app has four views, chosen by the **hash** and nothing else, in `lib/state/route.ts`
+(parse and format, unit-tested) and `lib/state/route.svelte.ts` (a runes store that follows `hashchange`):
+
+| Hash | View |
+|---|---|
+| `#/` (or anything unknown) | start: the first-run entry page |
+| `#/library` and `#/library/<folder>` | the library: folders and videos under the server's root |
+| `#/p/<project id>` | the editor with that project open; reading it at start is what makes a reload reopen it |
+| `#/dev` | the components gallery (not linked) |
+
+The project id is the video's path in the library (`POST /api/v1/open` takes it; ADR 0003's timeline project is
+opened through it today), percent-encoded per path segment. Only the router store reads `location`; components read
+`router.current` and build links with `hrefTo(...)`. The export dialog, shortcut help and first-run steps stay
+state, not routes (`ui.exportOpen`, `ui.helpOpen`). Selected tab and region sizes stay out of the URL (they persist in
+`localStorage`). Why not a library: nothing to guard, nested or lazy-load, and a router adds a dependency and a
+history-fallback requirement on FastAPI; if real routes appear later (hosted, multiple projects) the change stays in
+`lib/state/`.
 
 ### API client
 
