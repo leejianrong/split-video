@@ -1,6 +1,6 @@
 # The visual editor (`edit`)
 
-How to use the browser editor for splitting a recording. For starting it, see [docker.md](docker.md).
+How to use the browser editor for splitting a recording. For starting it, see [docker.md](docker.md). The new editor (scaffold only so far) is at `/app/`: [frontend.md](frontend.md).
 
 The editor is being rebuilt as one workspace; its design contract is [ux-spec.md](ux-spec.md).
 

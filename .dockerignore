@@ -13,3 +13,5 @@ videos
 .github
 docs
 .githooks
+frontend/node_modules
+src/split_video/editor/static_app

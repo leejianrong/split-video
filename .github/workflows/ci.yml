@@ -49,6 +49,48 @@ jobs:
       - name: error catalogue is up to date
         run: uv run python scripts/export_error_catalogue.py --check
 
+  # Svelte frontend (docs/adr/0004-frontend-stack-and-structure.md). The `api:generate` drift step arrives with the
+  # client generation card. Adding this job as a required check is a repository setting.
+  frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: frontend/.nvmrc
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint (eslint and prettier)
+        run: npm run lint
+
+      - name: Type-check (svelte-check)
+        run: npm run check
+
+      - name: Unit tests (vitest)
+        run: npm run test
+
+      - name: Build
+        run: npm run build
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10.3.1
+
+      # The package must carry the build, or pip users get a 404 at /app/ (they have no Node).
+      - name: Wheel and sdist contain the build
+        working-directory: .
+        run: |
+          uv build --out-dir dist
+          python3 scripts/check_wheel_contents.py dist
+
   test:
     runs-on: ubuntu-latest
     # The identical suite took 8, 12 and 24.6 minutes on GitHub-hosted runners, and one run was cancelled at the old

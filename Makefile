@@ -2,7 +2,7 @@ IMAGE := split-video
 PORT  ?= 8765
 DIR   ?= $(PWD)
 
-.PHONY: help build dev test fetch-model openapi schemas errors
+.PHONY: help build dev test fetch-model frontend frontend-dev openapi schemas errors
 
 .DEFAULT_GOAL := help
 
@@ -23,6 +23,12 @@ dev: build ## Build and run the visual editor in Docker (override with DIR=./vid
 		--user "$$(id -u):$$(id -g)" \
 		$(IMAGE) \
 		edit /data --host 0.0.0.0 --no-browser
+
+frontend: ## Build the Svelte app into src/split_video/editor/static_app (served at /app/)
+	cd frontend && npm ci && npm run build
+
+frontend-dev: ## Vite dev server on :5173, proxying /api and /media to `split-video edit` on :8765
+	cd frontend && npm run dev
 
 test: ## Run the test suite locally via uv
 	uv run pytest
