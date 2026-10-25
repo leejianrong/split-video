@@ -86,8 +86,9 @@ class SilenceCache:
             if threshold in self._raw:
                 return self._raw[threshold]
             with self._media.local_path(self._source) as path:
+                extra = {"on_progress": on_progress} if on_progress is not None else {}
                 intervals = detect_silence(
-                    path, f"{threshold}dB", RAW_SCAN_MIN_SILENCE_DURATION, cancel=cancel, on_progress=on_progress
+                    path, f"{threshold}dB", RAW_SCAN_MIN_SILENCE_DURATION, cancel=cancel, **extra
                 )
             self._raw[threshold] = intervals
             self._save()
