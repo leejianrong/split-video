@@ -12,7 +12,7 @@ from urllib.parse import quote
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.staticfiles import StaticFiles
-from starlette.responses import Response
+from starlette.responses import RedirectResponse, Response
 
 from split_video import project as split_project
 from split_video.editor.auth import (
@@ -111,6 +111,12 @@ from split_video.store import ProjectStore, SavedSegment
 from split_video.store_provider import SharedStoreProvider, StoreProvider
 
 STATIC_DIR = Path(__file__).parent / "static"
+# Output of `npm run build` in frontend/ (gitignored; built by the Docker image and the release job). Served at
+# /app/ while the old pages in static/ keep `/` (docs/adr/0004-frontend-stack-and-structure.md).
+STATIC_APP_DIR = Path(__file__).parent / "static_app"
+APP_PREFIX = "/app"
+APP_ASSETS_PREFIX = f"{APP_PREFIX}/assets/"
+APP_NOT_BUILT_HINT = "The new editor is not built. Run `npm ci && npm run build` in frontend/ (see docs/frontend.md)."
 
 # Every JSON/media route lives under this prefix; it is the documented,
 # versioned surface (see openapi.json at the repo root).
@@ -267,7 +273,11 @@ def create_app(
     async def no_store_for_static_assets(request: Request, call_next):
         response = await call_next(request)
         path = request.url.path
-        if not path.startswith(("/api/", "/media/")):
+        if path.startswith(APP_ASSETS_PREFIX) and response.status_code == 200:
+            # Vite content-hashes everything under /app/assets/, so these are safe to cache forever. index.html
+            # (the only file naming the hashes) falls through to no-store below.
+            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        elif not path.startswith(("/api/", "/media/")):
             response.headers["Cache-Control"] = "no-store"
         if _is_legacy_path(path):
             response.headers["Deprecation"] = "true"
@@ -644,6 +654,22 @@ def create_app(
     STATIC_DIR.mkdir(parents=True, exist_ok=True)
     if not any(STATIC_DIR.iterdir()):
         (STATIC_DIR / "index.html").write_text("<!doctype html><title>split-video editor</title><p>loading...</p>")
+    # The built Svelte app, before the "/" catch-all so it is not shadowed. No build means no mount (and no
+    # placeholder written into the directory): /app/ answers 404 with the hint instead.
+    if (STATIC_APP_DIR / "index.html").is_file():
+
+        async def app_slash(request: Request) -> Response:
+            return RedirectResponse(f"{APP_PREFIX}/", status_code=307)
+
+        app.add_route(APP_PREFIX, app_slash, include_in_schema=False)
+        app.mount(APP_PREFIX, StaticFiles(directory=STATIC_APP_DIR, html=True), name="static_app")
+    else:
+
+        async def app_not_built(request: Request) -> Response:
+            return Response(APP_NOT_BUILT_HINT + "\n", status_code=404, media_type="text/plain")
+
+        app.add_route(APP_PREFIX, app_not_built, include_in_schema=False)
+        app.add_route(f"{APP_PREFIX}/{{path:path}}", app_not_built, include_in_schema=False)
     app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")
 
     return app

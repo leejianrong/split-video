@@ -1,0 +1,25 @@
+/* Scaffold tokens (SPL-59). Region sizes are the wireframe sizes from docs/ux-spec.md#layout. */
+:root {
+  --color-bg: #0f1115;
+  --color-surface: #171a21;
+  --color-surface-raised: #1f232c;
+  --color-border: #2c313c;
+  --color-text: #e8eaed;
+  --color-text-muted: #a0a6b2;
+  --color-accent: #2dd4bf;
+  --color-accent-text: #04201c;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+
+  --font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-size-base: 14px;
+
+  --size-topbar-height: 48px;
+  --size-tabrail-width: 72px;
+  --size-panel-width: 308px;
+  --size-inspector-width: 340px;
+  --size-timeline-height: 292px;
+}

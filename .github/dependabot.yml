@@ -15,3 +15,14 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+
+  # The Svelte frontend (docs/adr/0004-frontend-stack-and-structure.md). Dev tooling minor and patch bumps arrive
+  # as one PR; svelte, vite and typescript majors stay separate PRs.
+  - package-ecosystem: "npm"
+    directory: "/frontend"
+    schedule:
+      interval: "weekly"
+    groups:
+      dev-tooling:
+        dependency-type: "development"
+        update-types: ["minor", "patch"]

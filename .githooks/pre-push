@@ -18,5 +18,11 @@ uv run python scripts/export_edit_plan_schema.py --check
 uv run python scripts/export_edit_ops_schema.py --check
 uv run python scripts/export_error_catalogue.py --check
 
+# Cheap frontend gate (a few seconds), only for contributors who installed the frontend dependencies.
+if [ -d frontend/node_modules ]; then
+    echo "pre-push: running frontend lint and check..."
+    (cd frontend && npm run lint && npm run check)
+fi
+
 echo "pre-push: running unit tests..."
 uv run pytest tests/unit

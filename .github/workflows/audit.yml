@@ -1,13 +1,14 @@
 name: Dependency audit
 
-# Scans the locked dependencies for known vulnerabilities (PyPI advisory database, via pip-audit).
+# Scans the locked dependencies for known vulnerabilities (PyPI advisory database via pip-audit; the npm
+# registry's via `npm audit` for the frontend's runtime dependencies).
 # Kept out of ci.yml on purpose: a new advisory against an unchanged lockfile must not turn every
 # unrelated PR red, and this job is not a required check. It runs when the dependencies change, weekly
 # (to catch advisories published later) and on demand. Dependabot alerts are the other half of this:
 # they open the update PRs; this is the red/green signal a PR author sees.
 on:
   pull_request:
-    paths: [uv.lock, pyproject.toml, .github/workflows/audit.yml]
+    paths: [uv.lock, pyproject.toml, frontend/package-lock.json, .github/workflows/audit.yml]
   schedule:
     - cron: "17 5 * * 1"
   workflow_dispatch:
@@ -34,3 +35,18 @@ jobs:
 
       - name: pip-audit
         run: uvx pip-audit==2.9.0 -r requirements-audit.txt --no-deps --disable-pip --progress-spinner off
+
+  npm-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: frontend/.nvmrc
+
+      # Runtime dependencies only: dev tooling never reaches the image or the package.
+      - name: npm audit
+        working-directory: frontend
+        run: npm audit --omit=dev

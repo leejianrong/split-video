@@ -16,12 +16,18 @@ is the quick layer. A few tests exercise real YAMNet inference and skip
 automatically if you haven't run `make fetch-model`. Set
 `SPLIT_VIDEO_LONG_TESTS=1` to also run the 3-hour classification check.
 
+## Frontend
+
+The Svelte app lives in `frontend/` and needs Node 24 (`frontend/.nvmrc`); see
+[docs/frontend.md](docs/frontend.md). Before a PR that touches it run `npm run lint`, `npm run check`,
+`npm run test` and `npm run build` there (CI's `frontend` job does the same).
+
 ## Pre-push hook
 
 A git hook mirrors the cheap parts of CI before every push: `ruff check`,
 `ruff format --check`, the generated-file drift checks (`openapi.json`, the
 two schemas in `docs/schemas/`, `docs/errors.md`; fix with
-`make openapi schemas errors`) and `tests/unit` (about 3 minutes; it needs
+`make openapi schemas errors`) `npm run lint` and `npm run check` in `frontend/` when `frontend/node_modules` exists, and `tests/unit` (about 3 minutes; it needs
 `ffmpeg` on the PATH, like the rest of the suite). Install it once per clone:
 
 ```bash
@@ -43,4 +49,6 @@ git tag -a vX.Y.Z -m "X.Y.Z"
 git push origin vX.Y.Z
 ```
 
-Pushing a `vX.Y.Z` tag additionally publishes `:X.Y.Z` and `:X.Y` images.
+Pushing a `vX.Y.Z` tag additionally publishes `:X.Y.Z` and `:X.Y` images (the Docker build includes the
+frontend). A wheel or sdist built by hand needs `npm ci && npm run build` in `frontend/` first; check it with
+`scripts/check_wheel_contents.py` ([docs/frontend.md](docs/frontend.md#packaging)).

@@ -40,3 +40,8 @@ wheels/
 *.split-video-project.json.lock
 *.split-video-timeline.json.lock
 .split-video-locks/
+
+# Built frontend (npm run build in frontend/); see docs/frontend.md. Never committed; the Docker build and the
+# release job produce it.
+/src/split_video/editor/static_app/
+node_modules/
