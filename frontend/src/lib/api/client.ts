@@ -64,10 +64,10 @@ export function toApiError(body: unknown, status: number): ApiError {
   const fallbackMessage =
     status > 0 ? `The server answered with HTTP ${status}.` : 'The server could not be reached.';
   if (!isRecord(body)) {
+    // A non-JSON body (a proxy's HTML error page, an empty reply) is not worth showing; the status says enough.
     return new ApiError({
       code: status > 0 ? 'unknown' : 'network',
-      message:
-        str(body) && status > 0 ? `HTTP ${status}: ${String(body).slice(0, 200)}` : fallbackMessage,
+      message: fallbackMessage,
       status,
     });
   }
