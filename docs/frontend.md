@@ -1,8 +1,44 @@
 # The new editor frontend (scaffold)
 
 The editor is being rebuilt as one Svelte 5 app (decisions: [ADR 0004](adr/0004-frontend-stack-and-structure.md),
-layout contract: [ux-spec.md](ux-spec.md)). Today it is a scaffold: the six regions of the shell as empty frames,
-labelled as such, served at **`/app/`**. The old editor at `/` and `/compose.html` is unchanged.
+layout contract: [ux-spec.md](ux-spec.md)). Today it has the shell (top bar, tab rail and panel, preview, inspector, timeline), a start page and a library, with
+empty panels, served at **`/app/`**. The old editor at `/` and `/compose.html` is unchanged.
+
+## Views and the shell
+
+One hash selects the view ([ADR 0004, Routing](adr/0004-frontend-stack-and-structure.md#routing)); there is no router
+library. `lib/state/route.ts` parses and formats it, and is the only code that reads `location`:
+
+| Hash | View |
+|---|---|
+| `#/` | Start: "Add your recording" (opens the library, or the video the server was started on) and the goal list |
+| `#/library`, `#/library/<folder>` | Library: folders and videos from `GET /api/v1/browse`; loading, error and empty states |
+| `#/p/<project id>` | The editor. The id is the video's path; `POST /api/v1/open` loads it (the timeline project, ADR 0003) |
+
+A reload on `#/p/<id>` opens the same project again; an unknown id shows an error page with a way back to the library.
+Leaving the editor closes the project in `lib/state/project.svelte.ts`, so the next open reads it fresh (it holds the
+project and the server revision it was read at; load only until the edit cards land).
+
+The editor shell is `lib/shell/EditorShell.svelte`, a CSS grid of the ux-spec regions (1440 x 900 sizes in brackets):
+
+| Region | Element | Size |
+|---|---|---|
+| Top bar | `header` (`data-region="top-bar"`) | 48 px high, fixed |
+| Tab rail | `nav` inside `Tabs variant="rail"` | 72 px wide, fixed; Media, Highlights, Transcript, Text, Captions, Audio, Effects |
+| Left panel | the tab's `tabpanel` | 260 to 480 px (308) |
+| Preview | `main` | the rest, never under 480 px (720) |
+| Inspector | `aside` | 280 to 440 px (340) |
+| Timeline | `section` | 200 px to 60% of the window height (292), full width at the bottom |
+
+Below 1280 px wide the editor shows a "window too small" notice instead of the grid. The regions hold no logic; panel
+contents, preview, inspector controls and timeline lanes come in later cards.
+
+**Resizing.** A `ResizeHandle` sits on the panel's right edge, the inspector's left edge and the timeline's top edge
+(an ARIA window splitter: `role="separator"`, `aria-valuenow/min/max`). Drag it, or focus it and use the arrow keys
+(10 px, Shift 50 px), Home and End for the limits; double click or Enter resets that region. Limits live in
+`lib/state/layout.ts` (a test keeps them equal to the `--size-*` tokens). When the window narrows, the panel shrinks
+first, then the inspector, so the preview keeps 480 px. Sizes and the selected tab persist in `localStorage` under
+`split-video.layout.v1` (try/catch; the layout works without it) and never go in the project.
 
 ## Docker
 

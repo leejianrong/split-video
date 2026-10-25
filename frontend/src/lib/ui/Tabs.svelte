@@ -1,13 +1,18 @@
 <script lang="ts" module>
+  import type { IconName } from './icons/Icon.svelte';
+
   export interface TabItem {
     id: string;
     label: string;
     disabled?: boolean;
+    /** Shown above the label in the `rail` variant. */
+    icon?: IconName;
   }
 </script>
 
 <script lang="ts">
   import type { Snippet } from 'svelte';
+  import Icon from './icons/Icon.svelte';
 
   // tablist / tab / tabpanel with a roving tabindex: Tab enters the selected tab, the arrow keys move and select
   // (Left/Right, or Up/Down when vertical), Home and End jump. Only the selected panel's content is rendered.
@@ -16,10 +21,25 @@
     selected: string;
     label: string;
     orientation?: 'horizontal' | 'vertical';
+    /**
+     * `rail` is the editor's left column: a fixed-width vertical strip of icon-over-label tabs inside a
+     * `<nav>`, with the panel filling the rest of the height. Needs `orientation="vertical"`.
+     */
+    variant?: 'default' | 'rail';
+    /** `data-region` values for the tab list and the panel (the shell names its regions this way). */
+    regions?: { list?: string; panel?: string };
     panel: Snippet<[string]>;
   };
 
-  let { tabs, selected = $bindable(), label, orientation = 'horizontal', panel }: Props = $props();
+  let {
+    tabs,
+    selected = $bindable(),
+    label,
+    orientation = 'horizontal',
+    variant = 'default',
+    regions,
+    panel,
+  }: Props = $props();
 
   const uid = $props.id();
   const tabId = (id: string) => `tab-${uid}-${id}`;
@@ -61,8 +81,14 @@
   }
 </script>
 
-<div class="tabs {orientation}">
-  <div class="list" role="tablist" aria-label={label} aria-orientation={orientation}>
+{#snippet list()}
+  <div
+    class="list"
+    role="tablist"
+    aria-label={label}
+    aria-orientation={orientation}
+    data-region={variant === 'default' ? regions?.list : undefined}
+  >
     {#each tabs as tab (tab.id)}
       <button
         bind:this={buttons[tab.id]}
@@ -75,10 +101,21 @@
         disabled={tab.disabled}
         class:selected={selected === tab.id}
         onclick={() => (selected = tab.id)}
-        onkeydown={(e) => onkeydown(e, tab.id)}>{tab.label}</button
+        onkeydown={(e) => onkeydown(e, tab.id)}
+        >{#if variant === 'rail' && tab.icon}<Icon name={tab.icon} size={20} />{/if}<span
+          >{tab.label}</span
+        ></button
       >
     {/each}
   </div>
+{/snippet}
+
+<div class="tabs {orientation} {variant}">
+  {#if variant === 'rail'}
+    <nav aria-label={label} data-region={regions?.list}>{@render list()}</nav>
+  {:else}
+    {@render list()}
+  {/if}
   {#each tabs as tab (tab.id)}
     <div
       role="tabpanel"
@@ -87,6 +124,7 @@
       hidden={selected !== tab.id}
       tabindex="0"
       class="panel"
+      data-region={regions?.panel}
     >
       {#if selected === tab.id}{@render panel(tab.id)}{/if}
     </div>
@@ -141,6 +179,53 @@
 
   .panel {
     padding: var(--space-3);
+  }
+
+  /* Rail variant: the editor's left column (ux-spec #layout). The rail is 72 px, the panel takes the rest. */
+  .rail {
+    display: flex;
+    gap: 0;
+    height: 100%;
+  }
+  .rail nav {
+    flex: none;
+    width: var(--size-tabrail-width);
+    border-right: 1px solid var(--color-border);
+    background: var(--color-surface);
+    overflow-y: auto;
+  }
+  .rail .list {
+    flex-direction: column;
+    gap: var(--space-0);
+    height: 100%;
+    padding: var(--space-2) 0;
+    border: 0;
+  }
+  .rail button {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-1);
+    /* 58 px in the wireframe; shrinks to keep all seven tabs visible in a 720 px window. */
+    flex: 0 1 58px;
+    min-height: 44px;
+    padding: 0;
+    border-left: 2px solid transparent;
+    font-size: var(--font-size-xs);
+    text-align: center;
+  }
+  .rail button.selected {
+    color: var(--color-accent);
+    border-color: var(--color-accent);
+    background: var(--color-surface-raised);
+  }
+  .rail .panel {
+    flex: 1;
+    min-width: 0;
+    padding: 0;
+    overflow: auto;
+    background: var(--color-surface);
   }
   .panel[hidden] {
     display: none;
