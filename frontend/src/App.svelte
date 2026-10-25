@@ -1,5 +1,12 @@
 <script lang="ts">
+  import { registerAction } from './lib/a11y/dispatcher';
   import ServerStatus from './lib/shell/ServerStatus.svelte';
+  import { ui } from './lib/state/ui.svelte';
+  import ShortcutHelp from './lib/ui/ShortcutHelp.svelte';
+  import ToastHost from './lib/ui/ToastHost.svelte';
+
+  // `?` opens and closes the shortcut list (docs/ux-spec.md#shortcuts); the first action wired through the registry.
+  $effect(() => registerAction('help.toggle', () => void (ui.helpOpen = !ui.helpOpen)));
 </script>
 
 <!--
@@ -10,6 +17,7 @@
   <header class="topbar" data-region="top-bar">
     <strong>split-video</strong>
     <span class="scaffold">Scaffold: the new editor shell (SPL-59). No features yet.</span>
+    <span class="hint">Press <kbd>?</kbd> for shortcuts</span>
     <ServerStatus />
   </header>
   <nav class="tabrail" data-region="tab-rail" aria-label="Tabs">Tab rail</nav>
@@ -18,6 +26,10 @@
   <aside class="inspector" data-region="inspector" aria-label="Inspector">Inspector</aside>
   <section class="timeline" data-region="timeline" aria-label="Timeline">Timeline</section>
 </div>
+
+<!-- Overlays sit outside the grid so the region boxes stay as the wireframe has them. -->
+<ShortcutHelp />
+<ToastHost />
 
 <style>
   .shell {
@@ -51,6 +63,10 @@
 
   .scaffold {
     color: var(--color-text-muted);
+  }
+
+  .hint {
+    font-size: var(--font-size-sm);
   }
 
   .tabrail {

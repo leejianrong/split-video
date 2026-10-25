@@ -81,6 +81,36 @@ Things to know about the output:
 
 The top bar's server status line (`lib/shell/ServerStatus.svelte`) calls `GET /api/v1/whoami` through this client.
 
+## Components, tokens and shortcuts
+
+The look is a set of CSS custom properties in `frontend/src/lib/styles/tokens.css` (colour, spacing, radii, type,
+z-index, focus ring, region sizes). Dark theme only ([ux-spec decision 10](ux-spec.md#decisions)), but every colour
+is a token, so a second theme is a second set of values. Components use tokens and nothing else: a Vitest test fails
+on a hard-coded colour under `src/lib`, and `contrast.test.ts` checks every text and control pair for WCAG AA. Add a
+pair there when a component uses a new one.
+
+The base components are in `frontend/src/lib/ui/`: `Button` (primary, secondary, ghost, danger; sm, md, lg),
+`IconButton` (needs a `label`, shows it and its shortcut in a `Tooltip`), `Slider`, `Panel`, `Dialog` (native
+`<dialog>`: focus trap, Escape, focus returns to the opener), `ToastHost` with the `toasts` store (polite live region;
+errors stay until dismissed), `Tooltip`, `Tabs`, `TextField`, `Select`, `Checkbox`, `ShortcutHelp` (the `?` overlay)
+and a small `Icon` set.
+
+**Dev page:** open `/app/#/dev` (or `http://localhost:5173/app/#/dev` under `make frontend-dev`). It shows every
+component, variant and state, toast and dialog triggers, the shortcut list and a table of the tokens. It is not linked
+from the shell and is a separate chunk, so the normal page does not load it. Add a component there in the same PR.
+
+**Shortcuts** are data in `frontend/src/lib/a11y/shortcuts.ts`, and are exactly the table in
+[ux-spec.md#shortcuts](ux-spec.md#shortcuts); a test parses that table and fails if either side drifts. To add one:
+
+1. add the row to the ux-spec table;
+2. add the entry to `SHORTCUTS` (id, `keys` and `label` as in the table, group, `when`);
+3. in the component that owns the behaviour, call `registerAction('your.id', handler)` from an `$effect` (it returns
+   the function that unregisters). A second handler for the same id throws.
+
+One `keydown` listener (`a11y/dispatcher.ts`) does the dispatch. It skips text fields except Escape and Ctrl/Cmd
+combinations (undo, redo and select all stay with the field), maps Ctrl to Cmd on macOS, and an open `Dialog` switches
+the editor shortcuts off. `announce(message)` in `a11y/announce.ts` speaks a message through a polite live region.
+
 ## Caching
 
 Vite content-hashes everything under `/app/assets/`, so those files are served `public, max-age=31536000,

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Button from '../ui/Button.svelte';
   import { ApiError, whoamiApiV1WhoamiGet, type WhoAmIOut } from '../api/client';
 
   // The top bar's status line. GET /api/v1/whoami is the lightest real endpoint: it answers without a project
@@ -39,7 +40,7 @@
   {:else}
     <span class="dot bad" aria-hidden="true"></span>
     <span class="error" title={state.fix}>Server unreachable: {state.message}</span>
-    <button type="button" onclick={load}>Retry</button>
+    <Button size="sm" onclick={load}>Retry</Button>
   {/if}
 </span>
 
@@ -60,11 +61,11 @@
   }
 
   .dot.ok {
-    background: #3fb950;
+    background: var(--color-ok);
   }
 
   .dot.bad {
-    background: #f85149;
+    background: var(--color-danger);
   }
 
   .error {
