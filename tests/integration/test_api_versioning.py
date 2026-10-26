@@ -25,6 +25,8 @@ NO_LEGACY_ALIAS = {
     "/api/v1/assets/{asset_id}/split",
     "/api/v1/project/timeline",
     "/api/v1/project/clips",
+    "/api/v1/project/ops",
+    "/api/v1/assets/{asset_id}/waveform",
     "/api/v1/assets/{asset_id}/proxy",
     "/api/v1/assets/{asset_id}/thumbnails",
     "/api/v1/assets/{asset_id}/thumbnails/info",

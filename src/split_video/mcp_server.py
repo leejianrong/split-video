@@ -28,6 +28,7 @@ from __future__ import annotations
 import functools
 import inspect
 import json
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -485,10 +486,23 @@ def create_server(
         return timeline_result(name, await run(timeline_service.create_project, store, name))
 
     @server.tool(annotations=_READ_ONLY)
-    async def show_timeline(name: str) -> dict[str, Any]:
-        """The timeline's tracks and clips: sources, in/out points, where each starts, transitions."""
-        project_ = await run(lambda: timeline_service.load_existing(store, name, media))
-        return timeline_result(name, project_)
+    async def show_timeline(name: str | None = None, video: str | None = None) -> dict[str, Any]:
+        """The timeline's tracks and clips: sources, in/out points, where each starts, transitions. Give the
+        project's `name`, or `video` (a recording in the workspace) for that recording's own timeline, the one the
+        editor shows: its clip ids and `revision` are what apply_ops (with the same `video`) edits."""
+        if (name is None) == (video is None):
+            raise ValueError("give exactly one of name (a timeline project) and video (a recording)")
+
+        def load() -> tuple[str, Any]:
+            if name is not None:
+                return name, timeline_service.load_existing(store, name, media)
+            source = resolve(video or "")
+            return source, replace(
+                project.video_timeline(store, media, source), revision=project.current_revision(store, source)
+            )
+
+        label, project_ = await run(load)
+        return timeline_result(label, project_)
 
     @server.tool(annotations=_READ_ONLY)
     async def list_assets() -> dict[str, Any]:
@@ -996,13 +1010,15 @@ def create_server(
         dry_run: bool = False,
         base_revision: int | None = None,
         continue_on_error: bool = False,
+        video: str | None = None,
     ) -> dict[str, Any]:
         """Edit an EXISTING timeline with a BATCH of operations, all or none, in one call (and try it first with
         `dry_run=true`, which writes nothing and returns the resulting project as `timeline`). `ops` is the document
         `{"schema_version": 1, "project": "<name>", "ops": [{"op": "add_clip", "id": "c1", "asset": "a_...", "in": 0,
         "out": 10}, {"op": "set_transition", "clip": "c1", "transition": "crossfade", "duration": 1}, ...]}`; the ops
         are add_clip, trim_clip, move_clip, remove_clip, set_transition, set_clip_properties (incl. `crop`), add_text_clip,
-        set_text_properties, add_track, remove_track, move_track, place_clip; call get_edit_ops_schema for every field
+        set_text_properties, add_track, remove_track, move_track, place_clip, set_track_flags (lock, hide or mute a
+        track); call get_edit_ops_schema for every field
         (strict: unknown ops and fields are errors). Clips and tracks are addressed by id (show_timeline lists them);
         give a creating op (add_clip, add_text_clip, add_track) an `id` and later ops in the batch can use it. Indexes
         are zero-based. The ops run in order on an in-memory copy and are saved once only if every one succeeds; the
@@ -1011,12 +1027,28 @@ def create_server(
         `base_revision` (from show_timeline) fails with revision_conflict, writing nothing, if the timeline has moved
         on. A tool error for an invalid batch carries the report as JSON `{"error": "ops_invalid", "errors":
         [{"path": "/ops/3", "code": "ops.clip.not_found", "message", "hint"}], "applied", "results"}`. Returns project,
-        revision, applied, per-op results with the ids they touched, the per-track summary and warnings."""
-        return await run(
-            lambda: edit_ops.apply_ops(
-                media, store, ops, dry_run=dry_run, base_revision=base_revision, continue_on_error=continue_on_error
+        revision, applied, per-op results with the ids they touched, the per-track summary and warnings.
+        With `video` (a recording in the workspace) the batch edits THAT video's own timeline, the one the editor
+        shows, instead of a named project: `project` may then be left out of `ops`, and the clip ids are the ones
+        show_video_timeline lists (the editor's own edits: trim, move, lane toggles)."""
+
+        def apply() -> dict[str, Any]:
+            if video is None:
+                return edit_ops.apply_ops(
+                    media, store, ops, dry_run=dry_run, base_revision=base_revision, continue_on_error=continue_on_error
+                )
+            source = resolve(video)
+            return edit_ops.apply_ops(
+                media,
+                store,
+                edit_ops.with_project(ops, source),
+                dry_run=dry_run,
+                base_revision=base_revision,
+                continue_on_error=continue_on_error,
+                target=project.video_ops_target(store, media, source),
             )
-        )
+
+        return await run(apply)
 
     @server.tool(annotations=_READ_ONLY)
     async def get_edit_ops_schema() -> dict[str, Any]:

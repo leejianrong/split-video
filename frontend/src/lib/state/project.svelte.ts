@@ -1,6 +1,7 @@
 import {
   addAssetClipApiV1ProjectClipsPost,
   ApiError,
+  applyVideoOpsApiV1ProjectOpsPost,
   getVideoTimelineApiV1ProjectTimelineGet,
   ifMatch,
   openFileApiV1OpenPost,
@@ -147,6 +148,25 @@ export class ProjectStore {
         body: { asset: assetId, index: index ?? null },
         ...match,
       });
+      return data;
+    });
+  }
+
+  /**
+   * Apply edit operations (docs/edit-ops.md: `trim_clip`, `move_clip`, `place_clip`, `set_track_flags`, `add_clip`, ...)
+   * to the video's timeline, atomically, based on the revision we hold, then read the timeline again. Every edit of
+   * the timeline UI goes through here, so history (undo) can wrap this one function later. Resolves with whether it
+   * applied; on a refusal `editError` carries the engine's message and fix.
+   */
+  applyOps(ops: readonly Record<string, unknown>[]): Promise<boolean> {
+    const id = this.id;
+    return this.edit(async (match) => {
+      await applyVideoOpsApiV1ProjectOpsPost({
+        query: { path: id ?? '' },
+        body: { schema_version: 1, ops: [...ops] },
+        ...match,
+      });
+      const { data } = await getVideoTimelineApiV1ProjectTimelineGet({ query: { path: id ?? '' } });
       return data;
     });
   }

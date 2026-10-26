@@ -408,6 +408,62 @@
         "title": "AssetOut",
         "type": "object"
       },
+      "AssetWaveformOut": {
+        "properties": {
+          "asset": {
+            "title": "Asset",
+            "type": "string"
+          },
+          "duration": {
+            "title": "Duration",
+            "type": "number"
+          },
+          "loudness": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Loudness",
+            "type": "array"
+          },
+          "loudness_window": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Loudness Window"
+          },
+          "peaks": {
+            "items": {
+              "maxItems": 2,
+              "minItems": 2,
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array"
+            },
+            "title": "Peaks",
+            "type": "array"
+          }
+        },
+        "required": [
+          "asset",
+          "duration",
+          "peaks",
+          "loudness_window",
+          "loudness"
+        ],
+        "title": "AssetWaveformOut",
+        "type": "object"
+      },
       "AtOut": {
         "description": "What is happening around a time (`time_index.what_is_happening`, version 1).",
         "properties": {
@@ -854,6 +910,17 @@
             "default": "",
             "title": "Label",
             "type": "string"
+          },
+          "label_color": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label Color"
           },
           "muted": {
             "title": "Muted",
@@ -4816,6 +4883,11 @@
             "title": "Clips",
             "type": "array"
           },
+          "hidden": {
+            "default": false,
+            "title": "Hidden",
+            "type": "boolean"
+          },
           "id": {
             "title": "Id",
             "type": "string"
@@ -4824,8 +4896,18 @@
             "title": "Kind",
             "type": "string"
           },
+          "locked": {
+            "default": false,
+            "title": "Locked",
+            "type": "boolean"
+          },
           "magnetic": {
             "title": "Magnetic",
+            "type": "boolean"
+          },
+          "muted": {
+            "default": false,
+            "title": "Muted",
             "type": "boolean"
           }
         },
@@ -5404,6 +5486,19 @@
           "buckets"
         ],
         "title": "WaveformResponse",
+        "type": "object"
+      },
+      "WaveformStartResponse": {
+        "properties": {
+          "job_id": {
+            "title": "Job Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "job_id"
+        ],
+        "title": "WaveformStartResponse",
         "type": "object"
       },
       "WhoAmIOut": {
@@ -9115,6 +9210,144 @@
           }
         },
         "summary": "Search Transcript"
+      }
+    },
+    "/api/v1/assets/{asset_id}/waveform": {
+      "get": {
+        "description": "The stored waveform of the asset: peaks and the loudness curve (see the module description). Never\ndecodes audio. 404 until a `waveform` job has run (or after the file changed), and for an asset without audio.",
+        "operationId": "get_waveform_api_v1_assets__asset_id__waveform_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "asset_id",
+            "required": true,
+            "schema": {
+              "title": "Asset Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetWaveformOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedOut"
+                }
+              }
+            },
+            "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
+          }
+        },
+        "summary": "Get Waveform"
+      },
+      "post": {
+        "description": "Queue making the asset's waveform (peaks and loudness). The job's result is\n`{asset, buckets, loudness_windows}`; read it with `GET /assets/{id}/waveform`. 422 for an asset without audio.",
+        "operationId": "start_waveform_api_v1_assets__asset_id__waveform_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "asset_id",
+            "required": true,
+            "schema": {
+              "title": "Asset Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WaveformStartResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedOut"
+                }
+              }
+            },
+            "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
+          }
+        },
+        "summary": "Start Waveform"
       }
     },
     "/api/v1/browse": {
@@ -12989,6 +13222,127 @@
           }
         },
         "summary": "Add Asset Clip"
+      }
+    },
+    "/api/v1/project/ops": {
+      "post": {
+        "description": "Apply a batch of timeline edits (see `POST /compose/projects/{name}/ops`) to the video's own timeline,\natomically: every op or none, saved once, with the caller's `If-Match` revision. `project` may be left out\nof the body; if given it must be the `path`. A video with nothing saved is first its recording as one\nclip. 422 carries the report (a locked track is `ops.track.locked`), 409 a stale revision.",
+        "operationId": "apply_video_ops_api_v1_project_ops_post",
+        "parameters": [
+          {
+            "description": "The video's path relative to the browse root (the project id the editor opens).",
+            "in": "query",
+            "name": "path",
+            "required": true,
+            "schema": {
+              "description": "The video's path relative to the browse root (the project id the editor opens).",
+              "title": "Path",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "dry_run",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Dry Run",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "The project revision this change is based on, as an integer, bare or quoted (`If-Match: \"3\"`). If the project has moved on, the request fails with 409 `revision_conflict` and nothing is written. Omit it to apply the change to the latest version.",
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The project revision this change is based on, as an integer, bare or quoted (`If-Match: \"3\"`). If the project has moved on, the request fails with 409 `revision_conflict` and nothing is written. Omit it to apply the change to the latest version.",
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "description": "An ops document; GET /api/v1/schemas/edit-ops is its JSON Schema.",
+                "title": "Ops"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpsResultOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedOut"
+                }
+              }
+            },
+            "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RevisionConflictOut"
+                }
+              }
+            },
+            "description": "`If-Match` didn't match the project's current revision (`error` is `revision_conflict`). Other 409s on some routes (output file or project already exists) have only `detail`."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpsInvalidOut"
+                }
+              }
+            },
+            "description": "The batch has problems; they are in `errors`. Nothing was written."
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
+          }
+        },
+        "summary": "Apply Video Ops"
       }
     },
     "/api/v1/project/timeline": {

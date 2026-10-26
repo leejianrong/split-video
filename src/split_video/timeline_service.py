@@ -340,6 +340,24 @@ def move_track(
     )
 
 
+def set_track_flags(
+    store: ProjectStore,
+    name: str,
+    track_id: str,
+    *,
+    locked: bool | None = None,
+    hidden: bool | None = None,
+    muted: bool | None = None,
+    media: MediaStore | None = None,
+    base_revision: int | None = None,
+) -> Project:
+    """Lock, hide or mute a track (the lane header toggles); a flag left as None is unchanged."""
+    return edit(
+        store, name, lambda p: timeline_ops.set_track_flags(p, track_id, locked=locked, hidden=hidden, muted=muted),
+        media, base_revision=base_revision,
+    )  # fmt: skip
+
+
 def remove_track(
     store: ProjectStore, name: str, track_id: str, media: MediaStore | None = None, *, base_revision: int | None = None
 ) -> Project:

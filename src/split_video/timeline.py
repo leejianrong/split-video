@@ -35,6 +35,9 @@ from split_video.media_store import MediaOutsideRootError, MediaStore
 # when it is not the full frame, and a file without it loads with the full-frame default
 # (an older build ignores the key it doesn't know). No migration is needed in either direction.
 #
+# Track flags (SPL-65): a track's optional `locked`, `hidden` and `muted` (lane header toggles) are written only when
+# true, so the version stays 2 and an older build ignores them.
+#
 # Split metadata (SPL-116) is the same kind of change: a clip's optional `label`, `label_color`, `included`
 # (written only when false) and `export_name` hold what a split project's segment had. The version stays 2.
 FORMAT_VERSION = 2
@@ -128,6 +131,11 @@ class Track:
     # video track). Other tracks place clips at any start time; clips on one
     # track may not overlap. Files from before this field load as magnetic.
     magnetic: bool = True
+    # Lane toggles (ux-spec #timeline). `locked`: no edit may touch the track's clips. `hidden`: a video track is not
+    # drawn in the preview or the export (never the main track). `muted`: its audio is not heard. All off by default.
+    locked: bool = False
+    hidden: bool = False
+    muted: bool = False
 
     @property
     def end(self) -> float:
@@ -196,6 +204,9 @@ def to_dict(project: Project) -> dict[str, Any]:
                 "id": t.id,
                 "kind": t.kind,
                 "magnetic": t.magnetic,
+                **({"locked": True} if t.locked else {}),
+                **({"hidden": True} if t.hidden else {}),
+                **({"muted": True} if t.muted else {}),
                 "clips": [
                     {
                         "id": c.id,
@@ -283,7 +294,17 @@ def from_dict(data: dict[str, Any]) -> Project:
             )
             for c in t.get("clips", [])
         )
-        tracks.append(Track(id=str(t["id"]), kind=kind, clips=clips, magnetic=bool(t.get("magnetic", True))))
+        tracks.append(
+            Track(
+                id=str(t["id"]),
+                kind=kind,
+                clips=clips,
+                magnetic=bool(t.get("magnetic", True)),
+                locked=bool(t.get("locked", False)),
+                hidden=bool(t.get("hidden", False)),
+                muted=bool(t.get("muted", False)),
+            )
+        )
     return Project(tracks=tuple(tracks))
 
 

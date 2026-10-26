@@ -92,6 +92,11 @@ open as they were: their clips are linked automatically, and the first edit
 (or `compose migrate mix`) rewrites the file in the new format. A clip whose
 file is missing stays in the project and is linked once the file is back.
 
+**Lane toggles.** A track can be locked, hidden or muted (the timeline editor's lane headers): `apply-ops` with
+`set_track_flags` (`locked`, `hidden`, `muted`). A locked track refuses every edit of its clips (`track.locked`); a hidden
+video track and a muted track are left out of the render (a muted track is silent), the main video track cannot be hidden.
+They are saved on the track as optional `locked`, `hidden`, `muted` (written only when on), so the file version stays 2.
+
 Other commands: `list`, `assets`, `migrate`, `trim`, `move` (reorder the main track), `place`
 (move a clip in time or to another track), `remove`, `remove-track`,
 `move-track`, `set-text`. Text needs a TrueType font: the Docker image has one;

@@ -223,6 +223,13 @@ _register(
     "Pick an asset with a video stream (`list_assets` shows has_video), or use an audio-only operation.",
 )
 
+_register(
+    "track.locked",
+    "The track is locked (the lock toggle of its lane), so its clips cannot be edited.",
+    "Unlock it first: `apply_ops` with `set_track_flags` and `locked: false` (the lock button on the lane header in "
+    "the editor), then repeat the edit.",
+)
+
 # --- imports --------------------------------------------------------------------------------------------------------
 
 _register(
@@ -602,6 +609,7 @@ _BY_REASON = {
     "out_past_end": "time.out_of_range",
     "too_short": "clip.too_short",
     "overlap": "clip.overlap",
+    "track_locked": "track.locked",
 }
 
 

@@ -74,12 +74,16 @@ export function toApiError(body: unknown, status: number): ApiError {
   }
   const details = isRecord(body.details) ? body.details : null;
   const current = body.current_revision ?? details?.current_revision;
+  // An edit batch the engine refused (422 `ops.invalid`): the first problem says what is wrong and what to do.
+  const problem = Array.isArray(body.errors) && isRecord(body.errors[0]) ? body.errors[0] : null;
+  const hint = problem ? str(problem.hint) : undefined;
   return new ApiError({
     code: str(body.code) ?? str(body.error) ?? 'unknown',
-    message: str(body.message) ?? str(body.detail) ?? fallbackMessage,
-    fix: str(body.fix),
+    message:
+      (problem && str(problem.message)) ?? str(body.message) ?? str(body.detail) ?? fallbackMessage,
+    fix: problem ? (hint ? `Fix: ${hint}` : str(body.fix)) : str(body.fix),
     status,
-    details,
+    details: problem ? { ...details, problem: String(problem.code ?? '') } : details,
     currentRevision: typeof current === 'number' ? current : null,
   });
 }

@@ -2,7 +2,7 @@
 
 The editor is being rebuilt as one Svelte 5 app (decisions: [ADR 0004](adr/0004-frontend-stack-and-structure.md),
 layout contract: [ux-spec.md](ux-spec.md)). Today it has the shell (top bar, tab rail and panel, preview, inspector, timeline), a start page and a library, the
-Media tab (see [below](#the-media-tab)) and empty panels for the other tabs, served at **`/app/`**. The old editor at `/` and `/compose.html` is unchanged.
+Media tab (see [below](#the-media-tab)), the timeline (see [below](#the-timeline)) and empty panels for the other tabs, served at **`/app/`**. The old editor at `/` and `/compose.html` is unchanged.
 
 ## Views and the shell
 
@@ -195,8 +195,7 @@ install hint). A split saves with the open project's revision and reloads the pr
 Highlights results are only counted for now: the review list is the Highlights tab. Completion and failures are spoken
 through the polite live region (`announce`).
 
-**The timeline region is interim.** `TimelineRegion.svelte` lists the main track's clips (label or file name, length) in
-the first lane and is a drop target; SPL-65 replaces the list with real lanes and keeps the contract below.
+The timeline that shows the result is [below](#the-timeline).
 
 ### Dragging an asset onto the timeline
 
@@ -205,10 +204,45 @@ The payload is defined in `state/dnd.ts` (with `setAssetDrag`, `hasAssetDrag`, `
 - MIME type **`application/x-split-video-asset`**, JSON `{"v":1,"assetId":"a_...","name":"gig.mp4","duration":9668.2}`, plus
   `text/plain` with the file name. `effectAllowed` is `copy`.
 - A target accepts in `dragover` after `hasAssetDrag(event.dataTransfer)` (only the types are readable until the drop) by
-  calling `preventDefault()`, and in `drop` reads `readAssetDrag(event.dataTransfer)` and calls `project.addAsset(assetId)`
-  (optionally an `index`). The keyboard alternative is the card's Enter key and its *Add to timeline* button.
+  calling `preventDefault()`, and in `drop` reads `readAssetDrag(event.dataTransfer)` and adds the asset at the drop position
+  (the timeline does it with `dropOps` and one `project.applyOps`; `project.addAsset(assetId, index)` stays for the Add button). The keyboard alternative is the card's Enter key and its *Add to timeline* button.
 - Files dragged from the computer carry `Files` instead (`hasFileDrag`); the Media panel imports those, the timeline
   ignores them.
+
+## The timeline
+
+`lib/timeline/` implements [ux-spec.md#timeline](ux-spec.md#timeline): lanes with headers, a ruler, the playhead, zoom,
+selection, a filmstrip and waveform on the main track, and drag, trim and keyboard editing. It draws `project.timeline`
+(`GET /project/timeline`) and holds no editing rule: every gesture ends in **one** call, `project.applyOps(ops)`
+(`POST /project/ops`, [edit ops](edit-ops.md) with `If-Match`), and the engine says yes or no. Undo will wrap that one
+function. A stale revision reloads the project and shows "This project changed somewhere else, so your change was not
+applied" (the same path as every edit); a refused edit (a locked lane, an overlap) shows the engine's message and fix.
+
+| Piece | File | Notes |
+|---|---|---|
+| Mapping | `timeline/scale.ts` | Pure: `x = time * pxPerSecond - scrollLeft`, zoom around an anchor, limits (the whole timeline to 400 px/s), the log zoom slider, adaptive ruler ticks (0.05 s to 4 h spacing), `visibleSlice` (two binary searches). |
+| Lanes | `timeline/lanes.ts` | Tracks to rows: overlay and text tracks (latest on top), Main · Video, Main · Audio, then audio tracks ("Music"); a lane exists only with content, except the two main ones. |
+| Edits | `timeline/edits.ts`, `drag.svelte.ts` | Pointer maths to ops: `trim_clip` (clamped to the source, the shortest clip and, on a free track, the neighbours), `move_clip` (main track: the index among the clips by their middles), `place_clip` (free tracks: time and lane of its kind), `add_clip` for a dropped card. One commit on release; Escape cancels. |
+| View | `state/timelineView.svelte.ts` | Zoom and scroll; starts fitted; Ctrl+wheel zooms around the pointer, `+` `-` around the playhead, Shift+Z fits, Shift+wheel scrolls. |
+| Playhead | `state/playhead.svelte.ts` | Click or drag the ruler or the red head; the preview readout follows. The preview does not play yet. |
+| Selection | `state/clipSelection.svelte.ts` | Click, Shift- or Ctrl-click adds, Escape clears; the inspector header names it ("Selected: Song 2, 4 min 12 s"). |
+| Filmstrip | `timeline/thumbs.ts`, `state/thumbs.svelte.ts` | Frames from `GET /assets/{id}/frame` for the visible part of each clip only, on a time grid shared across zoom levels, 4 requests at a time, never the same URL twice; a tile that has not arrived is not drawn. |
+| Waveform | `timeline/waveform.ts`, `state/waveforms.svelte.ts` | From `GET /assets/{id}/waveform` (the server decodes once, as a `waveform` job; "Preparing the waveform..." until then). The finer of the two stored curves is drawn as columns for the visible part. |
+
+**Performance.** Only the clips that touch the screen (plus 240 px) are elements, found with binary searches; ticks, tiles
+and waveform columns are the visible ones; wheel zoom is coalesced to one update per frame. A 3 h project with 108 segments
+has about 500 DOM nodes at any zoom, and a zoom sweep from the fit to the closest level and back keeps every frame under 34 ms.
+
+**Keyboard** (lanes are listboxes of options with a roving tabindex, no `application` role): Left and Right move to the
+previous and next clip and select it, Home and End to the first and last; **Alt+Left/Right** moves the clip (main track:
+one position; other tracks: 0.1 s, or 1 s when zoomed far out); **Shift+Alt+Left/Right** trims the clip's end by the same
+step, and with Ctrl also held its start. The result is spoken ("Moved Song 3 to position 4 of 109", "Trimmed Song 3, now
+1 min 28 s long, starts at 0:04:32"). The ruler is a slider (arrows 1 s, Shift 10 s). The lane header's lock, hide (video
+lanes other than the main one) and mute (audio lanes) buttons are `aria-pressed` toggles and change the track's flags
+through `set_track_flags`.
+
+**Not yet** (later cards): snapping, ripple, undo and redo, split at the playhead, delete, box selection, dragging a cut
+between two segments, double click to rename, a Captions lane (the model has no caption clips), and playback.
 
 ## Caching
 

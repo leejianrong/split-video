@@ -118,6 +118,7 @@ def _samples() -> dict[str, BaseException]:
         "segments.invalid": raised(project.validate_pairs, []),
         "clip.overlap": ops.RuleViolation("overlap", "clip would overlap another clip on the track (until 4s)"),
         "clip.too_short": ops.RuleViolation("too_short", "a clip must be at least 0.1s long"),
+        "track.locked": ops.RuleViolation("track_locked", "track 3f9a is locked; unlock it to edit its clips"),
         "clip.not_found": TimelineError("no clip 9; the track has 2"),
         "timeline.rule_violated": ops.RuleViolation("crossfade_first", "the first clip has nothing to crossfade from"),
         "timeline.invalid": TimelineError("text can't be empty"),

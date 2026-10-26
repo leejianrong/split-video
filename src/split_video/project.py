@@ -34,7 +34,7 @@ from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from typing import Any
 
-from split_video import assets, split_model, timeline_ops, timeline_service
+from split_video import assets, edit_ops, split_model, timeline_ops, timeline_service
 from split_video.editor import classify
 from split_video.editor.cache import ClassificationCache, SilenceCache
 from split_video.errors import ProjectError, RevisionConflictError  # noqa: F401  (re-exported)
@@ -103,6 +103,31 @@ def video_timeline(store: ProjectStore, media: MediaStore, project_id: str) -> P
     return _unified(store, media, project_id, stored, current_segments(store, media, project_id))
 
 
+def _editable(store: ProjectStore, media: MediaStore, project_id: str, stored: Project | None) -> Project:
+    """What `video_timeline` shows for `stored` (inside an update, where `stored` was just read)."""
+    if stored is not None and not split_model.holds_only_recording(stored):
+        return stored
+    return _unified(store, media, project_id, stored, current_segments(store, media, project_id))
+
+
+def video_ops_target(store: ProjectStore, media: MediaStore, project_id: str) -> edit_ops.OpsTarget:
+    """Where `edit_ops.apply_ops` finds the video's own timeline (SPL-65): the same project `video_timeline` shows,
+    read with its revision and saved atomically with `update_video_timeline`, so trim, move, lane flags and the
+    other ops edit a recording's timeline exactly as they edit a named one. A video with nothing saved becomes its
+    recording as one clip first."""
+
+    def load() -> Project:
+        return replace(video_timeline(store, media, project_id), revision=current_revision(store, project_id))
+
+    def update(change: Callable[[Project], Project], base_revision: int | None) -> Project:
+        saved = store.update_video_timeline(
+            project_id, lambda stored: change(_editable(store, media, project_id, stored)), base_revision
+        )
+        return replace(saved.value, revision=saved.revision)
+
+    return edit_ops.OpsTarget(project_id, load, update)
+
+
 def has_project(store: ProjectStore, project_id: str) -> bool:
     return bool(_stored_segments(store, project_id).value)
 
@@ -137,6 +162,13 @@ def _unified(
     return project if media is None else replace(assets.link_project(media, project), revision=0)
 
 
+def _check_main_unlocked(stored: Project | None) -> None:
+    """Split operations rewrite the main track, so a locked one (the lane's lock toggle) refuses them."""
+    index = None if stored is None else split_model.main_track_index(stored)
+    if stored is not None and index is not None:
+        timeline_ops.check_unlocked(stored.tracks[index])
+
+
 def save_segments(
     store: ProjectStore,
     project_id: str,
@@ -147,10 +179,12 @@ def save_segments(
     """Replace the project's segments and return the new revision. With `base_revision`, fails
     with `RevisionConflictError` if the project has moved on since that revision. With `media` the clips are
     linked to the video's asset."""
-    saved = store.update_video_timeline(
-        project_id, lambda stored: _unified(store, media, project_id, stored, segments), base_revision
-    )
-    return saved.revision
+
+    def change(stored: Project | None) -> Project:
+        _check_main_unlocked(stored)
+        return _unified(store, media, project_id, stored, segments)
+
+    return store.update_video_timeline(project_id, change, base_revision).revision
 
 
 def edit_segments(
@@ -166,6 +200,7 @@ def edit_segments(
     is still at that revision. Returns the saved segments and the new revision."""
 
     def apply(stored: Project | None) -> Project:
+        _check_main_unlocked(stored)
         if stored is not None:
             current = split_model.to_segments(stored)
         else:

@@ -263,6 +263,35 @@ export type AssetOut = {
 };
 
 /**
+ * AssetWaveformOut
+ */
+export type AssetWaveformOut = {
+    /**
+     * Asset
+     */
+    asset: string;
+    /**
+     * Duration
+     */
+    duration: number;
+    /**
+     * Loudness
+     */
+    loudness: Array<number>;
+    /**
+     * Loudness Window
+     */
+    loudness_window: number | null;
+    /**
+     * Peaks
+     */
+    peaks: Array<[
+        number,
+        number
+    ]>;
+};
+
+/**
  * AtOut
  *
  * What is happening around a time (`time_index.what_is_happening`, version 1).
@@ -560,6 +589,10 @@ export type ClipOut = {
      * Label
      */
     label?: string;
+    /**
+     * Label Color
+     */
+    label_color?: string | null;
     /**
      * Muted
      */
@@ -3027,6 +3060,10 @@ export type TrackOut = {
      */
     clips: Array<ClipOut>;
     /**
+     * Hidden
+     */
+    hidden?: boolean;
+    /**
      * Id
      */
     id: string;
@@ -3035,9 +3072,17 @@ export type TrackOut = {
      */
     kind: string;
     /**
+     * Locked
+     */
+    locked?: boolean;
+    /**
      * Magnetic
      */
     magnetic: boolean;
+    /**
+     * Muted
+     */
+    muted?: boolean;
 };
 
 /**
@@ -3372,6 +3417,16 @@ export type WaveformResponse = {
         number,
         number
     ]>;
+};
+
+/**
+ * WaveformStartResponse
+ */
+export type WaveformStartResponse = {
+    /**
+     * Job Id
+     */
+    job_id: string;
 };
 
 /**
@@ -5185,6 +5240,90 @@ export type SearchTranscriptApiV1AssetsAssetIdTranscriptSearchGetResponses = {
 };
 
 export type SearchTranscriptApiV1AssetsAssetIdTranscriptSearchGetResponse = SearchTranscriptApiV1AssetsAssetIdTranscriptSearchGetResponses[keyof SearchTranscriptApiV1AssetsAssetIdTranscriptSearchGetResponses];
+
+export type GetWaveformApiV1AssetsAssetIdWaveformGetData = {
+    body?: never;
+    path: {
+        /**
+         * Asset Id
+         */
+        asset_id: string;
+    };
+    query?: never;
+    url: '/api/v1/assets/{asset_id}/waveform';
+};
+
+export type GetWaveformApiV1AssetsAssetIdWaveformGetErrors = {
+    /**
+     * No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN).
+     */
+    401: UnauthorizedOut;
+    /**
+     * The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next.
+     */
+    404: ApiErrorOut;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+    /**
+     * The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next.
+     */
+    501: ApiErrorOut;
+};
+
+export type GetWaveformApiV1AssetsAssetIdWaveformGetError = GetWaveformApiV1AssetsAssetIdWaveformGetErrors[keyof GetWaveformApiV1AssetsAssetIdWaveformGetErrors];
+
+export type GetWaveformApiV1AssetsAssetIdWaveformGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: AssetWaveformOut;
+};
+
+export type GetWaveformApiV1AssetsAssetIdWaveformGetResponse = GetWaveformApiV1AssetsAssetIdWaveformGetResponses[keyof GetWaveformApiV1AssetsAssetIdWaveformGetResponses];
+
+export type StartWaveformApiV1AssetsAssetIdWaveformPostData = {
+    body?: never;
+    path: {
+        /**
+         * Asset Id
+         */
+        asset_id: string;
+    };
+    query?: never;
+    url: '/api/v1/assets/{asset_id}/waveform';
+};
+
+export type StartWaveformApiV1AssetsAssetIdWaveformPostErrors = {
+    /**
+     * No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN).
+     */
+    401: UnauthorizedOut;
+    /**
+     * The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next.
+     */
+    404: ApiErrorOut;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+    /**
+     * The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next.
+     */
+    501: ApiErrorOut;
+};
+
+export type StartWaveformApiV1AssetsAssetIdWaveformPostError = StartWaveformApiV1AssetsAssetIdWaveformPostErrors[keyof StartWaveformApiV1AssetsAssetIdWaveformPostErrors];
+
+export type StartWaveformApiV1AssetsAssetIdWaveformPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: WaveformStartResponse;
+};
+
+export type StartWaveformApiV1AssetsAssetIdWaveformPostResponse = StartWaveformApiV1AssetsAssetIdWaveformPostResponses[keyof StartWaveformApiV1AssetsAssetIdWaveformPostResponses];
 
 export type BrowseApiV1BrowseGetData = {
     body?: never;
@@ -7303,6 +7442,71 @@ export type AddAssetClipApiV1ProjectClipsPostResponses = {
 };
 
 export type AddAssetClipApiV1ProjectClipsPostResponse = AddAssetClipApiV1ProjectClipsPostResponses[keyof AddAssetClipApiV1ProjectClipsPostResponses];
+
+export type ApplyVideoOpsApiV1ProjectOpsPostData = {
+    /**
+     * Ops
+     *
+     * An ops document; GET /api/v1/schemas/edit-ops is its JSON Schema.
+     */
+    body: unknown;
+    headers?: {
+        /**
+         * If-Match
+         *
+         * The project revision this change is based on, as an integer, bare or quoted (`If-Match: "3"`). If the project has moved on, the request fails with 409 `revision_conflict` and nothing is written. Omit it to apply the change to the latest version.
+         */
+        'If-Match'?: string | null;
+    };
+    path?: never;
+    query: {
+        /**
+         * Path
+         *
+         * The video's path relative to the browse root (the project id the editor opens).
+         */
+        path: string;
+        /**
+         * Dry Run
+         */
+        dry_run?: boolean;
+    };
+    url: '/api/v1/project/ops';
+};
+
+export type ApplyVideoOpsApiV1ProjectOpsPostErrors = {
+    /**
+     * No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN).
+     */
+    401: UnauthorizedOut;
+    /**
+     * The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next.
+     */
+    404: ApiErrorOut;
+    /**
+     * `If-Match` didn't match the project's current revision (`error` is `revision_conflict`). Other 409s on some routes (output file or project already exists) have only `detail`.
+     */
+    409: RevisionConflictOut;
+    /**
+     * The batch has problems; they are in `errors`. Nothing was written.
+     */
+    422: OpsInvalidOut;
+    /**
+     * The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next.
+     */
+    501: ApiErrorOut;
+};
+
+export type ApplyVideoOpsApiV1ProjectOpsPostError = ApplyVideoOpsApiV1ProjectOpsPostErrors[keyof ApplyVideoOpsApiV1ProjectOpsPostErrors];
+
+export type ApplyVideoOpsApiV1ProjectOpsPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: OpsResultOut;
+};
+
+export type ApplyVideoOpsApiV1ProjectOpsPostResponse = ApplyVideoOpsApiV1ProjectOpsPostResponses[keyof ApplyVideoOpsApiV1ProjectOpsPostResponses];
 
 export type GetVideoTimelineApiV1ProjectTimelineGetData = {
     body?: never;

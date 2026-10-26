@@ -222,6 +222,14 @@
         <Slider label="Volume" bind:value={volume} min={-60} max={12} format={(v) => `${v} dB`} />
         <Slider label="Zoom" bind:value={zoom} min={1} max={10} step={1} format={(v) => `${v}x`} />
         <Slider label="Disabled" value={30} disabled />
+        <Slider
+          label="Zoom (inline, for a toolbar)"
+          bind:value={zoom}
+          min={1}
+          max={10}
+          step={1}
+          inline
+        />
       </div>
     </section>
 

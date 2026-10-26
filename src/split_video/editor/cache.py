@@ -141,10 +141,15 @@ class WaveformCache:
         with self._lock:
             return self._loudness
 
-    def get_peaks(self) -> WaveformPeaks:
+    def stored_peaks(self) -> WaveformPeaks | None:
+        """The peak envelope if one is stored, else None. Never decodes audio (unlike `get_peaks`)."""
+        with self._lock:
+            return self._peaks
+
+    def get_peaks(self, cancel: CancelToken | None = None) -> WaveformPeaks:
         with self._lock:
             if self._peaks is None:
-                self._compute()
+                self._compute(cancel)
             assert self._peaks is not None
             return self._peaks
 
