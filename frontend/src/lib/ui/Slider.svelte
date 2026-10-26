@@ -10,6 +10,8 @@
     max?: number;
     step?: number;
     format?: (value: number) => string;
+    /** A track only, for a toolbar: the label stays for assistive technology and the readout is dropped. */
+    inline?: boolean;
   };
 
   let {
@@ -19,6 +21,7 @@
     max = 100,
     step = 1,
     format = (v: number) => String(v),
+    inline = false,
     disabled = false,
     id: idProp,
     ...rest
@@ -30,8 +33,8 @@
   const text = $derived(format(value));
 </script>
 
-<div class="slider" class:disabled>
-  <label for={id}>{label}</label>
+<div class="slider" class:disabled class:inline>
+  <label for={id} class:sr-only={inline}>{label}</label>
   <input
     {id}
     type="range"
@@ -44,7 +47,7 @@
     style:--fill="{fill}%"
     {...rest}
   />
-  <output for={id}>{text}</output>
+  <output for={id} class:sr-only={inline}>{text}</output>
 </div>
 
 <style>
@@ -56,6 +59,11 @@
       'track track';
     align-items: baseline;
     gap: var(--space-1) var(--space-3);
+  }
+
+  .inline {
+    grid-template-columns: 1fr;
+    grid-template-areas: 'track';
   }
 
   label {

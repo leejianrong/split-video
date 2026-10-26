@@ -85,8 +85,12 @@ from split_video.editor.schemas import (
     WhoAmIOut,
 )
 from split_video.editor.search import make_router as make_search_router
+from split_video.editor.splits import make_router as make_splits_router
 from split_video.editor.time_index import make_router as make_time_index_router
 from split_video.editor.transcripts import make_router as make_transcripts_router
+from split_video.editor.uploads import make_router as make_uploads_router
+from split_video.editor.video_timeline import make_router as make_video_timeline_router
+from split_video.editor.waveform import make_router as make_waveform_router
 from split_video.errors import RevisionConflictError
 from split_video.identity import LOCAL_PRINCIPAL, Principal
 from split_video.job_work import analysis_summary, analysis_work, export_work
@@ -612,6 +616,9 @@ def create_app(
     # The event stream is new in v1 and has no deprecated alias: it is registered only under /api/v1.
     app.include_router(make_events_router(bus), prefix=API_PREFIX, **guard)
     app.include_router(make_library_router(provider, jobs), prefix=API_PREFIX, **guard)
+    app.include_router(make_uploads_router(provider), prefix=API_PREFIX, **guard)
+    app.include_router(make_splits_router(provider, jobs), prefix=API_PREFIX, **guard)
+    app.include_router(make_video_timeline_router(provider), prefix=API_PREFIX, **guard)
     app.include_router(make_proxies_router(provider, jobs), prefix=API_PREFIX, **guard)
     app.include_router(make_transcripts_router(provider, jobs), prefix=API_PREFIX, **guard)
     app.include_router(make_scenes_router(provider, jobs), prefix=API_PREFIX, **guard)
@@ -621,6 +628,7 @@ def create_app(
     app.include_router(make_media_report_router(provider, jobs), prefix=API_PREFIX, **guard)
     app.include_router(make_highlights_router(provider), prefix=API_PREFIX, **guard)
     app.include_router(make_frames_router(provider), prefix=API_PREFIX, **guard)
+    app.include_router(make_waveform_router(provider, jobs), prefix=API_PREFIX, **guard)
     app.include_router(make_contact_sheet_router(provider), prefix=API_PREFIX, **guard)
     app.include_router(make_plan_router(provider), prefix=API_PREFIX, **guard)
     app.include_router(make_ops_router(provider), prefix=API_PREFIX, **guard)

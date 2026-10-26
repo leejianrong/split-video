@@ -1,6 +1,7 @@
 // Hand-written layer over the generated client in ./generated (see docs/frontend.md and ADR 0004, "API client").
 // Components import SDK functions from here (or ./generated) and never call `fetch` themselves.
 import { client } from './generated/client.gen';
+import type { AssetOut } from './generated/types.gen';
 
 export * from './generated/sdk.gen';
 export type * from './generated/types.gen';
@@ -73,12 +74,16 @@ export function toApiError(body: unknown, status: number): ApiError {
   }
   const details = isRecord(body.details) ? body.details : null;
   const current = body.current_revision ?? details?.current_revision;
+  // An edit batch the engine refused (422 `ops.invalid`): the first problem says what is wrong and what to do.
+  const problem = Array.isArray(body.errors) && isRecord(body.errors[0]) ? body.errors[0] : null;
+  const hint = problem ? str(problem.hint) : undefined;
   return new ApiError({
     code: str(body.code) ?? str(body.error) ?? 'unknown',
-    message: str(body.message) ?? str(body.detail) ?? fallbackMessage,
-    fix: str(body.fix),
+    message:
+      (problem && str(problem.message)) ?? str(body.message) ?? str(body.detail) ?? fallbackMessage,
+    fix: problem ? (hint ? `Fix: ${hint}` : str(body.fix)) : str(body.fix),
     status,
-    details,
+    details: problem ? { ...details, problem: String(problem.code ?? '') } : details,
     currentRevision: typeof current === 'number' ? current : null,
   });
 }
@@ -218,4 +223,86 @@ export function connectEvents(options: EventsOptions): () => void {
     source = null;
     onStatus?.('closed', { reconnect: false, attempt });
   };
+}
+
+// ---------------------------------------------------------------------------------------------------------
+// Uploads (POST /api/v1/assets/upload)
+
+/** The part of XMLHttpRequest the upload uses, so tests can inject a fake. */
+export interface XhrLike {
+  upload: { onprogress: ((event: { loaded: number; total: number }) => void) | null };
+  onload: (() => void) | null;
+  onerror: (() => void) | null;
+  onabort: (() => void) | null;
+  status: number;
+  responseText: string;
+  open(method: string, url: string): void;
+  setRequestHeader(name: string, value: string): void;
+  send(body: Blob): void;
+  abort(): void;
+}
+
+export interface UploadOptions {
+  /** The workspace folder to put the file in; empty is the root. */
+  folder?: string;
+  /** Called while the bytes go out. `total` is the file's size. */
+  onProgress?: (loaded: number, total: number) => void;
+  signal?: AbortSignal;
+  /** Defaults to `new XMLHttpRequest()`. `fetch` cannot report upload progress, so an upload uses XHR. */
+  xhr?: () => XhrLike;
+}
+
+/**
+ * Send `file` as the raw body of `POST /api/v1/assets/upload` and resolve with the new asset. The server writes it
+ * into the workspace through the MediaStore, probes it and registers it. Rejects with `ApiError` (the catalogue's
+ * `code`, `message` and `fix`); an abort rejects with `code: "cancelled"`.
+ */
+export function uploadFile(file: File, options: UploadOptions = {}): Promise<AssetOut> {
+  const url = client.buildUrl({
+    url: '/api/v1/assets/upload',
+    query: { name: file.name, folder: options.folder ?? '' },
+  });
+  const xhr = options.xhr ? options.xhr() : (new XMLHttpRequest() as unknown as XhrLike);
+  return new Promise<AssetOut>((resolve, reject) => {
+    const abort = () => xhr.abort();
+    const fail = (error: ApiError) => {
+      options.signal?.removeEventListener('abort', abort);
+      reject(error);
+    };
+    xhr.open('POST', url);
+    xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+    if (bearerToken) xhr.setRequestHeader('Authorization', `Bearer ${bearerToken}`);
+    xhr.upload.onprogress = (event) => options.onProgress?.(event.loaded, event.total || file.size);
+    xhr.onload = () => {
+      options.signal?.removeEventListener('abort', abort);
+      let body: unknown = null;
+      try {
+        body = JSON.parse(xhr.responseText);
+      } catch {
+        // not JSON (a proxy's page): toApiError builds the message from the status
+      }
+      if (xhr.status >= 200 && xhr.status < 300 && isRecord(body)) {
+        resolve(body as unknown as AssetOut);
+      } else {
+        reject(toApiError(body, xhr.status));
+      }
+    };
+    xhr.onerror = () =>
+      fail(
+        new ApiError({
+          code: 'network',
+          message: 'The server could not be reached.',
+          fix: 'Check that split-video is still running, then import the file again.',
+          status: 0,
+        }),
+      );
+    xhr.onabort = () =>
+      fail(new ApiError({ code: 'cancelled', message: 'The import was cancelled.', status: 0 }));
+    if (options.signal?.aborted) {
+      xhr.onabort();
+      return;
+    }
+    options.signal?.addEventListener('abort', abort, { once: true });
+    xhr.send(file);
+  });
 }

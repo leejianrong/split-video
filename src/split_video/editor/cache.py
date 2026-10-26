@@ -30,6 +30,7 @@ otherwise unchanged.
 from __future__ import annotations
 
 import threading
+from collections.abc import Callable
 from contextlib import closing
 
 from split_video.editor import classify
@@ -73,14 +74,22 @@ class SilenceCache:
         with self._lock:
             return {threshold: list(intervals) for threshold, intervals in self._raw.items()}
 
-    def get_raw_silences(self, threshold: float, cancel: CancelToken | None = None) -> list[SilenceInterval]:
+    def get_raw_silences(
+        self,
+        threshold: float,
+        cancel: CancelToken | None = None,
+        on_progress: Callable[[float], None] | None = None,
+    ) -> list[SilenceInterval]:
         """The raw scan at `threshold`, made (one ffmpeg pass) and stored if there is none yet. A cancelled `cancel`
-        token stops the pass with `JobCancelledError` and stores nothing."""
+        token stops the pass with `JobCancelledError` and stores nothing. `on_progress(seconds)` follows the pass."""
         with self._lock:
             if threshold in self._raw:
                 return self._raw[threshold]
             with self._media.local_path(self._source) as path:
-                intervals = detect_silence(path, f"{threshold}dB", RAW_SCAN_MIN_SILENCE_DURATION, cancel=cancel)
+                extra = {"on_progress": on_progress} if on_progress is not None else {}
+                intervals = detect_silence(
+                    path, f"{threshold}dB", RAW_SCAN_MIN_SILENCE_DURATION, cancel=cancel, **extra
+                )
             self._raw[threshold] = intervals
             self._save()
             return intervals
@@ -132,10 +141,15 @@ class WaveformCache:
         with self._lock:
             return self._loudness
 
-    def get_peaks(self) -> WaveformPeaks:
+    def stored_peaks(self) -> WaveformPeaks | None:
+        """The peak envelope if one is stored, else None. Never decodes audio (unlike `get_peaks`)."""
+        with self._lock:
+            return self._peaks
+
+    def get_peaks(self, cancel: CancelToken | None = None) -> WaveformPeaks:
         with self._lock:
             if self._peaks is None:
-                self._compute()
+                self._compute(cancel)
             assert self._peaks is not None
             return self._peaks
 

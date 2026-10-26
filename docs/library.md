@@ -49,3 +49,13 @@ no proxy, no scene signals and no on-screen text, and nothing can make them. For
 `skipped: "audio-only asset"`, while the API treats it as an impossible request:
 `POST` answers 422 and the `GET`s answer 404 saying the asset is audio-only (not
 "POST to make it").
+
+## Import from the browser
+
+A browser cannot give the server a file path, so the editor's Import button and a file dropped on the Media tab are
+**uploaded**: `POST /api/v1/assets/upload?name=&folder=` with the raw file as the body (see [api.md](api.md)). The bytes go
+into the workspace folder through the `MediaStore` (a folder next to your other recordings, so they survive `make dev`'s
+`--rm` container), are probed and registered like `library scan` would, and the answer is the asset. It copies the file, so for
+a very large recording that already sits in the recordings folder use the folder icon in the Media tab (or
+`POST /assets/register`), which adds it where it is. A video's preview (proxy and thumbnail strip) is queued after an import.
+

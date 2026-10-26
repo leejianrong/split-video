@@ -25,6 +25,20 @@ export type ActivityOut = {
 };
 
 /**
+ * AddAssetClipRequest
+ */
+export type AddAssetClipRequest = {
+    /**
+     * Asset
+     */
+    asset: string;
+    /**
+     * Index
+     */
+    index?: number | null;
+};
+
+/**
  * AddClipRequest
  */
 export type AddClipRequest = {
@@ -246,6 +260,35 @@ export type AssetOut = {
      * Width
      */
     width: number | null;
+};
+
+/**
+ * AssetWaveformOut
+ */
+export type AssetWaveformOut = {
+    /**
+     * Asset
+     */
+    asset: string;
+    /**
+     * Duration
+     */
+    duration: number;
+    /**
+     * Loudness
+     */
+    loudness: Array<number>;
+    /**
+     * Loudness Window
+     */
+    loudness_window: number | null;
+    /**
+     * Peaks
+     */
+    peaks: Array<[
+        number,
+        number
+    ]>;
 };
 
 /**
@@ -542,6 +585,14 @@ export type ClipOut = {
      * Kind
      */
     kind: string;
+    /**
+     * Label
+     */
+    label?: string;
+    /**
+     * Label Color
+     */
+    label_color?: string | null;
     /**
      * Muted
      */
@@ -2773,6 +2824,52 @@ export type SpeechOut = {
 };
 
 /**
+ * SplitRequest
+ */
+export type SplitRequest = {
+    /**
+     * Label Prefix
+     *
+     * Label the pieces "<prefix> 1", "<prefix> 2" ... (e.g. "Song").
+     */
+    label_prefix?: string | null;
+    /**
+     * Min Silence Duration
+     *
+     * A gap must be at least this many seconds long to cut at.
+     */
+    min_silence_duration?: number;
+    /**
+     * Min Song Length
+     *
+     * Pieces shorter than this many seconds are merged away.
+     */
+    min_song_length?: number;
+    /**
+     * Padding
+     *
+     * Seconds kept on each side of a piece.
+     */
+    padding?: number;
+    /**
+     * Silence Threshold
+     *
+     * Quieter than this many dB counts as silence.
+     */
+    silence_threshold?: number;
+};
+
+/**
+ * SplitStartResponse
+ */
+export type SplitStartResponse = {
+    /**
+     * Job Id
+     */
+    job_id: string;
+};
+
+/**
  * StateParams
  */
 export type StateParams = {
@@ -2963,6 +3060,10 @@ export type TrackOut = {
      */
     clips: Array<ClipOut>;
     /**
+     * Hidden
+     */
+    hidden?: boolean;
+    /**
      * Id
      */
     id: string;
@@ -2971,9 +3072,17 @@ export type TrackOut = {
      */
     kind: string;
     /**
+     * Locked
+     */
+    locked?: boolean;
+    /**
      * Magnetic
      */
     magnetic: boolean;
+    /**
+     * Muted
+     */
+    muted?: boolean;
 };
 
 /**
@@ -3308,6 +3417,16 @@ export type WaveformResponse = {
         number,
         number
     ]>;
+};
+
+/**
+ * WaveformStartResponse
+ */
+export type WaveformStartResponse = {
+    /**
+     * Job Id
+     */
+    job_id: string;
 };
 
 /**
@@ -3661,6 +3780,56 @@ export type RegisterAssetApiV1AssetsRegisterPostResponses = {
 };
 
 export type RegisterAssetApiV1AssetsRegisterPostResponse = RegisterAssetApiV1AssetsRegisterPostResponses[keyof RegisterAssetApiV1AssetsRegisterPostResponses];
+
+export type UploadAssetApiV1AssetsUploadPostData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * Name
+         *
+         * The file's name, for example `gig.mp4`; folders in it are dropped.
+         */
+        name: string;
+        /**
+         * Folder
+         *
+         * The workspace folder to put it in; empty is the workspace root.
+         */
+        folder?: string;
+    };
+    url: '/api/v1/assets/upload';
+};
+
+export type UploadAssetApiV1AssetsUploadPostErrors = {
+    /**
+     * No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN).
+     */
+    401: UnauthorizedOut;
+    /**
+     * The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next.
+     */
+    404: ApiErrorOut;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+    /**
+     * The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next.
+     */
+    501: ApiErrorOut;
+};
+
+export type UploadAssetApiV1AssetsUploadPostError = UploadAssetApiV1AssetsUploadPostErrors[keyof UploadAssetApiV1AssetsUploadPostErrors];
+
+export type UploadAssetApiV1AssetsUploadPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: AssetOut;
+};
+
+export type UploadAssetApiV1AssetsUploadPostResponse = UploadAssetApiV1AssetsUploadPostResponses[keyof UploadAssetApiV1AssetsUploadPostResponses];
 
 export type GetAssetApiV1AssetsAssetIdGetData = {
     body?: never;
@@ -4693,6 +4862,63 @@ export type SearchVisualApiV1AssetsAssetIdSearchVisualGetResponses = {
 
 export type SearchVisualApiV1AssetsAssetIdSearchVisualGetResponse = SearchVisualApiV1AssetsAssetIdSearchVisualGetResponses[keyof SearchVisualApiV1AssetsAssetIdSearchVisualGetResponses];
 
+export type StartSplitApiV1AssetsAssetIdSplitPostData = {
+    /**
+     * Request
+     */
+    body?: SplitRequest | null;
+    headers?: {
+        /**
+         * If-Match
+         *
+         * The project revision this change is based on, as an integer, bare or quoted (`If-Match: "3"`). If the project has moved on, the request fails with 409 `revision_conflict` and nothing is written. Omit it to apply the change to the latest version.
+         */
+        'If-Match'?: string | null;
+    };
+    path: {
+        /**
+         * Asset Id
+         */
+        asset_id: string;
+    };
+    query?: never;
+    url: '/api/v1/assets/{asset_id}/split';
+};
+
+export type StartSplitApiV1AssetsAssetIdSplitPostErrors = {
+    /**
+     * No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN).
+     */
+    401: UnauthorizedOut;
+    /**
+     * The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next.
+     */
+    404: ApiErrorOut;
+    /**
+     * `If-Match` didn't match the project's current revision (`error` is `revision_conflict`). Other 409s on some routes (output file or project already exists) have only `detail`.
+     */
+    409: RevisionConflictOut;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+    /**
+     * The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next.
+     */
+    501: ApiErrorOut;
+};
+
+export type StartSplitApiV1AssetsAssetIdSplitPostError = StartSplitApiV1AssetsAssetIdSplitPostErrors[keyof StartSplitApiV1AssetsAssetIdSplitPostErrors];
+
+export type StartSplitApiV1AssetsAssetIdSplitPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: SplitStartResponse;
+};
+
+export type StartSplitApiV1AssetsAssetIdSplitPostResponse = StartSplitApiV1AssetsAssetIdSplitPostResponses[keyof StartSplitApiV1AssetsAssetIdSplitPostResponses];
+
 export type GetThumbnailsApiV1AssetsAssetIdThumbnailsGetData = {
     body?: never;
     path: {
@@ -5014,6 +5240,90 @@ export type SearchTranscriptApiV1AssetsAssetIdTranscriptSearchGetResponses = {
 };
 
 export type SearchTranscriptApiV1AssetsAssetIdTranscriptSearchGetResponse = SearchTranscriptApiV1AssetsAssetIdTranscriptSearchGetResponses[keyof SearchTranscriptApiV1AssetsAssetIdTranscriptSearchGetResponses];
+
+export type GetWaveformApiV1AssetsAssetIdWaveformGetData = {
+    body?: never;
+    path: {
+        /**
+         * Asset Id
+         */
+        asset_id: string;
+    };
+    query?: never;
+    url: '/api/v1/assets/{asset_id}/waveform';
+};
+
+export type GetWaveformApiV1AssetsAssetIdWaveformGetErrors = {
+    /**
+     * No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN).
+     */
+    401: UnauthorizedOut;
+    /**
+     * The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next.
+     */
+    404: ApiErrorOut;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+    /**
+     * The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next.
+     */
+    501: ApiErrorOut;
+};
+
+export type GetWaveformApiV1AssetsAssetIdWaveformGetError = GetWaveformApiV1AssetsAssetIdWaveformGetErrors[keyof GetWaveformApiV1AssetsAssetIdWaveformGetErrors];
+
+export type GetWaveformApiV1AssetsAssetIdWaveformGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: AssetWaveformOut;
+};
+
+export type GetWaveformApiV1AssetsAssetIdWaveformGetResponse = GetWaveformApiV1AssetsAssetIdWaveformGetResponses[keyof GetWaveformApiV1AssetsAssetIdWaveformGetResponses];
+
+export type StartWaveformApiV1AssetsAssetIdWaveformPostData = {
+    body?: never;
+    path: {
+        /**
+         * Asset Id
+         */
+        asset_id: string;
+    };
+    query?: never;
+    url: '/api/v1/assets/{asset_id}/waveform';
+};
+
+export type StartWaveformApiV1AssetsAssetIdWaveformPostErrors = {
+    /**
+     * No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN).
+     */
+    401: UnauthorizedOut;
+    /**
+     * The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next.
+     */
+    404: ApiErrorOut;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+    /**
+     * The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next.
+     */
+    501: ApiErrorOut;
+};
+
+export type StartWaveformApiV1AssetsAssetIdWaveformPostError = StartWaveformApiV1AssetsAssetIdWaveformPostErrors[keyof StartWaveformApiV1AssetsAssetIdWaveformPostErrors];
+
+export type StartWaveformApiV1AssetsAssetIdWaveformPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: WaveformStartResponse;
+};
+
+export type StartWaveformApiV1AssetsAssetIdWaveformPostResponse = StartWaveformApiV1AssetsAssetIdWaveformPostResponses[keyof StartWaveformApiV1AssetsAssetIdWaveformPostResponses];
 
 export type BrowseApiV1BrowseGetData = {
     body?: never;
@@ -7076,6 +7386,171 @@ export type SaveCurrentProjectApiV1ProjectPostResponses = {
 };
 
 export type SaveCurrentProjectApiV1ProjectPostResponse = SaveCurrentProjectApiV1ProjectPostResponses[keyof SaveCurrentProjectApiV1ProjectPostResponses];
+
+export type AddAssetClipApiV1ProjectClipsPostData = {
+    body: AddAssetClipRequest;
+    headers?: {
+        /**
+         * If-Match
+         *
+         * The project revision this change is based on, as an integer, bare or quoted (`If-Match: "3"`). If the project has moved on, the request fails with 409 `revision_conflict` and nothing is written. Omit it to apply the change to the latest version.
+         */
+        'If-Match'?: string | null;
+    };
+    path?: never;
+    query: {
+        /**
+         * Path
+         *
+         * The video's path relative to the browse root (the project id the editor opens).
+         */
+        path: string;
+    };
+    url: '/api/v1/project/clips';
+};
+
+export type AddAssetClipApiV1ProjectClipsPostErrors = {
+    /**
+     * No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN).
+     */
+    401: UnauthorizedOut;
+    /**
+     * The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next.
+     */
+    404: ApiErrorOut;
+    /**
+     * `If-Match` didn't match the project's current revision (`error` is `revision_conflict`). Other 409s on some routes (output file or project already exists) have only `detail`.
+     */
+    409: RevisionConflictOut;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+    /**
+     * The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next.
+     */
+    501: ApiErrorOut;
+};
+
+export type AddAssetClipApiV1ProjectClipsPostError = AddAssetClipApiV1ProjectClipsPostErrors[keyof AddAssetClipApiV1ProjectClipsPostErrors];
+
+export type AddAssetClipApiV1ProjectClipsPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: ProjectOut;
+};
+
+export type AddAssetClipApiV1ProjectClipsPostResponse = AddAssetClipApiV1ProjectClipsPostResponses[keyof AddAssetClipApiV1ProjectClipsPostResponses];
+
+export type ApplyVideoOpsApiV1ProjectOpsPostData = {
+    /**
+     * Ops
+     *
+     * An ops document; GET /api/v1/schemas/edit-ops is its JSON Schema.
+     */
+    body: unknown;
+    headers?: {
+        /**
+         * If-Match
+         *
+         * The project revision this change is based on, as an integer, bare or quoted (`If-Match: "3"`). If the project has moved on, the request fails with 409 `revision_conflict` and nothing is written. Omit it to apply the change to the latest version.
+         */
+        'If-Match'?: string | null;
+    };
+    path?: never;
+    query: {
+        /**
+         * Path
+         *
+         * The video's path relative to the browse root (the project id the editor opens).
+         */
+        path: string;
+        /**
+         * Dry Run
+         */
+        dry_run?: boolean;
+    };
+    url: '/api/v1/project/ops';
+};
+
+export type ApplyVideoOpsApiV1ProjectOpsPostErrors = {
+    /**
+     * No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN).
+     */
+    401: UnauthorizedOut;
+    /**
+     * The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next.
+     */
+    404: ApiErrorOut;
+    /**
+     * `If-Match` didn't match the project's current revision (`error` is `revision_conflict`). Other 409s on some routes (output file or project already exists) have only `detail`.
+     */
+    409: RevisionConflictOut;
+    /**
+     * The batch has problems; they are in `errors`. Nothing was written.
+     */
+    422: OpsInvalidOut;
+    /**
+     * The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next.
+     */
+    501: ApiErrorOut;
+};
+
+export type ApplyVideoOpsApiV1ProjectOpsPostError = ApplyVideoOpsApiV1ProjectOpsPostErrors[keyof ApplyVideoOpsApiV1ProjectOpsPostErrors];
+
+export type ApplyVideoOpsApiV1ProjectOpsPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: OpsResultOut;
+};
+
+export type ApplyVideoOpsApiV1ProjectOpsPostResponse = ApplyVideoOpsApiV1ProjectOpsPostResponses[keyof ApplyVideoOpsApiV1ProjectOpsPostResponses];
+
+export type GetVideoTimelineApiV1ProjectTimelineGetData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * Path
+         *
+         * The video's path relative to the browse root (the project id the editor opens).
+         */
+        path: string;
+    };
+    url: '/api/v1/project/timeline';
+};
+
+export type GetVideoTimelineApiV1ProjectTimelineGetErrors = {
+    /**
+     * No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN).
+     */
+    401: UnauthorizedOut;
+    /**
+     * The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next.
+     */
+    404: ApiErrorOut;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+    /**
+     * The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next.
+     */
+    501: ApiErrorOut;
+};
+
+export type GetVideoTimelineApiV1ProjectTimelineGetError = GetVideoTimelineApiV1ProjectTimelineGetErrors[keyof GetVideoTimelineApiV1ProjectTimelineGetErrors];
+
+export type GetVideoTimelineApiV1ProjectTimelineGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: ProjectOut;
+};
+
+export type GetVideoTimelineApiV1ProjectTimelineGetResponse = GetVideoTimelineApiV1ProjectTimelineGetResponses[keyof GetVideoTimelineApiV1ProjectTimelineGetResponses];
 
 export type EditOpsSchemaApiV1SchemasEditOpsGetData = {
     body?: never;

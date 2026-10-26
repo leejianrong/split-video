@@ -6,9 +6,11 @@ import {
   connectEvents,
   ifMatch,
   toApiError,
+  uploadFile,
   whoamiApiV1WhoamiGet,
   type EventSourceLike,
   type EventsStatus,
+  type XhrLike,
 } from './client';
 
 // Node's Request cannot resolve a relative URL (a browser resolves it against the page), so tests use an origin.
@@ -142,6 +144,29 @@ describe('error mapping', () => {
     );
     expect(error.isRevisionConflict).toBe(false);
     expect(error.code).toBe('timeline.exists');
+  });
+
+  it('reports the first problem of a refused edit batch', () => {
+    const error = toApiError(
+      {
+        code: 'ops.invalid',
+        message: 'the batch has 1 problem; nothing was written',
+        fix: 'Fix every entry of `errors`',
+        errors: [
+          {
+            path: '/ops/0/clip',
+            code: 'ops.track.locked',
+            message: 'track 3f9a is locked; unlock it to edit its clips',
+            hint: 'unlock the track first',
+          },
+        ],
+      },
+      422,
+    );
+    expect(error.code).toBe('ops.invalid');
+    expect(error.message).toBe('track 3f9a is locked; unlock it to edit its clips');
+    expect(error.fix).toBe('Fix: unlock the track first');
+    expect(error.details).toEqual({ problem: 'ops.track.locked' });
   });
 
   it('maps the 401 body through its `error` field', () => {
@@ -292,5 +317,110 @@ describe('client', () => {
   it('uses same-origin relative URLs by default (empty base URL)', () => {
     configureClient({ baseUrl: '' });
     expect(client.buildUrl({ url: '/api/v1/jobs' })).toBe('/api/v1/jobs');
+  });
+});
+
+class FakeXhr implements XhrLike {
+  upload: XhrLike['upload'] = { onprogress: null };
+  onload: (() => void) | null = null;
+  onerror: (() => void) | null = null;
+  onabort: (() => void) | null = null;
+  status = 0;
+  responseText = '';
+  method = '';
+  url = '';
+  headers: Record<string, string> = {};
+  sent: Blob | null = null;
+  open(method: string, url: string) {
+    this.method = method;
+    this.url = url;
+  }
+  setRequestHeader(name: string, value: string) {
+    this.headers[name] = value;
+  }
+  send(body: Blob) {
+    this.sent = body;
+  }
+  abort() {
+    this.onabort?.();
+  }
+  reply(status: number, body: unknown) {
+    this.status = status;
+    this.responseText = typeof body === 'string' ? body : JSON.stringify(body);
+    this.onload?.();
+  }
+}
+
+describe('uploadFile', () => {
+  const file = new File(['abc'], 'gig night.mp4', { type: 'video/mp4' });
+  beforeEach(() => configureClient({ baseUrl: TEST_ORIGIN, token: null }));
+
+  it('posts the raw file to the upload route and resolves with the asset', async () => {
+    const xhr = new FakeXhr();
+    const progress: number[][] = [];
+    const done = uploadFile(file, {
+      folder: 'shows',
+      xhr: () => xhr,
+      onProgress: (loaded, total) => progress.push([loaded, total]),
+    });
+    expect(xhr.method).toBe('POST');
+    const url = new URL(xhr.url);
+    expect(url.pathname).toBe('/api/v1/assets/upload');
+    expect(url.searchParams.get('name')).toBe('gig night.mp4');
+    expect(url.searchParams.get('folder')).toBe('shows');
+    expect(xhr.headers['Content-Type']).toBe('application/octet-stream');
+    expect(xhr.sent).toBe(file);
+    xhr.upload.onprogress?.({ loaded: 1, total: 3 });
+    xhr.reply(201, { id: 'a_1', path: 'shows/gig night.mp4' });
+    await expect(done).resolves.toMatchObject({ id: 'a_1' });
+    expect(progress).toEqual([[1, 3]]);
+  });
+
+  it('sends the bearer token', () => {
+    configureClient({ token: 'tok' });
+    const xhr = new FakeXhr();
+    void uploadFile(file, { xhr: () => xhr }).catch(() => undefined);
+    expect(xhr.headers.Authorization).toBe('Bearer tok');
+  });
+
+  it('rejects with the catalogue error and its fix hint', async () => {
+    const xhr = new FakeXhr();
+    const done = uploadFile(file, { xhr: () => xhr });
+    xhr.reply(415, {
+      detail: 'x',
+      code: 'upload.unsupported_type',
+      message: 'not a media file',
+      fix: 'Use a video or audio file.',
+    });
+    const error = await caught(done);
+    expect(error).toMatchObject({
+      code: 'upload.unsupported_type',
+      fix: 'Use a video or audio file.',
+      status: 415,
+    });
+  });
+
+  it('turns a dropped connection and a non-JSON answer into errors', async () => {
+    const dropped = new FakeXhr();
+    const first = uploadFile(file, { xhr: () => dropped });
+    dropped.onerror?.();
+    expect(await caught(first)).toMatchObject({ code: 'network', status: 0 });
+    const html = new FakeXhr();
+    const second = uploadFile(file, { xhr: () => html });
+    html.reply(502, '<html>bad gateway</html>');
+    expect(await caught(second)).toMatchObject({ code: 'unknown', status: 502 });
+  });
+
+  it('aborts when the signal fires, and not at all if it already has', async () => {
+    const xhr = new FakeXhr();
+    const controller = new AbortController();
+    const done = uploadFile(file, { xhr: () => xhr, signal: controller.signal });
+    controller.abort();
+    expect(await caught(done)).toMatchObject({ code: 'cancelled' });
+    const late = new FakeXhr();
+    expect(
+      await caught(uploadFile(file, { xhr: () => late, signal: controller.signal })),
+    ).toMatchObject({ code: 'cancelled' });
+    expect(late.sent).toBeNull();
   });
 });

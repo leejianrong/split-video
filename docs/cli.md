@@ -76,7 +76,7 @@ split-video analyze liveshow.mp4                                # YAMNet classif
 ```
 
 `propose` only prints unless you pass `--apply`, which replaces any splits
-already saved.
+already saved. `--label-prefix Song` labels the pieces "Song 1", "Song 2" and so on (MCP: `label_prefix`).
 
 ## Run without Docker (uv)
 

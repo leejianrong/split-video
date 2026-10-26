@@ -46,6 +46,12 @@ const TEXT_PAIRS: [string, string][] = [
   ['--color-ok', '--color-surface'],
   ['--color-accent', '--color-surface'],
   ['--color-accent', '--color-surface-raised'],
+  // Timeline clip labels
+  ['--color-text', '--color-clip-segment'],
+  ['--color-text', '--color-clip-song'],
+  ['--color-text', '--color-clip-overlay'],
+  ['--color-text', '--color-clip-music'],
+  ['--color-clip-text-ink', '--color-clip-text'],
 ];
 
 const CONTROL_PAIRS: [string, string][] = [
@@ -63,6 +69,13 @@ const CONTROL_PAIRS: [string, string][] = [
   ['--color-danger', '--color-bg'],
   ['--color-warn', '--color-surface-raised'],
   ['--color-ok', '--color-surface-raised'],
+  // Timeline: the playhead and the waveform against their lanes, a clip's selection outline against its colour
+  ['--color-playhead', '--color-surface'],
+  ['--color-playhead', '--color-bg'],
+  ['--color-waveform', '--color-surface'],
+  ['--color-waveform', '--color-bg'],
+  ['--color-text', '--color-clip-segment'],
+  ['--color-text', '--color-clip-song'],
 ];
 
 describe('token pairs (ux-spec accessibility: AA)', () => {
