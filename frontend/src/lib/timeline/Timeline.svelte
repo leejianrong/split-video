@@ -8,6 +8,7 @@
   import { hasAssetDrag, readAssetDrag } from '../state/dnd';
   import { playhead } from '../state/playhead.svelte';
   import { project } from '../state/project.svelte';
+  import { rangeSelection } from '../state/rangeSelection.svelte';
   import { timelineView } from '../state/timelineView.svelte';
   import { toasts } from '../state/toasts.svelte';
   import { waveforms } from '../state/waveforms.svelte';
@@ -27,6 +28,7 @@
   import LaneHeader from './LaneHeader.svelte';
   import LaneView from './LaneView.svelte';
   import Ruler from './Ruler.svelte';
+  import { sourceToTimeline } from './rangeMap';
   import { timeToX, xToTime } from './scale';
 
   // The timeline: ruler, lanes with their headers, the playhead and the scrollbar (docs/ux-spec.md#timeline). It draws
@@ -331,6 +333,12 @@
   const dragLane = $derived(dragState ? lanes.find((l) => l.id === dragState.laneId) : undefined);
   const playheadX = $derived(timeToX(playhead.time, view));
   const empty = $derived(project.timeline !== null && mainClips.length === 0);
+  // The highlight under the pointer or picked in the Highlights tab, shown where the clips have it (source seconds in,
+  // timeline seconds out, so cuts and reordering are respected).
+  const rangeSpans = $derived.by(() => {
+    const range = rangeSelection.range;
+    return range ? sourceToTimeline(mainClips, range.assetId, range.start, range.end) : [];
+  });
 </script>
 
 <div
@@ -403,6 +411,18 @@
           {dragState.hint}
         </div>
       {/if}
+      {#each rangeSpans as span (span.start)}
+        <div
+          class="range"
+          style:left="{timeToX(span.start, view)}px"
+          style:width="{Math.max(2, (span.end - span.start) * view.pxPerSecond)}px"
+          style:height="{totalHeight}px"
+          data-testid="range-overlay"
+          data-start={span.start}
+          data-end={span.end}
+          aria-hidden="true"
+        ></div>
+      {/each}
       {#if empty}
         <p class="empty" data-testid="timeline-empty">Drag material here and start to create</p>
       {/if}
@@ -529,6 +549,17 @@
     cursor: col-resize;
     pointer-events: auto;
     touch-action: none;
+  }
+
+  .range {
+    position: absolute;
+    top: 0;
+    border-right: 2px solid var(--color-accent);
+    border-left: 2px solid var(--color-accent);
+    background: color-mix(in srgb, var(--color-accent) 22%, transparent);
+    box-sizing: border-box;
+    pointer-events: none;
+    z-index: 3;
   }
 
   .marker {

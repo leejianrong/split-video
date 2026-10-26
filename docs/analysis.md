@@ -200,6 +200,8 @@ docker run --rm -v "$PWD":/data split-video:ocr highlights stream.mp4 --root /da
 docker run --rm -v "$PWD":/data split-video:ocr highlights gig.mp4 --root /data --preset gig --weight applause=3 --json
 ```
 
-Over HTTP: `GET /api/v1/assets/{id}/highlights?preset=&count=&keywords=&weights=speech:2`; MCP has `suggest_highlights`.
+Over HTTP: `GET /api/v1/assets/{id}/highlights?preset=&count=&keywords=&weights=speech:2`; MCP has `suggest_highlights`. Reviewing the suggestions (accept, dismiss, adjust) and making them into clips on the timeline is
+`highlight-reviews`, `review-highlight` and `make-short` (CLI), `get_highlight_reviews`, `review_highlight` and `make_short` (MCP) and
+the `highlight-reviews` and `/project/highlights` routes: see [docs/highlights.md](highlights.md#review-and-make-a-short-spl-64).
 All three return the same JSON; the method, the preset weight table and a worked example are in
 [docs/highlights.md](highlights.md).

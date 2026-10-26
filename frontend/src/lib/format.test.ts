@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { baseName, formatClock, formatDuration, formatLength } from './format';
+import { baseName, formatClock, formatDuration, formatLength, parseClock } from './format';
 
 describe('formatLength', () => {
   it('uses the spec wording', () => {
@@ -33,5 +33,20 @@ describe('baseName', () => {
   it('keeps the file name of a workspace path', () => {
     expect(baseName('shows/2026/gig.mp4')).toBe('gig.mp4');
     expect(baseName('gig.mp4')).toBe('gig.mp4');
+  });
+});
+
+describe('parseClock', () => {
+  it('reads seconds, m:ss and h:mm:ss', () => {
+    expect(parseClock('95')).toBe(95);
+    expect(parseClock('1:35')).toBe(95);
+    expect(parseClock(' 1:02:03 ')).toBe(3723);
+    expect(parseClock('0:04:10.5')).toBe(250.5);
+  });
+
+  it('refuses what is not a time', () => {
+    for (const bad of ['', 'abc', '1:75', '1:2:3:4', '-3', '1.5:30']) {
+      expect(parseClock(bad), bad).toBeNull();
+    }
   });
 });

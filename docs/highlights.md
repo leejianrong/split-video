@@ -124,6 +124,39 @@ A 1 hour recording with an applause peak at 1000-1030 and a speech burst with a 
 
 With `preset=gig` the same recording ranks the applause peak first (0.60) and the burst second (0.35).
 
+## Review and make a short (SPL-64)
+
+`suggest_highlights` proposes; the editor's Highlights tab is the review step ([ux-spec](ux-spec.md#highlights)). The
+rules live in `src/split_video/highlight_review.py`, and HTTP, CLI and MCP only adapt them.
+
+**Identity.** A suggestion's `key` is `h_<start ms>_<end ms>` of the window the engine scored, so the same suggestion
+has the same key whenever the same parameters are used.
+
+**Review state.** `accepted` or `dismissed` (no entry: not reviewed), with the user's own `adjusted` `start` / `end`
+when they trimmed it. It is one JSON document per asset in the video's cache sidecar (`.split-video-cache/` next to the
+file, through `MediaStore.save_cache(..., "highlight-reviews", ...)`), so it survives a `make dev` container and a
+changed file starts afresh. The document has a `revision` (0 when nothing was saved, +1 per write); writes take it as
+`If-Match` / `--base-revision` / `base_revision` and a stale one is a `revision_conflict`. Nothing in a project file
+changes, so no format version moves.
+
+**Making clips.** `make_clips` adds each range to the end of the recording's own timeline (the one the editor shows) as
+a labelled main-track clip in ONE atomic edit-ops batch (`add_clip` with `in`, `out` and a `label`, new in the ops
+format as an optional field, and for a short a `set_clip_properties` crop from `crop_for_aspect` to the centre 9:16),
+based on the project's revision, and then marks those suggestions accepted. Labels are `Short: <title>`
+(`Highlight N` without a title) for a short and the title for **Add to timeline**. Captions are not a clip: the
+`shorts` captions are burned in at export ([export modes](render-queue.md#export-modes-segments-timeline-highlights)). If
+the batch is refused nothing is written and nothing is accepted.
+
+| Surface | Review | Make |
+| --- | --- | --- |
+| HTTP | `GET /api/v1/assets/{id}/highlight-reviews`, `PUT /api/v1/assets/{id}/highlight-reviews/{key}` (`{state, start, end, adjusted_start, adjusted_end}`, `state: null` clears, `"pending"` keeps only adjusted edges; `If-Match` = the reviews' revision) | `POST /api/v1/project/highlights?path=VIDEO` (`{asset, kind: "short"\|"clip", items: [{start, end, title, scored}]}`, `If-Match` = the project's revision) |
+| CLI | `highlight-reviews TARGET [--json]`, `review-highlight TARGET --start S --end E --state accepted\|dismissed\|pending\|clear [--adjusted-start --adjusted-end] [--base-revision N]` | `make-short TARGET --range START-END ... [--clip] [--video PATH] [--base-revision N] [--json]` |
+| MCP | `get_highlight_reviews(asset)`, `review_highlight(asset, start, end, state, adjusted_start, adjusted_end, base_revision)` | `make_short(video, asset, ranges, kind, base_revision)` |
+| Python | `highlight_review.load`, `set_review`, `annotate` | `highlight_review.make_clips(media, store, video, asset_id, items, kind, base_revision=)` |
+
+The make answer is the ops result (`revision` is the project's new one) plus `made` (`key`, `clip`, `label`, `start`,
+`end`) and the new `reviews`. To undo, remove those clips with `apply_ops` (`remove_clip`) and clear the reviews.
+
 ## Cost
 
 Reads stored documents only. On a 3 hour synthetic recording (10,800 s, 27,000 words, 22,500 classification frames, 180

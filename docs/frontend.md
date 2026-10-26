@@ -2,7 +2,7 @@
 
 The editor is being rebuilt as one Svelte 5 app (decisions: [ADR 0004](adr/0004-frontend-stack-and-structure.md),
 layout contract: [ux-spec.md](ux-spec.md)). Today it has the shell (top bar, tab rail and panel, preview, inspector, timeline), a start page and a library, the
-Media tab (see [below](#the-media-tab)), the timeline (see [below](#the-timeline)) and empty panels for the other tabs, served at **`/app/`**. The old editor at `/` and `/compose.html` is unchanged.
+Media tab (see [below](#the-media-tab)), the Highlights tab (see [below](#the-highlights-tab)), the timeline (see [below](#the-timeline)) and empty panels for the other tabs, served at **`/app/`**. The old editor at `/` and `/compose.html` is unchanged.
 
 ## Views and the shell
 
@@ -192,7 +192,7 @@ timeline clip": there are no clips to select until the timeline card, so this is
 shorter than 30 s are merged away), differing in the labels. Each shows a percent and Cancel (a real cancel: the job
 stops ffmpeg), then "3 songs found", or the error with its `Fix:` and Retry (for Transcribe without the add-on: the
 install hint). A split saves with the open project's revision and reloads the project, so the timeline shows the pieces.
-Highlights results are only counted for now: the review list is the Highlights tab. Completion and failures are spoken
+Highlights results are counted here, with a **Review** button that opens the [Highlights tab](#the-highlights-tab). Completion and failures are spoken
 through the polite live region (`announce`).
 
 The timeline that shows the result is [below](#the-timeline).
@@ -208,6 +208,48 @@ The payload is defined in `state/dnd.ts` (with `setAssetDrag`, `hasAssetDrag`, `
   (the timeline does it with `dropOps` and one `project.applyOps`; `project.addAsset(assetId, index)` stays for the Add button). The keyboard alternative is the card's Enter key and its *Add to timeline* button.
 - Files dragged from the computer carry `Files` instead (`hasFileDrag`); the Media panel imports those, the timeline
   ignores them.
+
+## The Highlights tab
+
+`lib/tabs/highlights/` implements [ux-spec.md#left-tabs](ux-spec.md#left-tabs) (Highlights): the suggestions of *Find
+highlights* as cards to review. The engine side (identity, review state, making clips) is in
+[highlights.md](highlights.md#review-and-make-a-short-spl-64); this tab holds no rule.
+
+| Piece | File | Notes |
+|---|---|---|
+| Data | `state/highlights.svelte.ts` (`HighlightsStore`) | `GET /assets/{id}/highlights` (stored signals only, 12 suggestions) merged with `GET /assets/{id}/highlight-reviews`. Reloads by itself when a Find highlights job for the shown asset finishes. Nothing is kept in the browser. |
+| Cards | `tabs/highlights/HighlightCard.svelte` | Poster, score (0 to 100), title, time range, the engine's reasons, and the actions below. |
+| Range on the timeline | `state/rangeSelection.svelte.ts`, `timeline/rangeMap.ts` | The hovered or picked card's range, mapped through the main track's clips (so cuts and reordering are respected), drawn as an overlay over the lanes (`data-testid="range-overlay"`). |
+
+**The asset** is the selected library card, or the open recording, as for the quick actions.
+
+**Cards.** The poster is `GET /assets/{id}/frame` at the card's start (160 px wide, through the shared thumbnail loader: four
+requests at a time, only the cards that are listed), shown 72 x 96 and cropped to the centre, which is what a 9:16 short will
+show. Picking a card (click or Space) moves the playhead to where the range is on the timeline and keeps the range
+drawn; hovering only draws the range. Up and Down move between cards. The ux-spec defines no accept or reject keys, so
+there are none. Actions:
+
+- **Make short** and **Add to timeline** call `POST /project/highlights` (one engine batch, `If-Match` with the project
+  revision): a labelled clip at the end of the main track, cropped to 9:16 for a short, and the card becomes accepted. The
+  new clip is selected and the playhead goes to it. A stale revision reloads the project and says so; a refusal (a locked
+  lane) shows the engine's message and fix.
+- **Accept** only marks the card (no timeline change). **Dismiss** hides it with an Undo in the toast; "Show N dismissed"
+  lists them with Restore. **Adjust** edits the start and end (times like `4:10`, or use the playhead); "Use suggested
+  range" resets. All three write the sidecar (`PUT /assets/{id}/highlight-reviews/{key}`, `If-Match` with the reviews
+  revision, one retry on another writer's revision).
+- The footer **Make a short from every highlight (N)**: N counts the suggestions nobody has acted on yet (not accepted, not
+  dismissed), made in one batch.
+- Header: **Re-run** runs Find highlights again; chips Stream, Gig and Lecture pick the engine's preset (re-reads the
+  suggestions, no new analysis), **Keyword** asks the engine for a word in speech or on-screen text.
+
+**States** (ux-spec): no recording ("No highlights yet. Run Find highlights."), nothing stored yet (the same sentence and a
+*Find highlights* button), running (percent, message, Cancel: the same job as the Media tab), the job failed or could not
+start (message, `Fix:`, Retry), the suggestions could not be read (message, `Fix:`, Try again), none found ("No highlight
+stood out in this recording" with a fix) and every card dismissed.
+
+**Known limits.** The preview does not draw frames yet, so a card "previews" through the playhead and the range on the
+timeline. A card's title is the engine's `title_hint` (the first on-screen text or spoken line), else "Highlight N".
+Captions are not clips: the `shorts` captions are burned in at export (SPL-118).
 
 ## The timeline
 

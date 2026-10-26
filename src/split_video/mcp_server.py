@@ -46,6 +46,7 @@ from split_video import (
     edit_plan,
     export_modes,
     frames,
+    highlight_review,
     highlights,
     library,
     media_report,
@@ -975,6 +976,65 @@ def create_server(
             end=end,
             min_gap_seconds=min_gap_seconds,
             snap=snap,
+        )
+
+    @server.tool(annotations=_READ_ONLY)
+    async def get_highlight_reviews(asset: str) -> dict[str, Any]:
+        """Which of the highlight suggestions of the library asset `asset` were accepted or dismissed (by the user in
+        the editor's Highlights tab, or by you), with any edges the user adjusted. `reviews` is keyed by suggestion
+        `key` (`h_<start ms>_<end ms>` of the scored window `start`..`end` that suggest_highlights returned); a
+        suggestion without an entry is not reviewed yet. `revision` is what review_highlight's `base_revision` takes.
+        A tool error for an unknown asset."""
+        return await run(highlight_review.load, media, asset)
+
+    @server.tool(annotations=_EDITS_PROJECT)
+    async def review_highlight(
+        asset: str,
+        start: float,
+        end: float,
+        state: str | None,
+        adjusted_start: float | None = None,
+        adjusted_end: float | None = None,
+        base_revision: int | None = None,
+    ) -> dict[str, Any]:
+        """Accept (`"accepted"`) or dismiss (`"dismissed"`) one highlight suggestion of `asset` (`"pending"` with adjusted edges only keeps the edges), or set `state` to null
+        to make it pending again. `start` and `end` are the suggestion's scored window exactly as suggest_highlights
+        returned them (they make its key). `adjusted_start` / `adjusted_end` (both or neither) keep different edges
+        you want cut. It changes no timeline; make_short does that and accepts too. `base_revision` is the reviews'
+        revision from get_highlight_reviews (stale: revision_conflict). Returns the reviews document."""
+        return await run(
+            highlight_review.set_review,
+            media,
+            asset,
+            highlight_review.key_of(start, end),
+            state,
+            start=start,
+            end=end,
+            adjusted_start=adjusted_start,
+            adjusted_end=adjusted_end,
+            base_revision=base_revision,
+        )
+
+    @server.tool(annotations=_EDITS_PROJECT)
+    async def make_short(
+        video: str,
+        asset: str,
+        ranges: list[dict[str, Any]],
+        kind: str = "short",
+        base_revision: int | None = None,
+    ) -> dict[str, Any]:
+        """Make highlight suggestions into labelled clips at the end of the main track of `video`'s own timeline (the
+        one the editor shows), in ONE atomic batch, and mark them accepted. `ranges` is a list of `{"start",
+        "end", "title"}` (seconds of the asset: a suggest_highlights candidate's start/end, or your own edges; add
+        `"scored": {"start", "end"}` with the candidate's window if `start`/`end` differ from it, so the right
+        suggestion is accepted). `kind` `short` (default) crops each to the centre 9:16 of the frame (captions are
+        burned in at export); `clip` keeps the whole frame. `base_revision` is the timeline's (show_video_timeline;
+        stale: revision_conflict). Returns the apply_ops result plus `made` (key, clip id, label, edges) and the new
+        `reviews`. Undo is a remove_clip per `made` clip via apply_ops."""
+        return await run(
+            lambda: highlight_review.make_clips(
+                media, store, resolve(video), asset, ranges, kind, base_revision=base_revision
+            )
         )
 
     @server.tool(annotations=_REPLACES_PROJECT)

@@ -61,6 +61,7 @@ from split_video.timeline import TRACK_KINDS, Project, TimelineError
 SCHEMA_VERSION = 1
 SCHEMA_ID = "urn:split-video:edit-ops:1"
 MAX_OPS = 1000
+MAX_LABEL_LENGTH = 120
 
 
 # --- the op table: the single source of truth for validation and for the published schema ------------------------------
@@ -158,6 +159,12 @@ OPS: dict[str, OpSpec] = {
             _clip_field("start", description="Other tracks: where the clip begins (default: after the last clip)."),
             _clip_field("in", description="Seconds into the source where the clip starts."),
             _clip_field("out", description="Seconds into the source where it ends (default: the end of the asset)."),
+            Field(
+                "label",
+                "string",
+                "Optional display text of the clip, as the split tools label their segments (at most 120 characters).",
+                max_length=MAX_LABEL_LENGTH,
+            ),
             creates="clip",
             needs_media_source=True,
         ),
@@ -739,6 +746,15 @@ def _op_add_clip(run: _Run, project: Project, op: _Op) -> tuple[Project, str, di
     except TimelineError as exc:
         raise _rule_failure(op, exc) from None
     new = _rename(new, "clip", clip.id, clip_id)
+    label = str(raw.get("label", "")).strip()
+    if label:
+        new = replace(
+            new,
+            tracks=tuple(
+                replace(t, clips=tuple(replace(c, label=label) if c.id == clip_id else c for c in t.clips))
+                for t in new.tracks
+            ),
+        )
     return (
         new,
         f"added clip {clip_id} ({row.id} {in_point:g}s..{out_point:g}s) to track {track.id}",

@@ -32,3 +32,19 @@ export function formatDuration(seconds: number): string {
 export function baseName(path: string): string {
   return path.slice(path.lastIndexOf('/') + 1);
 }
+
+/**
+ * Seconds from what a person types for a time: "95", "1:35", "1:02:03", with an optional fraction on the last part.
+ * `null` when it is not a time (empty, letters, a part out of range such as "1:75").
+ */
+export function parseClock(text: string): number | null {
+  const parts = text.trim().split(':');
+  if (parts.length === 0 || parts.length > 3 || parts.some((p) => !/^\d+(\.\d+)?$/.test(p))) {
+    return null;
+  }
+  const numbers = parts.map(Number);
+  const last = numbers.length - 1;
+  if (numbers.some((n, i) => i < last && !Number.isInteger(n))) return null;
+  if (numbers.slice(1).some((n) => n >= 60)) return null;
+  return numbers.reduce((total, n) => total * 60 + n, 0);
+}

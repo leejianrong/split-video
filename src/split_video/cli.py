@@ -17,6 +17,7 @@ from split_video import (
     compose_cli,
     contact_sheet_cli,
     frames_cli,
+    highlight_review_cli,
     highlights_cli,
     library_cli,
     media_report_cli,
@@ -307,6 +308,7 @@ search_cli.register(app)
 time_index_cli.register(app)
 media_report_cli.register(app)
 highlights_cli.register(app)
+highlight_review_cli.register(app)
 plan_cli.register(app)
 ops_cli.register(app)
 app.command("frame")(frames_cli.frame_cmd)
