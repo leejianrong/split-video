@@ -1,3 +1,5 @@
 node_modules
 package-lock.json
 ../src/split_video/editor/static_app
+
+src/lib/api/generated

@@ -593,6 +593,7 @@ def test_every_op_has_a_handler_a_doc_row_and_a_single_edit_twin():
     assert list(edit_ops.OPS) == [
         "add_clip", "trim_clip", "move_clip", "remove_clip", "set_transition", "set_clip_properties",
         "add_text_clip", "set_text_properties", "add_track", "remove_track", "move_track", "place_clip",
+        "set_track_flags",
     ]  # fmt: skip
 
 

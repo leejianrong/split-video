@@ -25,6 +25,12 @@ def _stable_id(*parts: object) -> str:
     return hashlib.sha1(":".join(map(str, parts)).encode()).hexdigest()[:8]
 
 
+class MainTrackEditedError(ProjectError):
+    """The main track holds more than the recording's own clips, so its splits cannot be rebuilt from segments."""
+
+    error_code = "segments.main_track_edited"
+
+
 def main_track_index(project: Project) -> int | None:
     """The index of the main track: the first video track, or None if there is none."""
     return next((i for i, t in enumerate(project.tracks) if t.kind == "video"), None)
@@ -73,6 +79,15 @@ def from_legacy(video_id: str, segments: list[SavedSegment]) -> Project:
     return Project(tracks=(normalize_track(track),))
 
 
+def holds_only_recording(project: Project) -> bool:
+    """Whether the main track holds only media clips of one source: what split operations can rebuild from segments."""
+    index = main_track_index(project)
+    if index is None:
+        return True
+    clips = project.tracks[index].clips
+    return all(c.kind == "media" for c in clips) and len({_source_key(c) for c in clips}) <= 1
+
+
 def _source_key(clip: Clip) -> str:
     return clip.asset or clip.source
 
@@ -92,14 +107,17 @@ def apply_segments(existing: Project | None, video_id: str, segments: list[Saved
     index = main_track_index(project)
     old: list[Clip] = list(project.tracks[index].clips) if index is not None else []
     if any(c.kind != "media" or _source_key(c) != _source_key(old[0]) for c in old):
-        raise ProjectError(
+        raise MainTrackEditedError(
             "this project's main track holds more than the recording's own clips (other sources or text); "
             "its splits can't be edited here, use the compose editor"
         )
     template = old[0] if old else Clip(id="", source=video_id, in_point=0.0, out_point=0.0)
     claimed: set[str] = set()
     clips: list[Clip] = []
-    for seg in segments:
+    # Nothing saved yet: ids come from the video and the position, like `from_legacy`'s, so reading the unsaved
+    # timeline twice gives the same clip ids and an edit based on the first read finds its clip in the second.
+    fresh = existing is None
+    for position, seg in enumerate(segments):
         exact = next(
             (c for c in old if c.id not in claimed and (c.in_point, c.out_point) == (seg.start, seg.end)), None
         )
@@ -112,12 +130,16 @@ def apply_segments(existing: Project | None, video_id: str, segments: list[Saved
             best = None
         base = best if best is not None else template
         clip_id = best.id if best is not None and best.id not in claimed else new_id()
+        if fresh:
+            clip_id = _stable_id(video_id, "clip", position)
         claimed.add(clip_id)
         clips.append(_segment_clip(replace(base, id=clip_id, transition="cut", transition_duration=0.0), seg))
     track = (
         replace(project.tracks[index], clips=tuple(clips))
         if index is not None
-        else Track(id=new_id(), kind="video", clips=tuple(clips), magnetic=True)
+        else Track(
+            id=_stable_id(video_id, "main") if fresh else new_id(), kind="video", clips=tuple(clips), magnetic=True
+        )
     )
     track = normalize_track(track)
     tracks = (

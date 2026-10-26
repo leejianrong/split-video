@@ -43,7 +43,8 @@ class RuleViolation(TimelineError):
     `in_negative`, `out_past_end`, `too_short`, `crossfade_first`, `crossfade_duration`,
     `crossfade_room`, `start_negative`, `overlap`, `magnetic_start`, `free_index`, `index_range`,
     `move_on_free`, `crossfade_free_track`, `text_target`, `not_text_clip`, `last_video_track`,
-    `kind_mismatch`, `main_track_dest`, `crop_invalid`, `crop_not_applicable`."""
+    `kind_mismatch`, `main_track_dest`, `crop_invalid`, `crop_not_applicable`, `track_locked`,
+    `main_track_hidden`."""
 
     def __init__(self, reason: str, message: str) -> None:
         super().__init__(message)
@@ -67,6 +68,12 @@ def find_clip(project: Project, clip_id: str) -> tuple[Track, int]:
             if clip.id == clip_id:
                 return track, i
     raise TimelineError(f"no clip {clip_id!r}")
+
+
+def check_unlocked(track: Track) -> None:
+    """Raise `RuleViolation("track_locked")` if the track is locked (a lane's lock toggle)."""
+    if track.locked:
+        raise RuleViolation("track_locked", f"track {track.id} is locked; unlock it to edit its clips")
 
 
 def _replace_track(project: Project, track: Track) -> Project:
@@ -119,6 +126,8 @@ def _normalize_free_track(track: Track) -> Track:
 
 
 def _with_clips(project: Project, track: Track, clips: list[Clip]) -> Project:
+    """Replace `track`'s clips (every clip edit goes through here, so a locked track refuses all of them)."""
+    check_unlocked(track)
     return _replace_track(project, normalize_track(replace(track, clips=tuple(clips))))
 
 
@@ -466,6 +475,7 @@ def add_track(project: Project, kind: str, *, magnetic: bool = False) -> tuple[P
 
 def remove_track(project: Project, track_id: str) -> Project:
     track = find_track(project, track_id)
+    check_unlocked(track)
     if track.kind == "video" and sum(t.kind == "video" for t in project.tracks) == 1:
         raise RuleViolation("last_video_track", "a project needs at least one video track")
     return replace(project, tracks=tuple(t for t in project.tracks if t.id != track_id))
@@ -510,3 +520,47 @@ def check_range(in_point: float, out_point: float, source_duration: float) -> No
         )
     if out_point - in_point < MIN_CLIP:
         raise RuleViolation("too_short", f"a clip must be at least {MIN_CLIP:g}s long")
+
+
+# --- track flags (lane header toggles) -------------------------------------
+
+
+def set_track_flags(
+    project: Project,
+    track_id: str,
+    *,
+    locked: bool | None = None,
+    hidden: bool | None = None,
+    muted: bool | None = None,
+) -> Project:
+    """Set a track's `locked`, `hidden` and `muted` flags; a flag left as None is unchanged. Allowed on a locked
+    track (that is how it is unlocked). The main track (the first video track) cannot be hidden: the picture would
+    be gone from the export, which is what deleting its clips is for."""
+    track = find_track(project, track_id)
+    if locked is None and hidden is None and muted is None:
+        raise TimelineError("no flags given")
+    if hidden and track.kind == "video" and track_id == _main_id(project):
+        raise RuleViolation("main_track_hidden", "the main video track cannot be hidden")
+    if hidden and track.kind == "audio":
+        raise RuleViolation("hidden_audio_track", "only video tracks can be hidden; mute an audio track instead")
+    changes = {k: v for k, v in (("locked", locked), ("hidden", hidden), ("muted", muted)) if v is not None}
+    return _replace_track(project, replace(track, **changes))
+
+
+def _main_id(project: Project) -> str | None:
+    return next((t.id for t in project.tracks if t.kind == "video"), None)
+
+
+def for_render(project: Project) -> Project:
+    """The project as the export sees it: hidden tracks are left out and the clips of a muted track are muted (a
+    muted clip contributes silence, see `render._gain`). A project without flags comes back unchanged."""
+    if not any(t.hidden or t.muted for t in project.tracks):
+        return project
+    tracks = []
+    for t in project.tracks:
+        if t.hidden:
+            continue
+        if t.muted:
+            t = replace(t, clips=tuple(replace(c, muted=True) for c in t.clips))
+        tracks.append(t)
+    return replace(project, tracks=tuple(tracks))

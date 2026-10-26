@@ -69,6 +69,12 @@ def _asset_for_new_clip(media: MediaStore, path: str | None, asset: str | None) 
         raise TimelineError(str(exc)) from None
 
 
+def find_asset(media: MediaStore, asset: str) -> assets.Asset:
+    """The asset with id `asset` for a new clip (relinked if its file moved); the usual timeline errors if it is
+    unknown or its file is gone."""
+    return _asset_for_new_clip(media, None, asset)
+
+
 # --- loading / saving -------------------------------------------------------
 
 
@@ -332,6 +338,24 @@ def move_track(
     return edit(
         store, name, lambda p: timeline_ops.move_track(p, track_id, to_index), media, base_revision=base_revision
     )
+
+
+def set_track_flags(
+    store: ProjectStore,
+    name: str,
+    track_id: str,
+    *,
+    locked: bool | None = None,
+    hidden: bool | None = None,
+    muted: bool | None = None,
+    media: MediaStore | None = None,
+    base_revision: int | None = None,
+) -> Project:
+    """Lock, hide or mute a track (the lane header toggles); a flag left as None is unchanged."""
+    return edit(
+        store, name, lambda p: timeline_ops.set_track_flags(p, track_id, locked=locked, hidden=hidden, muted=muted),
+        media, base_revision=base_revision,
+    )  # fmt: skip
 
 
 def remove_track(

@@ -88,6 +88,8 @@ class ClipOut(BaseModel):
     text: str
     font_size: float
     color: str
+    label: str = ""  # a main-track segment's name ("Song 2"); empty if it has none
+    label_color: str | None = None  # the segment's band colour (`#rrggbb`) if it has one
 
 
 class TrackOut(BaseModel):
@@ -95,6 +97,9 @@ class TrackOut(BaseModel):
     kind: str
     magnetic: bool
     clips: list[ClipOut]
+    locked: bool = False  # the lane's lock toggle: no edit may touch its clips
+    hidden: bool = False  # a hidden video track is not drawn in the preview or the export
+    muted: bool = False  # a muted track is silent
 
 
 class ProjectOut(BaseModel):
@@ -319,6 +324,74 @@ class RenderStatusOut(BaseModel):
     captions: dict[str, Any] | None = None
 
 
+def clip_out(c: Clip, row: assets.Located | None) -> ClipOut:
+    return ClipOut(
+        id=c.id,
+        asset=row.asset.id if row else c.asset,
+        source=row.source if row else c.source,
+        in_point=timeline_module.ms(c.in_point),
+        out_point=timeline_module.ms(c.out_point),
+        start=timeline_module.ms(c.start),
+        end=timeline_module.ms(c.end),
+        duration=timeline_module.ms(c.duration),
+        source_duration=row.asset.duration if row else None,
+        gain=c.gain,
+        muted=c.muted,
+        transition=c.transition,
+        transition_duration=timeline_module.ms(c.transition_duration),
+        x=c.x,
+        y=c.y,
+        scale=c.scale,
+        opacity=c.opacity,
+        brightness=c.brightness,
+        contrast=c.contrast,
+        saturation=c.saturation,
+        crop=CropBox(**timeline_module.shown_crop(c.crop)) if c.crop else None,
+        kind=c.kind,
+        text=c.text,
+        font_size=c.font_size,
+        color=c.color,
+        label=c.label,
+        label_color=c.label_color,
+    )
+
+
+def project_out(media: MediaStore, name: str, project: Project) -> ProjectOut:
+    # One table load for the whole project; each clip's file is found by asset id.
+    with assets.open_book(media) as book:
+        rows = {
+            c.id: assets.lookup(book, c.asset, c.source) for t in project.tracks for c in t.clips if c.kind == "media"
+        }
+    return ProjectOut(
+        name=name,
+        revision=project.revision,
+        duration=timeline_module.ms(project.duration),
+        tracks=[
+            TrackOut(
+                id=t.id,
+                kind=t.kind,
+                magnetic=t.magnetic,
+                clips=[clip_out(c, rows.get(c.id)) for c in t.clips],
+                locked=t.locked,
+                hidden=t.hidden,
+                muted=t.muted,
+            )
+            for t in project.tracks
+        ],
+    )
+
+
+def asset_out(book: assets.AssetBook, a: assets.Asset) -> AssetOut:
+    """One asset row as the API shows it, with which derived data exists."""
+    return AssetOut(
+        **a.summary(book.present(a)),
+        **proxy.flags(book.media, a),
+        transcript=transcribe.has_transcript(book.media, a),
+        scenes=scenes.has_scenes(book.media, a),
+        ocr=ocr.has_ocr(book.media, a),
+    )
+
+
 def _http(exc: TimelineError) -> ApiError:
     """The HTTP status that best matches a timeline failure."""
     if isinstance(exc, ProjectNotFoundError | SourceNotFoundError | AssetNotFoundError):
@@ -335,65 +408,6 @@ def _http(exc: TimelineError) -> ApiError:
 def make_router(provider: StoreProvider, jobs: JobQueue) -> APIRouter:
     router = APIRouter()
     ctx_dep = Depends(make_context_dependency(provider))
-
-    def clip_out(c: Clip, row: assets.Located | None) -> ClipOut:
-        return ClipOut(
-            id=c.id,
-            asset=row.asset.id if row else c.asset,
-            source=row.source if row else c.source,
-            in_point=timeline_module.ms(c.in_point),
-            out_point=timeline_module.ms(c.out_point),
-            start=timeline_module.ms(c.start),
-            end=timeline_module.ms(c.end),
-            duration=timeline_module.ms(c.duration),
-            source_duration=row.asset.duration if row else None,
-            gain=c.gain,
-            muted=c.muted,
-            transition=c.transition,
-            transition_duration=timeline_module.ms(c.transition_duration),
-            x=c.x,
-            y=c.y,
-            scale=c.scale,
-            opacity=c.opacity,
-            brightness=c.brightness,
-            contrast=c.contrast,
-            saturation=c.saturation,
-            crop=CropBox(**timeline_module.shown_crop(c.crop)) if c.crop else None,
-            kind=c.kind,
-            text=c.text,
-            font_size=c.font_size,
-            color=c.color,
-        )
-
-    def asset_out(book: assets.AssetBook, a: assets.Asset) -> AssetOut:
-        return AssetOut(
-            **a.summary(book.present(a)),
-            **proxy.flags(book.media, a),
-            transcript=transcribe.has_transcript(book.media, a),
-            scenes=scenes.has_scenes(book.media, a),
-            ocr=ocr.has_ocr(book.media, a),
-        )
-
-    def project_out(media: MediaStore, name: str, project: Project) -> ProjectOut:
-        # One table load for the whole project; each clip's file is found by asset id.
-        with assets.open_book(media) as book:
-            rows = {
-                c.id: assets.lookup(book, c.asset, c.source)
-                for t in project.tracks
-                for c in t.clips
-                if c.kind == "media"
-            }
-        return ProjectOut(
-            name=name,
-            revision=project.revision,
-            duration=timeline_module.ms(project.duration),
-            tracks=[
-                TrackOut(
-                    id=t.id, kind=t.kind, magnetic=t.magnetic, clips=[clip_out(c, rows.get(c.id)) for c in t.clips]
-                )
-                for t in project.tracks
-            ],
-        )
 
     def respond(ctx: RequestContext, name: str, action: Callable[[], Project]) -> ProjectOut:
         try:

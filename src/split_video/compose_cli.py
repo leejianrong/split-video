@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import time
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -28,6 +29,7 @@ from rich.table import Table
 
 from split_video import assets, cli_errors, export_modes, render_queue, timeline_service
 from split_video import captions as captions_module
+from split_video import project as split_project
 from split_video.captions import CaptionError
 from split_video.errors import ProjectError
 from split_video.ffmpeg import ExtractError, FfmpegNotFoundError, ProbeError
@@ -161,14 +163,33 @@ def new_cmd(name: str = _Name, root: Path = _Root, as_json: bool = _Json) -> Non
     _show(media, name, project, as_json)
 
 
-def show_cmd(name: str = _Name, root: Path = _Root, as_json: bool = _Json) -> None:
-    """Show a project's clips."""
+def show_cmd(
+    name: str | None = typer.Argument(None, help="Project name (no extension)."),
+    video: str | None = typer.Option(
+        None, "--video", help="Show this recording's own timeline (the one the editor shows) instead of a project."
+    ),
+    root: Path = _Root,
+    as_json: bool = _Json,
+) -> None:
+    """Show a project's clips, or with --video a recording's own timeline (clip ids and revision for `apply-ops --video`)."""
+    if (name is None) == (video is None):
+        raise typer.BadParameter("give exactly one of NAME and --video")
     root = root.resolve()
     store = LocalProjectStore(root)
     media = LocalMediaStore(root)
     try:
-        project = timeline_service.load_existing(store, name, media)
-    except _EXPECTED_ERRORS as exc:
+        if name is not None:
+            project = timeline_service.load_existing(store, name, media)
+        else:
+            source = media.resolve_user_path(video or "")
+            if not media.is_file(source):
+                raise SourceNotFoundError(f"video not found: {video}")
+            name = source
+            project = replace(
+                split_project.video_timeline(store, media, source),
+                revision=split_project.current_revision(store, source),
+            )
+    except (*_EXPECTED_ERRORS, MediaOutsideRootError) as exc:
         raise _fail(exc, as_json)
     _show(media, name, project, as_json)
 

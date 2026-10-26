@@ -23,7 +23,7 @@ New work goes through the seams, not around them:
 - **The engine holds the rules; HTTP routes, CLI and MCP tools are thin adapters.** A capability that is "API, CLI and MCP" must exist on all three with the same output shape.
 - **A new engine or adapter module goes into the ENGINE / ADAPTERS / GUARDED lists in `tests/unit/test_store_boundary.py`** (it fails on paths built outside the stores).
 - **A new `/api/v1` route with no deprecated unversioned alias goes into `NO_LEGACY_ALIAS` in `tests/integration/test_api_versioning.py`.**
-- **After changing routes, schemas or error codes, regenerate the committed files: `make openapi schemas errors`.** CI fails on drift.
+- **After changing routes, schemas or error codes, regenerate the committed files: `make openapi schemas errors`, then `make api-client` (the TypeScript client in `frontend/`).** CI fails on drift.
 - Public formats (`*.split-video-project.json`, `*.split-video-timeline.json`, `.split-video-assets.json`) change only with a version bump and a migration.
 
 ## Agent rules

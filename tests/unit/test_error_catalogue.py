@@ -8,7 +8,17 @@ from pathlib import Path
 
 import pytest
 
-from split_video import captions, edit_ops, edit_plan, error_catalogue, presets, project, timeline_service
+from split_video import (
+    captions,
+    edit_ops,
+    edit_plan,
+    error_catalogue,
+    media_import,
+    presets,
+    project,
+    split_model,
+    timeline_service,
+)
 from split_video import timeline_ops as ops
 from split_video.error_catalogue import REGISTRY, describe, error_dict
 from split_video.errors import RevisionConflictError
@@ -108,6 +118,7 @@ def _samples() -> dict[str, BaseException]:
         "segments.invalid": raised(project.validate_pairs, []),
         "clip.overlap": ops.RuleViolation("overlap", "clip would overlap another clip on the track (until 4s)"),
         "clip.too_short": ops.RuleViolation("too_short", "a clip must be at least 0.1s long"),
+        "track.locked": ops.RuleViolation("track_locked", "track 3f9a is locked; unlock it to edit its clips"),
         "clip.not_found": TimelineError("no clip 9; the track has 2"),
         "timeline.rule_violated": ops.RuleViolation("crossfade_first", "the first clip has nothing to crossfade from"),
         "timeline.invalid": TimelineError("text can't be empty"),
@@ -119,6 +130,10 @@ def _samples() -> dict[str, BaseException]:
         "source.outside_root": OutsideRootError("'../x.mp4' is outside the project directory"),
         "media.unreadable": ProbeError("could not read 'x.mp4'"),
         "media.audio_only": FrameAudioOnlyError("asset a_1 is audio-only: it has no picture to extract"),
+        "segments.main_track_edited": split_model.MainTrackEditedError("the main track holds other clips"),
+        "upload.invalid_name": raised(media_import.clean_name, ""),
+        "upload.unsupported_type": raised(media_import.clean_name, "notes.txt"),
+        "upload.empty": media_import.ImportError_("the upload is empty", "upload.empty"),
         "revision.conflict": RevisionConflictError("reel", 3, 1, "timeline project"),
         "preset.unknown": raised(presets.get, "zzz"),
         "fit.unknown": raised(presets.check_fit, "zzz"),

@@ -34,7 +34,7 @@ from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from typing import Any
 
-from split_video import assets, split_model
+from split_video import assets, edit_ops, split_model, timeline_ops, timeline_service
 from split_video.editor import classify
 from split_video.editor.cache import ClassificationCache, SilenceCache
 from split_video.errors import ProjectError, RevisionConflictError  # noqa: F401  (re-exported)
@@ -58,6 +58,12 @@ UNSET: Any = object()
 
 class ExportConflictError(ProjectError):
     """Output files already exist and overwriting wasn't asked for."""
+
+
+class AudioOnlyClipError(ProjectError):
+    """An audio-only asset was added to the main video track."""
+
+    error_code = "media.audio_only"
 
 
 # --- loading / saving -------------------------------------------------------
@@ -91,7 +97,35 @@ def video_timeline(store: ProjectStore, media: MediaStore, project_id: str) -> P
     """The video's timeline project as a value (read-only, nothing is written): its saved timeline, a legacy split
     project migrated in memory, or the whole recording as one clip, with the clips linked to assets."""
     stored = store.load_video_timeline(project_id).value
+    if stored is not None and not split_model.holds_only_recording(stored):
+        # Edited beyond split points (another recording, titles): as saved, not rebuilt from its segments.
+        return replace(assets.link_project(media, stored), revision=stored.revision)
     return _unified(store, media, project_id, stored, current_segments(store, media, project_id))
+
+
+def _editable(store: ProjectStore, media: MediaStore, project_id: str, stored: Project | None) -> Project:
+    """What `video_timeline` shows for `stored` (inside an update, where `stored` was just read)."""
+    if stored is not None and not split_model.holds_only_recording(stored):
+        return stored
+    return _unified(store, media, project_id, stored, current_segments(store, media, project_id))
+
+
+def video_ops_target(store: ProjectStore, media: MediaStore, project_id: str) -> edit_ops.OpsTarget:
+    """Where `edit_ops.apply_ops` finds the video's own timeline (SPL-65): the same project `video_timeline` shows,
+    read with its revision and saved atomically with `update_video_timeline`, so trim, move, lane flags and the
+    other ops edit a recording's timeline exactly as they edit a named one. A video with nothing saved becomes its
+    recording as one clip first."""
+
+    def load() -> Project:
+        return replace(video_timeline(store, media, project_id), revision=current_revision(store, project_id))
+
+    def update(change: Callable[[Project], Project], base_revision: int | None) -> Project:
+        saved = store.update_video_timeline(
+            project_id, lambda stored: change(_editable(store, media, project_id, stored)), base_revision
+        )
+        return replace(saved.value, revision=saved.revision)
+
+    return edit_ops.OpsTarget(project_id, load, update)
 
 
 def has_project(store: ProjectStore, project_id: str) -> bool:
@@ -128,6 +162,13 @@ def _unified(
     return project if media is None else replace(assets.link_project(media, project), revision=0)
 
 
+def _check_main_unlocked(stored: Project | None) -> None:
+    """Split operations rewrite the main track, so a locked one (the lane's lock toggle) refuses them."""
+    index = None if stored is None else split_model.main_track_index(stored)
+    if stored is not None and index is not None:
+        timeline_ops.check_unlocked(stored.tracks[index])
+
+
 def save_segments(
     store: ProjectStore,
     project_id: str,
@@ -138,10 +179,12 @@ def save_segments(
     """Replace the project's segments and return the new revision. With `base_revision`, fails
     with `RevisionConflictError` if the project has moved on since that revision. With `media` the clips are
     linked to the video's asset."""
-    saved = store.update_video_timeline(
-        project_id, lambda stored: _unified(store, media, project_id, stored, segments), base_revision
-    )
-    return saved.revision
+
+    def change(stored: Project | None) -> Project:
+        _check_main_unlocked(stored)
+        return _unified(store, media, project_id, stored, segments)
+
+    return store.update_video_timeline(project_id, change, base_revision).revision
 
 
 def edit_segments(
@@ -157,6 +200,7 @@ def edit_segments(
     is still at that revision. Returns the saved segments and the new revision."""
 
     def apply(stored: Project | None) -> Project:
+        _check_main_unlocked(stored)
         if stored is not None:
             current = split_model.to_segments(stored)
         else:
@@ -217,14 +261,87 @@ def propose_segments(
     min_silence_duration: float = 2.0,
     min_song_length: float = 30.0,
     padding: float = 0.15,
+    label_prefix: str | None = None,
+    cancel: CancelToken | None = None,
+    on_progress: Callable[[float], None] | None = None,
 ) -> list[SavedSegment]:
     """Splits proposed by silence detection — the same scan + post-processing
     the editor's setup step runs (and cached the same way, so a later `edit`
-    reuses the scan). Does not save; pair with `save_segments`."""
+    reuses the scan). Does not save; pair with `save_segments`.
+
+    With `label_prefix` each segment is labelled "<prefix> 1", "<prefix> 2" ... (a recording that comes out as one
+    segment is left unlabelled: nothing was cut). `cancel` stops the silence scan; `on_progress(seconds)` follows it."""
     duration = media.probe(source).duration
-    silences = SilenceCache(media, source).get_raw_silences(silence_threshold)
+    silences = SilenceCache(media, source).get_raw_silences(silence_threshold, cancel, on_progress)
     computed = compute_segments(silences, duration, min_silence_duration, min_song_length, padding)
-    return contiguous(computed)
+    segments = contiguous(computed)
+    if label_prefix and len(segments) > 1:
+        segments = [replace(s, label=f"{label_prefix} {n}") for n, s in enumerate(segments, 1)]
+    return segments
+
+
+def split_by_silence(
+    store: ProjectStore,
+    media: MediaStore,
+    source: str,
+    *,
+    silence_threshold: float = -35.0,
+    min_silence_duration: float = 2.0,
+    min_song_length: float = 30.0,
+    padding: float = 0.15,
+    label_prefix: str | None = None,
+    base_revision: int | None = None,
+    cancel: CancelToken | None = None,
+    on_progress: Callable[[float], None] | None = None,
+) -> dict[str, Any]:
+    """Propose splits by silence (`propose_segments`) and save them as the video's segments, replacing the saved
+    ones: the one operation behind "Split by silence" and "Find songs" in the editor. A cancelled run saves
+    nothing. With `base_revision` a project that changed meanwhile is `RevisionConflictError` and nothing is
+    written. Returns `{video, segments (count), revision, labels}`."""
+    segments = propose_segments(
+        media,
+        source,
+        silence_threshold=silence_threshold,
+        min_silence_duration=min_silence_duration,
+        min_song_length=min_song_length,
+        padding=padding,
+        label_prefix=label_prefix,
+        cancel=cancel,
+        on_progress=on_progress,
+    )
+    if cancel is not None:
+        cancel.raise_if_cancelled()
+    revision = save_segments(store, source, segments, base_revision, media)
+    return {"video": source, "segments": len(segments), "revision": revision, "labels": [s.label for s in segments]}
+
+
+def add_asset_clip(
+    store: ProjectStore,
+    media: MediaStore,
+    project_id: str,
+    asset_id: str,
+    *,
+    index: int | None = None,
+    base_revision: int | None = None,
+) -> Project:
+    """Add a clip of the library asset `asset_id` (all of it) to the main track of the video's own timeline, at
+    `index` (default: the end), and save it. A video with nothing saved yet first becomes its recording as one clip.
+    Returns the saved timeline. With `base_revision`, a project that changed meanwhile is `RevisionConflictError`
+    and nothing is written. After this the main track holds more than the recording's own clips, so the split
+    operations refuse to run on it (they say to use the compose editor)."""
+    record = timeline_service.find_asset(media, asset_id)
+    if not record.has_video:
+        raise AudioOnlyClipError(f"{record.path} has no video stream, so it can't go on the main video track")
+
+    def change(stored: Project | None) -> Project:
+        base = stored
+        if base is None:
+            base = _unified(store, media, project_id, None, current_segments(store, media, project_id))
+        track = timeline_service.video_track(base)
+        new, _ = timeline_ops.add_clip(base, track.id, record.path, record.duration, index=index, asset=record.id)
+        return new
+
+    return store.update_video_timeline(project_id, change, base_revision).value
 
 
 # --- editing ----------------------------------------------------------------
