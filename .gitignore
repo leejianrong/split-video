@@ -45,3 +45,6 @@ wheels/
 # release job produce it.
 /src/split_video/editor/static_app/
 node_modules/
+
+# Personal Traefik routing for `make dev` (copy docker-compose.override.yml.example)
+/docker-compose.override.yml

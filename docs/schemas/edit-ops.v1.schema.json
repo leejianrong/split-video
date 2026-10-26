@@ -511,6 +511,59 @@
       ],
       "type": "object"
     },
+    "set_track_flags": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "anyOf": [
+            {
+              "required": [
+                "locked"
+              ]
+            },
+            {
+              "required": [
+                "hidden"
+              ]
+            },
+            {
+              "required": [
+                "muted"
+              ]
+            }
+          ]
+        }
+      ],
+      "description": "Lock, hide or mute a track, as the timeline's lane toggles do (`timeline_ops.set_track_flags`).",
+      "properties": {
+        "hidden": {
+          "description": "A hidden video track is not drawn in the preview or the export. Not the main track, not audio tracks.",
+          "type": "boolean"
+        },
+        "locked": {
+          "description": "A locked track refuses every edit of its clips until it is unlocked.",
+          "type": "boolean"
+        },
+        "muted": {
+          "description": "A muted track is silent in the preview and the export.",
+          "type": "boolean"
+        },
+        "op": {
+          "const": "set_track_flags",
+          "description": "The operation.",
+          "type": "string"
+        },
+        "track": {
+          "description": "Id of the track (from show_timeline, or the `id` of an earlier op in this batch).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "op",
+        "track"
+      ],
+      "type": "object"
+    },
     "set_transition": {
       "additionalProperties": false,
       "description": "Set how a clip joins the one before it (`timeline_service.set_transition`).",
@@ -654,6 +707,9 @@
           },
           {
             "$ref": "#/$defs/place_clip"
+          },
+          {
+            "$ref": "#/$defs/set_track_flags"
           }
         ]
       },

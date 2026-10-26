@@ -12,11 +12,23 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from split_video import captions, library, media_report, ocr, project, proxy, scenes, timeline_service, transcribe
+from split_video import (
+    assets,
+    captions,
+    library,
+    media_report,
+    ocr,
+    project,
+    proxy,
+    scenes,
+    timeline_service,
+    transcribe,
+)
 from split_video.editor import classify
-from split_video.editor.cache import ClassificationCache
+from split_video.editor.cache import ClassificationCache, WaveformCache
 from split_video.jobs import PROXY, JobContext, JobQueue
 from split_video.media_store import MediaStore
+from split_video.store import ProjectStore
 from split_video.timeline import Project
 
 # A render reports a 0..1 fraction; as a job it counts thousandths of the output.
@@ -93,6 +105,49 @@ def analysis_work(
     return work
 
 
+# A silence scan reports seconds of audio done; as a job it counts thousandths of the audio.
+SPLIT_STEPS = 1000
+
+
+def split_work(
+    media: MediaStore,
+    store: ProjectStore,
+    source: str,
+    *,
+    silence_threshold: float = -35.0,
+    min_silence_duration: float = 2.0,
+    min_song_length: float = 30.0,
+    padding: float = 0.15,
+    label_prefix: str | None = None,
+    base_revision: int | None = None,
+) -> Callable[[JobContext], dict[str, Any]]:
+    """Split the video at its silences and save the segments (`project.split_by_silence`). Progress counts
+    thousandths of the audio; the result is `{video, segments, revision, labels}`. A cancelled job saves nothing."""
+
+    def work(ctx: JobContext) -> dict[str, Any]:
+        duration = max(media.probe(source).duration, 1e-9)
+
+        def on_progress(seconds: float) -> None:
+            ctx.progress(min(round(seconds / duration * SPLIT_STEPS), SPLIT_STEPS - 1), SPLIT_STEPS)
+
+        ctx.progress(0, SPLIT_STEPS, "Listening for silence")
+        return project.split_by_silence(
+            store,
+            media,
+            source,
+            silence_threshold=silence_threshold,
+            min_silence_duration=min_silence_duration,
+            min_song_length=min_song_length,
+            padding=padding,
+            label_prefix=label_prefix,
+            base_revision=base_revision,
+            cancel=ctx,
+            on_progress=on_progress,
+        )
+
+    return work
+
+
 def report_prepare_work(media: MediaStore, asset_id: str) -> Callable[[JobContext], dict[str, Any]]:
     """Make the asset's missing cheap signals (`media_report.prepare_signals`: loudness, silence scan, audio
     classification). Progress is `media_report.PREPARE_STEPS` thousandths of the work; the result is `{asset,
@@ -143,6 +198,23 @@ def proxy_work(media: MediaStore, asset_id: str, *, force: bool = False) -> Call
 
         ctx.progress(0, proxy.STEPS)
         return proxy.prepare(media, asset_id, force=force, on_progress=on_progress, cancel=ctx)
+
+    return work
+
+
+def waveform_work(media: MediaStore, asset_id: str) -> Callable[[JobContext], dict[str, Any]]:
+    """Decode the asset's audio once (streamed, never all in memory) and store its peak envelope and loudness curve
+    in the waveform cache next to the file (`WaveformCache`), which the timeline draws. Cancel stops ffmpeg and
+    stores nothing. The result is `{asset, buckets, loudness_windows}`."""
+
+    def work(ctx: JobContext) -> dict[str, Any]:
+        asset = assets.get_asset(media, asset_id)
+        cache = WaveformCache(media, asset.path)
+        ctx.progress(0, 1)
+        peaks = cache.get_peaks(ctx)
+        loudness = cache.get_loudness(ctx)
+        ctx.progress(1, 1)
+        return {"asset": asset.id, "buckets": len(peaks.buckets), "loudness_windows": len(loudness.db)}
 
     return work
 

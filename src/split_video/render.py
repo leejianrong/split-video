@@ -32,7 +32,7 @@ from contextlib import ExitStack
 from dataclasses import dataclass
 from typing import Any
 
-from split_video import assets, presets, transcribe
+from split_video import assets, presets, timeline_ops, transcribe
 from split_video import captions as captions_module
 from split_video.ffmpeg import ExtractError, MediaInfo, StallWatchdog, _require_binary, stall_seconds, stop_on_cancel
 from split_video.jobs import CancelToken
@@ -355,6 +355,7 @@ def render(
     settings = presets.resolve_export(preset, width, height, fit)
     size = settings.size
     project = assets.resolve_project(media, project)  # every clip's `source` is now its file's current media id
+    project = timeline_ops.for_render(project)  # hidden tracks left out, muted tracks silent (the lane toggles)
     video_clips = [c for t in project.tracks if t.kind == "video" for c in t.clips]
     if not video_clips:
         raise TimelineError("the timeline has no clips to render")

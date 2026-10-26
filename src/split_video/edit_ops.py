@@ -250,6 +250,19 @@ OPS: dict[str, OpSpec] = {
             _clip_field("start", description="New start on the timeline, seconds (default: unchanged)."),
             _ref("track", required=False, extra=" to move the clip to (same kind; default: its own track)"),
         ),
+        _spec(
+            "set_track_flags",
+            "Lock, hide or mute a track, as the timeline's lane toggles do (`timeline_ops.set_track_flags`).",
+            _ref("track"),
+            Field("locked", "boolean", "A locked track refuses every edit of its clips until it is unlocked."),
+            Field(
+                "hidden",
+                "boolean",
+                "A hidden video track is not drawn in the preview or the export. Not the main track, not audio tracks.",
+            ),
+            Field("muted", "boolean", "A muted track is silent in the preview and the export."),
+            any_of=("locked", "hidden", "muted"),
+        ),
     )
 }
 
@@ -563,6 +576,9 @@ _RULES: dict[str, tuple[str, str | None, str]] = {
         "track",
         "the main track keeps clips back to back; use move_clip or add_clip",
     ),
+    "track_locked": ("ops.track.locked", None, "unlock the track first: set_track_flags with locked false"),
+    "main_track_hidden": ("ops.track.main_hidden", "hidden", "the main video track is always drawn; mute it instead"),
+    "hidden_audio_track": ("ops.track.hidden_audio", "hidden", "audio tracks are muted, not hidden"),
 }
 
 
@@ -572,9 +588,10 @@ def _rule_failure(op: _Op, exc: TimelineError) -> _Failure:
         return _fail(op, "ops.rule.violated", str(exc), "")
     code, field_name, hint = _RULES[reason]
     if field_name is None:
-        field_name = {"index_range": "index" if op.spec and op.spec.name == "add_clip" else "to_index"}.get(
-            reason, "duration" if op.spec and op.spec.name == "add_text_clip" else "out"
-        )
+        field_name = {
+            "index_range": "index" if op.spec and op.spec.name == "add_clip" else "to_index",
+            "track_locked": "clip" if isinstance(op.raw, dict) and "clip" in op.raw else "track",
+        }.get(reason, "duration" if op.spec and op.spec.name == "add_text_clip" else "out")
     return _fail(op, code, str(exc), hint, field_name)
 
 
@@ -770,8 +787,12 @@ def _op_move_clip(run: _Run, project: Project, op: _Op) -> tuple[Project, str, d
 
 def _op_remove_clip(run: _Run, project: Project, op: _Op) -> tuple[Project, str, dict[str, str]]:
     track, _ = _clip(project, op)
+    try:
+        new = timeline_ops.remove_clip(project, op.raw["clip"])
+    except TimelineError as exc:
+        raise _rule_failure(op, exc) from None
     return (
-        timeline_ops.remove_clip(project, op.raw["clip"]),
+        new,
         f"removed clip {op.raw['clip']}",
         {
             "clip": op.raw["clip"],
@@ -891,6 +912,17 @@ def _op_place_clip(run: _Run, project: Project, op: _Op) -> tuple[Project, str, 
     return new, f"placed clip {op.raw['clip']} on track {dest_id}", {"clip": op.raw["clip"], "track": dest_id}
 
 
+def _op_set_track_flags(run: _Run, project: Project, op: _Op) -> tuple[Project, str, dict[str, str]]:
+    track = _track(run, project, op)
+    flags = {name: op.raw[name] for name in ("locked", "hidden", "muted") if name in op.raw}
+    try:
+        new = timeline_ops.set_track_flags(project, track.id, **flags)
+    except TimelineError as exc:
+        raise _rule_failure(op, exc) from None
+    shown = ", ".join(f"{name} {'on' if value else 'off'}" for name, value in flags.items())
+    return new, f"set track {track.id}: {shown}", {"track": track.id}
+
+
 _HANDLERS: dict[str, Callable[[_Run, Project, _Op], tuple[Project, str, dict[str, str]]]] = {
     "add_clip": _op_add_clip,
     "trim_clip": _op_trim_clip,
@@ -904,6 +936,7 @@ _HANDLERS: dict[str, Callable[[_Run, Project, _Op], tuple[Project, str, dict[str
     "remove_track": _op_remove_track,
     "move_track": _op_move_track,
     "place_clip": _op_place_clip,
+    "set_track_flags": _op_set_track_flags,
 }
 assert set(_HANDLERS) == set(OPS)
 
@@ -982,8 +1015,47 @@ def _run_ops(
 # --- the API -----------------------------------------------------------------------------------------------------
 
 
+@dataclass(frozen=True)
+class OpsTarget:
+    """Where the project of a batch lives. By default a named timeline project of the store; a caller that edits
+    another kind of project (a recording's own timeline, SPL-65) passes its own `load` and `update`, and the batch is
+    applied by the same engine. `name` is shown in the result and stands in for the document's `project`."""
+
+    name: str
+    load: Callable[[], Project]  # read only; the project stamped with its revision
+    update: Callable[[Callable[[Project], Project], int | None], Project]  # atomic read-modify-write
+
+
+def with_project(doc: Any, name: str) -> Any:
+    """`doc` addressed to the project `name` of the URL (or `--video`, or the tool's `video`): `project` is filled in
+    when absent, and a different one is an `OpsInvalidError` (the address and the document would disagree)."""
+    if not isinstance(doc, dict):
+        return doc
+    if "project" not in doc:
+        return {**doc, "project": name}
+    if doc["project"] != name:
+        report = OpsReport()
+        report.error(
+            "/project",
+            "ops.project.mismatch",
+            f"the document is for project {doc['project']!r} but the URL names {name!r}",
+            "make them the same, or leave `project` out of the body",
+        )
+        raise OpsInvalidError(report)
+    return doc
+
+
+def named_target(media: MediaStore, store: ProjectStore, name: str) -> OpsTarget:
+    """The default target: the store's timeline project `name`, which must exist."""
+    return OpsTarget(
+        name,
+        lambda: store.load_existing_timeline(name),
+        lambda change, base: store.update_timeline(name, change, base),
+    )
+
+
 def _prepare(
-    ops_doc: Any, base_revision: int | None, continue_on_error: bool, dry_run: bool
+    ops_doc: Any, base_revision: int | None, continue_on_error: bool, dry_run: bool, check_name: bool = True
 ) -> tuple[OpsReport, dict[str, Any], list[_Op], int | None, bool]:
     """The static half: version, top-level fields and the shape of every op. Returns the report, the document as a
     version 1 one, the parsed ops, the effective base revision and the effective `continue_on_error`."""
@@ -1029,7 +1101,7 @@ def _prepare(
 
     top = _check_object(doc, TOP_FIELDS, "", report, ns="ops")
     name = top.get("project")
-    if name is not None:
+    if name is not None and check_name:
         try:
             timeline.validate_name(name)
         except TimelineError:
@@ -1101,16 +1173,30 @@ def _static_failed(report: OpsReport, parsed: list[_Op], continue_on_error: bool
     return bool(outside) or (bool(bad) and not continue_on_error)
 
 
+def _addressed(ops_doc: Any, target: OpsTarget | None) -> Any:
+    """`ops_doc` with `project` filled in from `target` when the document has none."""
+    if target is None or not isinstance(ops_doc, dict) or "project" in ops_doc:
+        return ops_doc
+    return {**ops_doc, "project": target.name}
+
+
 def _dry_run(
-    media: MediaStore, store: ProjectStore, ops_doc: Any, base_revision: int | None, continue_on_error: bool
+    media: MediaStore,
+    store: ProjectStore,
+    ops_doc: Any,
+    base_revision: int | None,
+    continue_on_error: bool,
+    target: OpsTarget | None = None,
 ) -> tuple[OpsReport, dict[str, Any], Project | None, int]:
     """A dry run: the report (with `timeline`), the document, the project after the ops that applied (None if the
     shape check failed first) and the predicted revision. Reads only."""
-    report, doc, parsed, base, cont = _prepare(ops_doc, base_revision, continue_on_error, True)
+    report, doc, parsed, base, cont = _prepare(
+        _addressed(ops_doc, target), base_revision, continue_on_error, True, check_name=target is None
+    )
     if not doc or _static_failed(report, parsed, cont):
         return report, doc, None, 0
     name = doc["project"]
-    loaded = store.load_existing_timeline(name)
+    loaded = (target or named_target(media, store, name)).load()
     store_module.check_base_revision("timeline project", name, loaded.revision, base)
     project = _run_ops(media, loaded, parsed, report, report.plan_hash or "", cont)
     revision = loaded.revision + 1
@@ -1125,10 +1211,11 @@ def validate_ops(
     *,
     base_revision: int | None = None,
     continue_on_error: bool = False,
+    target: OpsTarget | None = None,
 ) -> OpsReport:
     """The report a dry run gives, valid or not: every shape problem, and what applying the ops to the stored
     project would do. Writes nothing. `ProjectNotFoundError` / `RevisionConflictError` as for `apply_ops`."""
-    return _dry_run(media, store, ops_doc, base_revision, continue_on_error)[0]
+    return _dry_run(media, store, ops_doc, base_revision, continue_on_error, target)[0]
 
 
 def _view(media: MediaStore, name: str, project: Project, revision: int) -> dict[str, Any]:
@@ -1143,6 +1230,7 @@ def apply_ops(
     dry_run: bool = False,
     base_revision: int | None = None,
     continue_on_error: bool = False,
+    target: OpsTarget | None = None,
 ) -> dict[str, Any]:
     """Apply a batch of operations to an existing timeline project, atomically: every op or none, saved with ONE
     `update_timeline` (under the store's write lock, so no other edit slips in between), or, with `dry_run`, only
@@ -1154,16 +1242,20 @@ def apply_ops(
     report) if any op is invalid or the project refuses it. The first op the project refuses stops the batch,
     unless `continue_on_error` (dry run only) goes on and collects every independent problem.
 
-    A dry run's `revision` is a prediction (the current one plus one), not a reservation."""
+    `target` (default: the store's timeline project named in the document) says where the project lives; see
+    `OpsTarget`. A dry run's `revision` is a prediction (the current one plus one), not a reservation."""
     if dry_run:
-        report, doc, project, revision = _dry_run(media, store, ops_doc, base_revision, continue_on_error)
+        report, doc, project, revision = _dry_run(media, store, ops_doc, base_revision, continue_on_error, target)
         if project is None or not report.ok:
             raise OpsInvalidError(report)
         return {**_summary(doc["project"], project, revision, report, doc, True), "timeline": report.timeline}
-    report, doc, parsed, base, cont = _prepare(ops_doc, base_revision, continue_on_error, False)
+    report, doc, parsed, base, cont = _prepare(
+        _addressed(ops_doc, target), base_revision, continue_on_error, False, check_name=target is None
+    )
     if not doc or _static_failed(report, parsed, cont):
         raise OpsInvalidError(report)
     name = doc["project"]
+    target = target or named_target(media, store, name)
     batch_hash = report.plan_hash or ""
 
     def change(stored: Project) -> Project:
@@ -1173,5 +1265,5 @@ def apply_ops(
             raise OpsInvalidError(report)  # nothing is written: update_timeline saves only what `change` returns
         return done
 
-    saved = store.update_timeline(name, change, base)
+    saved = target.update(change, base)
     return _summary(name, saved, saved.revision, report, doc, False)
