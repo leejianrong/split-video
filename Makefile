@@ -15,14 +15,9 @@ build: ## Build the Docker image
 fetch-model: ## Download the YAMNet model for local (non-Docker) dev; the Docker build fetches it itself
 	uv run --with kagglehub python scripts/fetch_yamnet_model.py
 
-dev: build ## Build and run the visual editor in Docker (override with DIR=./videos PORT=9000)
-	docker run --rm \
-		--name split-video-editor \
-		-p $(PORT):8765 \
-		-v "$(DIR)":/data \
-		--user "$$(id -u):$$(id -g)" \
-		$(IMAGE) \
-		edit /data --host 0.0.0.0 --no-browser
+dev: ## Build and run the visual editor in Docker via Compose (override with DIR=./videos PORT=9000)
+	DIR="$(DIR)" PORT=$(PORT) HOST_UID=$$(id -u) HOST_GID=$$(id -g) \
+		docker compose run --rm --build --service-ports editor
 
 frontend: ## Build the Svelte app into src/split_video/editor/static_app (served at /app/)
 	cd frontend && npm ci && npm run build

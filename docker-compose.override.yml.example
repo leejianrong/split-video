@@ -1,0 +1,19 @@
+# Optional, personal. Copy to docker-compose.override.yml (gitignored; Compose loads it on its own) to reach the
+# editor at http://split-video.localhost/ through a machine-wide Traefik, with no host port at all, so `make dev`
+# can never collide with another project or a second checkout. Needs Traefik running with an external network named
+# `proxy` (see the traefik-dev-proxy skill). Without this file `make dev` publishes localhost:8765 as before.
+services:
+  editor:
+    # The override replaces the base file's `ports`, so nothing is published on the host.
+    ports: !override []
+    networks:
+      - default
+      - proxy
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.split-video.rule=Host(`split-video.localhost`)
+      - traefik.http.services.split-video.loadbalancer.server.port=8765
+
+networks:
+  proxy:
+    external: true

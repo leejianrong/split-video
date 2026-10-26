@@ -68,6 +68,13 @@ make dev
 make dev DIR=~/recordings PORT=9000
 ```
 
+`make dev` runs the `editor` service of [`docker-compose.yml`](../docker-compose.yml) (`docker compose run --rm`), so
+repeated or parallel runs never fight over a container name. The host port is the only thing that can still collide:
+pick another with `PORT=`, or skip host ports altogether by routing through a machine-wide Traefik. Copy
+[`docker-compose.override.yml.example`](../docker-compose.override.yml.example) to `docker-compose.override.yml`
+(gitignored), keep Traefik running with an external network named `proxy`, and `make dev` serves the editor at
+`http://split-video.localhost/` with no published port. Without the override file nothing changes.
+
 The optional features are build args: `WITH_TRANSCRIPTION=1` (speech to text, see
 [Transcription](analysis.md#transcription-optional)) and `WITH_OCR=1` (on-screen text, see
 [On-screen text](analysis.md#on-screen-text-ocr-optional)).

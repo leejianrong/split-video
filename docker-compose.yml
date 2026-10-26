@@ -1,0 +1,15 @@
+# The visual editor in Docker, the same thing `make dev` runs. `make dev` is the usual way in; plain
+# `docker compose run --rm --service-ports editor` works too. Variables (all optional):
+#   DIR   folder to open, mounted at /data      (default: the current directory)
+#   PORT  host port for http://localhost:PORT   (default: 8765)
+# Anything the editor persists lives in sidecar files next to the videos in DIR, so nothing else is mounted.
+services:
+  editor:
+    image: split-video
+    build: .
+    command: ["edit", "/data", "--host", "0.0.0.0", "--no-browser"]
+    ports:
+      - "127.0.0.1:${PORT:-8765}:8765"
+    volumes:
+      - "${DIR:-.}:/data"
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
