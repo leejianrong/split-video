@@ -291,6 +291,21 @@
       >
         {#snippet panel(id)}<p class="plain">Panel for <strong>{id}</strong>.</p>{/snippet}
       </Tabs>
+      <h3>Tabs, compact (the inspector's: tighter, no panel padding)</h3>
+      <div class="compact-demo">
+        <Tabs
+          compact
+          label="Clip settings"
+          bind:selected={tab}
+          tabs={[
+            { id: 'media', label: 'Video' },
+            { id: 'highlights', label: 'Audio' },
+            { id: 'transcript', label: 'Captions' },
+          ]}
+        >
+          {#snippet panel(id)}<p class="plain">Panel for <strong>{id}</strong>.</p>{/snippet}
+        </Tabs>
+      </div>
     </section>
 
     <section id="overlays" aria-labelledby="h-overlays">
@@ -480,5 +495,8 @@
     width: 72px;
     font-size: var(--font-size-xs);
     color: var(--color-text-muted);
+  }
+  .compact-demo {
+    max-width: 308px;
   }
 </style>

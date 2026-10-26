@@ -31,7 +31,7 @@ The editor shell is `lib/shell/EditorShell.svelte`, a CSS grid of the ux-spec re
 | Timeline | `section` | 200 px to 60% of the window height (292), full width at the bottom |
 
 Below 1280 px wide the editor shows a "window too small" notice instead of the grid. The regions hold no logic; panel
-contents, preview, inspector controls and timeline lanes come in later cards.
+contents, preview, the inspector's controls are described [below](#the-inspector); lanes are in [the timeline](#the-timeline).
 
 **Resizing.** A `ResizeHandle` sits on the panel's right edge, the inspector's left edge and the timeline's top edge
 (an ARIA window splitter: `role="separator"`, `aria-valuenow/min/max`). Drag it, or focus it and use the arrow keys
@@ -285,6 +285,47 @@ through `set_track_flags`.
 
 **Not yet** (later cards): snapping, ripple, undo and redo, split at the playhead, delete, box selection, dragging a cut
 between two segments, double click to rename, a Captions lane (the model has no caption clips), and playback.
+
+## The inspector
+
+`lib/inspector/` and `lib/shell/InspectorRegion.svelte` implement [ux-spec.md#inspector](ux-spec.md#inspector): the
+settings follow the timeline selection (`state/clipSelection.svelte.ts`). It holds no rule. Every control is one
+[edit op](edit-ops.md) (`set_clip_properties`, `set_text_properties`) sent through `project.applyOps` (`If-Match`, the
+shared 409 path; a refusal shows the engine's message and fix as a toast), and every value shown is read back from
+`project.timeline`, so a reload, or an agent's change, shows the same state. No new engine op was needed for what is
+listed as working below.
+
+| Selection | Shows |
+|---|---|
+| Nothing | Project details (name, source file, length, canvas) and Export |
+| One video clip | Tabs **Video**, **Audio**, **Speed**, **Crop**, **Captions** |
+| An audio-lane clip | **Audio** only |
+| A title | Text, size (% of the frame height), colour, position |
+| Several clips of one kind | Only what is valid for all of them: **Audio**, and **Video** (scale, position, opacity) when all are on overlay lanes; one batch, one revision |
+| Titles mixed with media | A note to select one kind |
+
+| Tab | Controls | Op field |
+|---|---|---|
+| Video | Scale, position X/Y, opacity (overlay lanes only), brightness, contrast, saturation, **Reset clip** | `scale`, `x`, `y`, `opacity`, `brightness`, `contrast`, `saturation` |
+| Audio | Volume in dB (field and slider, -40 to +12; the bottom is silence) and Mute | `gain` (linear: `10^(dB/20)`), `muted` |
+| Crop | 9:16, 1:1, 16:9 (the largest centred crop of the source picture; the buttons need the asset's size), Full frame, and Left/Top/Width/Height in percent | `crop` (`{x,y,w,h}` or null) |
+| Speed | disabled, with a note | none: the engine has no clip speed |
+| Captions | disabled, with a note | none: captions are not clips yet (SPL-118, E14) |
+
+Things to know:
+
+- **Main-track clips fill the frame.** The engine (and the export) ignores position, scale and opacity on the main
+  track, so those controls are disabled there with a note; Crop is how a main-track clip is reframed. They work for
+  clips on overlay lanes.
+- **Canvas fit** is shown disabled: fit is an export-wide option today, not a per-clip property.
+- **Pick region** (dragging a box on the preview) needs the preview (E12); the Left/Top/Width/Height fields are the
+  honest version until then. A region outside the frame is refused locally with a `Fix:` hint and nothing is sent.
+- **Commit rules.** A number is committed on Enter or when the field loses focus, never per keystroke; an invalid
+  value stays in the box with a `Fix:` hint and nothing is sent (the engine still checks every range). A slider
+  commits when the value has settled for 350 ms, so holding an arrow key writes one revision.
+- **Locked lanes** disable the controls with a note.
+- Keyframes, undo steps per drag and the preview of the result are not here yet; there is no preview, so "shows in
+  the preview" is checked through the engine's timeline state instead.
 
 ## Caching
 

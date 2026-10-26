@@ -4,16 +4,24 @@
   import { clipSelection } from '../state/clipSelection.svelte';
   import { project } from '../state/project.svelte';
   import { ui } from '../state/ui.svelte';
+  import ClipInspector from '../inspector/ClipInspector.svelte';
   import Button from '../ui/Button.svelte';
   import Panel from '../ui/Panel.svelte';
 
-  // The inspector with nothing selected: the project's details and an Export shortcut (ux-spec #inspector).
-  // Frame rate and "preview ready" are not in the project state yet, so they are not listed. A selected timeline clip
-  // is named in the header line ("Selected: Song 2, 4 min 12 s"); its controls come with the contextual inspector.
-  const selected = $derived.by(() => {
-    const clips = (project.timeline?.tracks ?? []).flatMap((t) => t.clips);
-    return clipSelection.ids.flatMap((id) => clips.find((c) => c.id === id) ?? []);
+  // The contextual inspector (ux-spec #inspector). The header line names the selection ("Selected: Song 2, 4 min 12 s").
+  // With nothing selected it shows the project's details and an Export shortcut (frame rate and "preview ready" are not
+  // in the project state yet, so they are not listed); with clips selected, their controls (`ClipInspector`).
+  const entries = $derived.by(() => {
+    const tracks = project.timeline?.tracks ?? [];
+    return clipSelection.ids.flatMap((id) => {
+      for (const track of tracks) {
+        const clip = track.clips.find((c) => c.id === id);
+        if (clip) return [{ clip, track }];
+      }
+      return [];
+    });
   });
+  const selected = $derived(entries.map((e) => e.clip));
   const headline = $derived(
     selected.length === 0
       ? 'Nothing selected'
@@ -27,19 +35,23 @@
   <p class="selection" data-testid={selected.length ? 'selection-summary' : 'nothing-selected'}>
     {headline}
   </p>
-  <Panel title="Project" level={2}>
-    <dl>
-      <dt>Name</dt>
-      <dd>{project.project?.filename ?? ''}</dd>
-      <dt>Source file</dt>
-      <dd class="path">{project.id ?? ''}</dd>
-      <dt>Length</dt>
-      <dd>{project.project ? formatLength(project.project.duration) : ''}</dd>
-      <dt>Canvas</dt>
-      <dd>16:9</dd>
-    </dl>
-    <Button variant="secondary" onclick={() => (ui.exportOpen = true)}>Export</Button>
-  </Panel>
+  {#if entries.length}
+    <ClipInspector {entries} />
+  {:else}
+    <Panel title="Project" level={2}>
+      <dl>
+        <dt>Name</dt>
+        <dd>{project.project?.filename ?? ''}</dd>
+        <dt>Source file</dt>
+        <dd class="path">{project.id ?? ''}</dd>
+        <dt>Length</dt>
+        <dd>{project.project ? formatLength(project.project.duration) : ''}</dd>
+        <dt>Canvas</dt>
+        <dd>16:9</dd>
+      </dl>
+      <Button variant="secondary" onclick={() => (ui.exportOpen = true)}>Export</Button>
+    </Panel>
+  {/if}
 </div>
 
 <style>
