@@ -107,7 +107,7 @@ clip ranges of the [plan](edit-plan.md#clip).
 
 | `op` | Fields | Does |
 | --- | --- | --- |
-| `add_clip` | `id`, `track`, `asset` or `source` (one required), `index`, `start`, `in`, `out` | Add a clip of an asset. `track` defaults to the main video track. On a magnetic track `index` inserts (default: the end) and `start` is an error; on other tracks `start` places (default: after the last clip) and `index` is an error. `out` defaults to the end of the asset. `source` must already be an asset (`scan_library`): a path is **never registered** by a batch, so a dry run can't write. |
+| `add_clip` | `id`, `track`, `asset` or `source` (one required), `index`, `start`, `in`, `out`, `label` | Add a clip of an asset. `track` defaults to the main video track. On a magnetic track `index` inserts (default: the end) and `start` is an error; on other tracks `start` places (default: after the last clip) and `index` is an error. `out` defaults to the end of the asset. `label` (at most 120 characters) names the clip like a split segment. `source` must already be an asset (`scan_library`): a path is **never registered** by a batch, so a dry run can't write. |
 | `trim_clip` | `clip`, `in`, `out` (at least one) | Change which part of the source the clip uses. On a free track, moving `in` keeps the content where it is in time. |
 | `move_clip` | `clip`, `to_index` | Move a clip within its magnetic track. |
 | `remove_clip` | `clip` | Remove a clip (the file is untouched). |

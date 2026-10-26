@@ -950,3 +950,18 @@ def test_the_run_never_changes_the_callers_document(world):
     edit_ops.apply_ops(world.media, world.store, ops, dry_run=True)
     edit_ops.apply_ops(world.media, world.store, ops)
     assert ops == snapshot
+
+
+def test_add_clip_label_is_kept_and_checked(world):
+    seed(world)
+    out = edit_ops.apply_ops(
+        world.media,
+        world.store,
+        doc([{"op": "add_clip", "id": "lab", "asset": world.ids["a"], "in": 1, "out": 5, "label": "  The opener "}]),
+    )
+    clip = next(c for t in world.store.load_timeline(NAME).tracks for c in t.clips if c.id == "lab")
+    assert clip.label == "The opener" and out["applied"] == 1
+    report = failure(
+        world, doc([{"op": "add_clip", "asset": world.ids["a"], "label": "x" * 121}]), base_revision=out["revision"]
+    )
+    assert "ops.field.length" in codes(report)

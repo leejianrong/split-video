@@ -1025,6 +1025,145 @@ export type LoudnessOut = {
 };
 
 /**
+ * MadeOut
+ */
+export type MadeOut = {
+    /**
+     * Clip
+     */
+    clip: string;
+    /**
+     * End
+     */
+    end: number;
+    /**
+     * Key
+     */
+    key: string;
+    /**
+     * Label
+     */
+    label: string;
+    /**
+     * Start
+     */
+    start: number;
+};
+
+/**
+ * MakeClipsIn
+ */
+export type MakeClipsIn = {
+    /**
+     * Asset
+     */
+    asset: string;
+    /**
+     * Items
+     */
+    items: Array<MakeItemIn>;
+    /**
+     * Kind
+     */
+    kind?: 'short' | 'clip';
+};
+
+/**
+ * MakeClipsOut
+ */
+export type MakeClipsOut = {
+    /**
+     * Action
+     */
+    action: string;
+    /**
+     * Applied
+     */
+    applied: number;
+    /**
+     * Clips
+     */
+    clips: number;
+    /**
+     * Dry Run
+     */
+    dry_run: boolean;
+    /**
+     * Duration
+     */
+    duration: number;
+    /**
+     * Made
+     */
+    made: Array<MadeOut>;
+    /**
+     * Meta
+     */
+    meta?: {
+        [key: string]: unknown;
+    } | null;
+    /**
+     * Ops
+     */
+    ops: number;
+    /**
+     * Ops Hash
+     */
+    ops_hash: string;
+    /**
+     * Project
+     */
+    project: string;
+    /**
+     * Results
+     */
+    results: Array<OpResultOut>;
+    reviews: ReviewsOut;
+    /**
+     * Revision
+     */
+    revision: number;
+    /**
+     * Timeline
+     */
+    timeline?: {
+        [key: string]: unknown;
+    } | null;
+    /**
+     * Tracks
+     */
+    tracks: Array<PlanTrackOut>;
+    /**
+     * Warnings
+     */
+    warnings: Array<PlanIssueOut>;
+};
+
+/**
+ * MakeItemIn
+ */
+export type MakeItemIn = {
+    /**
+     * End
+     */
+    end: number;
+    /**
+     * Scored
+     */
+    scored?: {
+        [key: string]: number;
+    } | null;
+    /**
+     * Start
+     */
+    start: number;
+    /**
+     * Title
+     */
+    title?: string;
+};
+
+/**
  * MissingOut
  */
 export type MissingOut = {
@@ -2390,6 +2529,78 @@ export type RethresholdRequest = {
     thresholds: {
         [key: string]: number;
     };
+};
+
+/**
+ * ReviewEntryOut
+ */
+export type ReviewEntryOut = {
+    /**
+     * Adjusted
+     */
+    adjusted?: {
+        [key: string]: number;
+    } | null;
+    /**
+     * End
+     */
+    end: number;
+    /**
+     * Start
+     */
+    start: number;
+    /**
+     * State
+     */
+    state: string;
+};
+
+/**
+ * ReviewIn
+ */
+export type ReviewIn = {
+    /**
+     * Adjusted End
+     */
+    adjusted_end?: number | null;
+    /**
+     * Adjusted Start
+     */
+    adjusted_start?: number | null;
+    /**
+     * End
+     */
+    end: number;
+    /**
+     * Start
+     */
+    start: number;
+    /**
+     * State
+     */
+    state: 'accepted' | 'dismissed' | 'pending' | null;
+};
+
+/**
+ * ReviewsOut
+ *
+ * `highlight_review.load`: the reviews of an asset's suggestions, by suggestion `key` (`h_<start ms>_<end ms>`).
+ */
+export type ReviewsOut = {
+    /**
+     * Reviews
+     */
+    reviews: {
+        [key: string]: ReviewEntryOut;
+    };
+    /**
+     * Revision
+     */
+    revision: number;
+    /**
+     * Version
+     */
+    version: number;
 };
 
 /**
@@ -4132,6 +4343,106 @@ export type GetFrameApiV1AssetsAssetIdFrameGetResponses = {
 };
 
 export type GetFrameApiV1AssetsAssetIdFrameGetResponse = GetFrameApiV1AssetsAssetIdFrameGetResponses[keyof GetFrameApiV1AssetsAssetIdFrameGetResponses];
+
+export type GetHighlightReviewsApiV1AssetsAssetIdHighlightReviewsGetData = {
+    body?: never;
+    path: {
+        /**
+         * Asset Id
+         */
+        asset_id: string;
+    };
+    query?: never;
+    url: '/api/v1/assets/{asset_id}/highlight-reviews';
+};
+
+export type GetHighlightReviewsApiV1AssetsAssetIdHighlightReviewsGetErrors = {
+    /**
+     * No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN).
+     */
+    401: UnauthorizedOut;
+    /**
+     * The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next.
+     */
+    404: ApiErrorOut;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+    /**
+     * The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next.
+     */
+    501: ApiErrorOut;
+};
+
+export type GetHighlightReviewsApiV1AssetsAssetIdHighlightReviewsGetError = GetHighlightReviewsApiV1AssetsAssetIdHighlightReviewsGetErrors[keyof GetHighlightReviewsApiV1AssetsAssetIdHighlightReviewsGetErrors];
+
+export type GetHighlightReviewsApiV1AssetsAssetIdHighlightReviewsGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: ReviewsOut;
+};
+
+export type GetHighlightReviewsApiV1AssetsAssetIdHighlightReviewsGetResponse = GetHighlightReviewsApiV1AssetsAssetIdHighlightReviewsGetResponses[keyof GetHighlightReviewsApiV1AssetsAssetIdHighlightReviewsGetResponses];
+
+export type PutHighlightReviewApiV1AssetsAssetIdHighlightReviewsKeyPutData = {
+    body: ReviewIn;
+    headers?: {
+        /**
+         * If-Match
+         *
+         * The project revision this change is based on, as an integer, bare or quoted (`If-Match: "3"`). If the project has moved on, the request fails with 409 `revision_conflict` and nothing is written. Omit it to apply the change to the latest version.
+         */
+        'If-Match'?: string | null;
+    };
+    path: {
+        /**
+         * Asset Id
+         */
+        asset_id: string;
+        /**
+         * Key
+         */
+        key: string;
+    };
+    query?: never;
+    url: '/api/v1/assets/{asset_id}/highlight-reviews/{key}';
+};
+
+export type PutHighlightReviewApiV1AssetsAssetIdHighlightReviewsKeyPutErrors = {
+    /**
+     * No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN).
+     */
+    401: UnauthorizedOut;
+    /**
+     * The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next.
+     */
+    404: ApiErrorOut;
+    /**
+     * `If-Match` didn't match the project's current revision (`error` is `revision_conflict`). Other 409s on some routes (output file or project already exists) have only `detail`.
+     */
+    409: RevisionConflictOut;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+    /**
+     * The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next.
+     */
+    501: ApiErrorOut;
+};
+
+export type PutHighlightReviewApiV1AssetsAssetIdHighlightReviewsKeyPutError = PutHighlightReviewApiV1AssetsAssetIdHighlightReviewsKeyPutErrors[keyof PutHighlightReviewApiV1AssetsAssetIdHighlightReviewsKeyPutErrors];
+
+export type PutHighlightReviewApiV1AssetsAssetIdHighlightReviewsKeyPutResponses = {
+    /**
+     * Successful Response
+     */
+    200: ReviewsOut;
+};
+
+export type PutHighlightReviewApiV1AssetsAssetIdHighlightReviewsKeyPutResponse = PutHighlightReviewApiV1AssetsAssetIdHighlightReviewsKeyPutResponses[keyof PutHighlightReviewApiV1AssetsAssetIdHighlightReviewsKeyPutResponses];
 
 export type GetHighlightsApiV1AssetsAssetIdHighlightsGetData = {
     body?: never;
@@ -7442,6 +7753,62 @@ export type AddAssetClipApiV1ProjectClipsPostResponses = {
 };
 
 export type AddAssetClipApiV1ProjectClipsPostResponse = AddAssetClipApiV1ProjectClipsPostResponses[keyof AddAssetClipApiV1ProjectClipsPostResponses];
+
+export type MakeHighlightClipsApiV1ProjectHighlightsPostData = {
+    body: MakeClipsIn;
+    headers?: {
+        /**
+         * If-Match
+         *
+         * The project revision this change is based on, as an integer, bare or quoted (`If-Match: "3"`). If the project has moved on, the request fails with 409 `revision_conflict` and nothing is written. Omit it to apply the change to the latest version.
+         */
+        'If-Match'?: string | null;
+    };
+    path?: never;
+    query: {
+        /**
+         * Path
+         *
+         * The video's path relative to the browse root (the project id).
+         */
+        path: string;
+    };
+    url: '/api/v1/project/highlights';
+};
+
+export type MakeHighlightClipsApiV1ProjectHighlightsPostErrors = {
+    /**
+     * No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN).
+     */
+    401: UnauthorizedOut;
+    /**
+     * The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next.
+     */
+    404: ApiErrorOut;
+    /**
+     * `If-Match` didn't match the project's current revision (`error` is `revision_conflict`). Other 409s on some routes (output file or project already exists) have only `detail`.
+     */
+    409: RevisionConflictOut;
+    /**
+     * The batch has problems; they are in `errors`. Nothing was written.
+     */
+    422: OpsInvalidOut;
+    /**
+     * The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next.
+     */
+    501: ApiErrorOut;
+};
+
+export type MakeHighlightClipsApiV1ProjectHighlightsPostError = MakeHighlightClipsApiV1ProjectHighlightsPostErrors[keyof MakeHighlightClipsApiV1ProjectHighlightsPostErrors];
+
+export type MakeHighlightClipsApiV1ProjectHighlightsPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: MakeClipsOut;
+};
+
+export type MakeHighlightClipsApiV1ProjectHighlightsPostResponse = MakeHighlightClipsApiV1ProjectHighlightsPostResponses[keyof MakeHighlightClipsApiV1ProjectHighlightsPostResponses];
 
 export type ApplyVideoOpsApiV1ProjectOpsPostData = {
     /**

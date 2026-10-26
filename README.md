@@ -36,7 +36,7 @@ on Linux, API token, building the image): [docs/docker.md](docs/docker.md). With
   classification: [docs/editor.md](docs/editor.md).
 - **Compose**: combine clips from several files with overlays, titles, music, crossfades, export presets and
   captions, in the editor or as `split-video compose ...`: [docs/compose.md](docs/compose.md).
-- **Let an agent find highlights and make vertical shorts** over MCP (55 tools), the CLI or the HTTP API: import,
+- **Let an agent find highlights and make vertical shorts** over MCP (58 tools), the CLI or the HTTP API: import,
   report, transcribe, pick moments, plan, render. Start with the
   [agent guide](src/split_video/agent_guide/SKILL.md) (`split-video agent-guide` prints it) and
   [docs/mcp.md](docs/mcp.md).

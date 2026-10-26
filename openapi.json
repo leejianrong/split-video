@@ -1606,6 +1606,221 @@
         "title": "LoudnessOut",
         "type": "object"
       },
+      "MadeOut": {
+        "properties": {
+          "clip": {
+            "title": "Clip",
+            "type": "string"
+          },
+          "end": {
+            "title": "End",
+            "type": "number"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "start": {
+            "title": "Start",
+            "type": "number"
+          }
+        },
+        "required": [
+          "key",
+          "clip",
+          "label",
+          "start",
+          "end"
+        ],
+        "title": "MadeOut",
+        "type": "object"
+      },
+      "MakeClipsIn": {
+        "properties": {
+          "asset": {
+            "title": "Asset",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/MakeItemIn"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Items",
+            "type": "array"
+          },
+          "kind": {
+            "default": "short",
+            "enum": [
+              "short",
+              "clip"
+            ],
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "asset",
+          "items"
+        ],
+        "title": "MakeClipsIn",
+        "type": "object"
+      },
+      "MakeClipsOut": {
+        "properties": {
+          "action": {
+            "title": "Action",
+            "type": "string"
+          },
+          "applied": {
+            "title": "Applied",
+            "type": "integer"
+          },
+          "clips": {
+            "title": "Clips",
+            "type": "integer"
+          },
+          "dry_run": {
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "duration": {
+            "title": "Duration",
+            "type": "number"
+          },
+          "made": {
+            "items": {
+              "$ref": "#/components/schemas/MadeOut"
+            },
+            "title": "Made",
+            "type": "array"
+          },
+          "meta": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Meta"
+          },
+          "ops": {
+            "title": "Ops",
+            "type": "integer"
+          },
+          "ops_hash": {
+            "title": "Ops Hash",
+            "type": "string"
+          },
+          "project": {
+            "title": "Project",
+            "type": "string"
+          },
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/OpResultOut"
+            },
+            "title": "Results",
+            "type": "array"
+          },
+          "reviews": {
+            "$ref": "#/components/schemas/ReviewsOut"
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "integer"
+          },
+          "timeline": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timeline"
+          },
+          "tracks": {
+            "items": {
+              "$ref": "#/components/schemas/PlanTrackOut"
+            },
+            "title": "Tracks",
+            "type": "array"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/PlanIssueOut"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "project",
+          "revision",
+          "action",
+          "dry_run",
+          "applied",
+          "ops",
+          "clips",
+          "duration",
+          "tracks",
+          "results",
+          "warnings",
+          "ops_hash",
+          "reviews",
+          "made"
+        ],
+        "title": "MakeClipsOut",
+        "type": "object"
+      },
+      "MakeItemIn": {
+        "properties": {
+          "end": {
+            "title": "End",
+            "type": "number"
+          },
+          "scored": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "number"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scored"
+          },
+          "start": {
+            "title": "Start",
+            "type": "number"
+          },
+          "title": {
+            "default": "",
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "start",
+          "end"
+        ],
+        "title": "MakeItemIn",
+        "type": "object"
+      },
       "MissingOut": {
         "properties": {
           "how": {
@@ -3918,6 +4133,127 @@
           "thresholds"
         ],
         "title": "RethresholdRequest",
+        "type": "object"
+      },
+      "ReviewEntryOut": {
+        "properties": {
+          "adjusted": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "number"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Adjusted"
+          },
+          "end": {
+            "title": "End",
+            "type": "number"
+          },
+          "start": {
+            "title": "Start",
+            "type": "number"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "state",
+          "start",
+          "end"
+        ],
+        "title": "ReviewEntryOut",
+        "type": "object"
+      },
+      "ReviewIn": {
+        "properties": {
+          "adjusted_end": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Adjusted End"
+          },
+          "adjusted_start": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Adjusted Start"
+          },
+          "end": {
+            "title": "End",
+            "type": "number"
+          },
+          "start": {
+            "title": "Start",
+            "type": "number"
+          },
+          "state": {
+            "anyOf": [
+              {
+                "enum": [
+                  "accepted",
+                  "dismissed",
+                  "pending"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "State"
+          }
+        },
+        "required": [
+          "state",
+          "start",
+          "end"
+        ],
+        "title": "ReviewIn",
+        "type": "object"
+      },
+      "ReviewsOut": {
+        "description": "`highlight_review.load`: the reviews of an asset's suggestions, by suggestion `key` (`h_<start ms>_<end ms>`).",
+        "properties": {
+          "reviews": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ReviewEntryOut"
+            },
+            "title": "Reviews",
+            "type": "object"
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "integer"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "version",
+          "revision",
+          "reviews"
+        ],
+        "title": "ReviewsOut",
         "type": "object"
       },
       "RevisionConflictOut": {
@@ -6865,6 +7201,193 @@
           }
         },
         "summary": "Get Frame"
+      }
+    },
+    "/api/v1/assets/{asset_id}/highlight-reviews": {
+      "get": {
+        "description": "Which of the asset's highlight suggestions were accepted or dismissed, and any edges the user adjusted\n(a sidecar next to the video). A suggestion with no entry is not reviewed yet. 404 for an unknown asset.",
+        "operationId": "get_highlight_reviews_api_v1_assets__asset_id__highlight_reviews_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "asset_id",
+            "required": true,
+            "schema": {
+              "title": "Asset Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedOut"
+                }
+              }
+            },
+            "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
+          }
+        },
+        "summary": "Get Highlight Reviews"
+      }
+    },
+    "/api/v1/assets/{asset_id}/highlight-reviews/{key}": {
+      "put": {
+        "description": "Accept or dismiss one suggestion (`key` is `h_<start ms>_<end ms>` of its scored window `start`..`end`), or\nclear its review with `state: null` (undo of a dismissal). `adjusted_start` and `adjusted_end` keep the\nuser's own edges. `If-Match` is the `revision` of the reviews document. 404 unknown asset, 422 bad range or\nstate, 409 stale revision.",
+        "operationId": "put_highlight_review_api_v1_assets__asset_id__highlight_reviews__key__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "asset_id",
+            "required": true,
+            "schema": {
+              "title": "Asset Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "title": "Key",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The project revision this change is based on, as an integer, bare or quoted (`If-Match: \"3\"`). If the project has moved on, the request fails with 409 `revision_conflict` and nothing is written. Omit it to apply the change to the latest version.",
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The project revision this change is based on, as an integer, bare or quoted (`If-Match: \"3\"`). If the project has moved on, the request fails with 409 `revision_conflict` and nothing is written. Omit it to apply the change to the latest version.",
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReviewIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedOut"
+                }
+              }
+            },
+            "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RevisionConflictOut"
+                }
+              }
+            },
+            "description": "`If-Match` didn't match the project's current revision (`error` is `revision_conflict`). Other 409s on some routes (output file or project already exists) have only `detail`."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
+          }
+        },
+        "summary": "Put Highlight Review"
       }
     },
     "/api/v1/assets/{asset_id}/highlights": {
@@ -13222,6 +13745,116 @@
           }
         },
         "summary": "Add Asset Clip"
+      }
+    },
+    "/api/v1/project/highlights": {
+      "post": {
+        "description": "Make highlights into labelled clips at the end of the video's main track, in one atomic edit-ops batch\n(`kind` `short`: cropped to the centre 9:16, `clip`: the whole frame), and mark them accepted. `If-Match` is\nthe project's revision (`GET /project/timeline`). The answer is the ops result plus `made` and the new\n`reviews`. 404 unknown asset, 422 a bad range or a refused batch (`ops_invalid` report), 409 stale revision.",
+        "operationId": "make_highlight_clips_api_v1_project_highlights_post",
+        "parameters": [
+          {
+            "description": "The video's path relative to the browse root (the project id).",
+            "in": "query",
+            "name": "path",
+            "required": true,
+            "schema": {
+              "description": "The video's path relative to the browse root (the project id).",
+              "title": "Path",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The project revision this change is based on, as an integer, bare or quoted (`If-Match: \"3\"`). If the project has moved on, the request fails with 409 `revision_conflict` and nothing is written. Omit it to apply the change to the latest version.",
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The project revision this change is based on, as an integer, bare or quoted (`If-Match: \"3\"`). If the project has moved on, the request fails with 409 `revision_conflict` and nothing is written. Omit it to apply the change to the latest version.",
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MakeClipsIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MakeClipsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedOut"
+                }
+              }
+            },
+            "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RevisionConflictOut"
+                }
+              }
+            },
+            "description": "`If-Match` didn't match the project's current revision (`error` is `revision_conflict`). Other 409s on some routes (output file or project already exists) have only `detail`."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpsInvalidOut"
+                }
+              }
+            },
+            "description": "The batch has problems; they are in `errors`. Nothing was written."
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
+          }
+        },
+        "summary": "Make Highlight Clips"
       }
     },
     "/api/v1/project/ops": {

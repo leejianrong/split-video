@@ -1,9 +1,10 @@
 <script lang="ts">
   import type { TabId } from '../state/layout';
+  import HighlightsTab from '../tabs/highlights/HighlightsTab.svelte';
   import MediaTab from '../tabs/media/MediaTab.svelte';
   import { EMPTY_COPY, TABS } from './tabs';
 
-  // The content of one left tab. Media is built (SPL-63); the other tabs say what their empty state says
+  // The content of one left tab. Media (SPL-63) and Highlights (SPL-64) are built; the other tabs say what their empty state says
   // (ux-spec #empty-states) until their cards land.
   let { tab }: { tab: TabId } = $props();
   const title = $derived(TABS.find((t) => t.id === tab)?.label ?? '');
@@ -11,6 +12,8 @@
 
 {#if tab === 'media'}
   <MediaTab />
+{:else if tab === 'highlights'}
+  <HighlightsTab />
 {:else}
   <section class="panel-content" aria-label={title}>
     <h2>{title}</h2>

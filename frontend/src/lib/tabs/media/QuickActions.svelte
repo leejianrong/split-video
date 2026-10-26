@@ -4,6 +4,7 @@
   import { project } from '../../state/project.svelte';
   import { ACTIONS, quickActions, type ActionDef } from '../../state/quickActions.svelte';
   import { selection } from '../../state/selection.svelte';
+  import { ui } from '../../state/ui.svelte';
   import Button from '../../ui/Button.svelte';
   import Icon from '../../ui/icons/Icon.svelte';
   import ProgressBar from '../../ui/ProgressBar.svelte';
@@ -91,6 +92,16 @@
               {/if}
             {:else if view.state === 'done'}
               <span class="ok"><Icon name="check" size={14} /> {view.summary ?? 'Done'}</span>
+              {#if def.id === 'highlights'}
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  data-testid="review-highlights"
+                  onclick={() => ui.setTab('highlights')}
+                >
+                  Review
+                </Button>
+              {/if}
               <Button
                 size="sm"
                 variant="ghost"
