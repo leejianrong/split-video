@@ -26,6 +26,8 @@
      * `<nav>`, with the panel filling the rest of the height. Needs `orientation="vertical"`.
      */
     variant?: 'default' | 'rail';
+    /** Tighter tabs and no panel padding, for a narrow column such as the inspector. */
+    compact?: boolean;
     /** `data-region` values for the tab list and the panel (the shell names its regions this way). */
     regions?: { list?: string; panel?: string };
     panel: Snippet<[string]>;
@@ -37,6 +39,7 @@
     label,
     orientation = 'horizontal',
     variant = 'default',
+    compact = false,
     regions,
     panel,
   }: Props = $props();
@@ -110,7 +113,7 @@
   </div>
 {/snippet}
 
-<div class="tabs {orientation} {variant}">
+<div class="tabs {orientation} {variant}" class:compact>
   {#if variant === 'rail'}
     <nav aria-label={label} data-region={regions?.list}>{@render list()}</nav>
   {:else}
@@ -179,6 +182,18 @@
 
   .panel {
     padding: var(--space-3);
+  }
+
+  .compact .list {
+    gap: 0;
+  }
+  .compact button {
+    padding: var(--space-2) var(--space-1);
+    flex: 1 1 auto;
+    font-size: var(--font-size-sm);
+  }
+  .compact .panel {
+    padding: 0;
   }
 
   /* Rail variant: the editor's left column (ux-spec #layout). The rail is 72 px, the panel takes the rest. */
