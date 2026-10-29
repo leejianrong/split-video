@@ -111,7 +111,7 @@ def test_segments_write_the_included_segments_named_by_export_name_or_label(stor
     # The export name wins, then the label ("Intro.mp4"), then the numbered default of the split export.
     assert names == ["Intro.mp4", "the-song.mp4", names[2]]
     assert names[2] == "03 - gig.mp4"
-    assert fakes.copies == [(0.0, 10.0), (10.0, 20.0), (30.0, 40.0)]
+    assert sorted(fakes.copies) == [(0.0, 10.0), (10.0, 20.0), (30.0, 40.0)]  # two at a time: any order
     assert media.exists("gig_split/" + names[1])
 
 
