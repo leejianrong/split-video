@@ -2,9 +2,9 @@
   import { registerAction } from '../a11y/dispatcher';
   import { limitsOf, MIN_WINDOW, type TabId } from '../state/layout';
   import { connectLive } from '../state/live';
+  import { exports } from '../state/exports.svelte';
   import { ui } from '../state/ui.svelte';
-  import Button from '../ui/Button.svelte';
-  import Dialog from '../ui/Dialog.svelte';
+  import ExportDialog from '../export/ExportDialog.svelte';
   import Tabs from '../ui/Tabs.svelte';
   import InspectorRegion from './InspectorRegion.svelte';
   import LeftPanel from './LeftPanel.svelte';
@@ -23,6 +23,9 @@
 
   // One event stream for the editor's life: job progress and project changes (agent and CLI edits) arrive on it.
   $effect(() => connectLive());
+
+  // The render queue: everything the server still remembers, so a reload shows finished and failed renders too.
+  $effect(() => exports.watch());
 
   $effect(() => registerAction('project.export', () => void (ui.exportOpen = true)));
 </script>
@@ -102,15 +105,7 @@
   </p>
 </div>
 
-<Dialog bind:open={ui.exportOpen} title="Export">
-  <p>
-    Exporting from this editor is not ready yet. The previous editor can still export your video.
-  </p>
-  {#snippet footer()}
-    <a class="link" href="/">Open the previous editor</a>
-    <Button onclick={() => (ui.exportOpen = false)}>Close</Button>
-  {/snippet}
-</Dialog>
+<ExportDialog />
 
 <style>
   .shell {
@@ -180,10 +175,5 @@
       padding: var(--space-6);
       text-align: center;
     }
-  }
-
-  .link {
-    margin-right: auto;
-    color: var(--color-accent);
   }
 </style>

@@ -102,19 +102,36 @@ def _states(batch):
     return [j["state"] for j in batch["jobs"]]
 
 
-def test_segments_write_the_included_segments_with_the_split_export_names(store, media, jobs, fakes):
+def test_segments_write_the_included_segments_named_by_export_name_or_label(store, media, jobs, fakes):
     batch = export_modes.submit_export(jobs, store, media, "segments", video="gig.mp4")
     assert batch["mode"] == "segments" and batch["total"] == 3
     done = _wait(jobs, batch)
     assert _states(done) == ["done"] * 3
     names = [j["output"] for j in done["jobs"]]
-    # The same names the split export gives (plan_export), in the same folder.
-    plan = project.plan_export(
-        media, "gig.mp4", [(0.0, 10.0, None), (10.0, 20.0, "the-song"), (30.0, 40.0, None)], overwrite=True
-    )
-    assert names == plan.filenames
+    # The export name wins, then the label ("Intro.mp4"), then the numbered default of the split export.
+    assert names == ["Intro.mp4", "the-song.mp4", names[2]]
+    assert names[2] == "03 - gig.mp4"
     assert fakes.copies == [(0.0, 10.0), (10.0, 20.0), (30.0, 40.0)]
     assert media.exists("gig_split/" + names[1])
+
+
+def test_segments_labels_become_safe_distinct_file_names(media, jobs, fakes):
+    store = InMemoryProjectStore()
+    project.save_segments(
+        store,
+        "gig.mp4",
+        [
+            SavedSegment(0.0, 10.0, label="Short: A/B?"),
+            SavedSegment(10.0, 20.0, label="Song"),
+            SavedSegment(20.0, 30.0, label="song"),
+            SavedSegment(30.0, 40.0, label="..."),
+        ],
+        media=media,
+    )
+    batch = export_modes.submit_export(jobs, store, media, "segments", video="gig.mp4")
+    names = [j["output"] for j in _wait(jobs, batch)["jobs"]]
+    assert names[:3] == ["Short - A - B.mp4", "Song.mp4", "song (2).mp4"]
+    assert names[3].startswith("04 - gig")
 
 
 def test_segments_only_overrides_include_and_bad_numbers_are_a_request_error(store, media, jobs, fakes):

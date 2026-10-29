@@ -582,6 +582,10 @@ export type ClipOut = {
      */
     in_point: number;
     /**
+     * Included
+     */
+    included?: boolean;
+    /**
      * Kind
      */
     kind: string;

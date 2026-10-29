@@ -13,6 +13,8 @@
     onclose?: () => void;
     /** Close on a click outside the box. Off for dialogs that hold unsaved input. */
     dismissOnBackdrop?: boolean;
+    /** The widest the box gets, in px (default 560). */
+    width?: number;
     children: Snippet;
     footer?: Snippet;
   };
@@ -23,6 +25,7 @@
     description,
     onclose,
     dismissOnBackdrop = true,
+    width = 560,
     children,
     footer,
   }: Props = $props();
@@ -68,6 +71,7 @@
   aria-describedby={description ? `dlg-desc-${uid}` : undefined}
   onclose={handleClose}
   onclick={onBackdrop}
+  style:--dialog-width="{width}px"
 >
   <div class="box">
     <header>
@@ -82,7 +86,7 @@
 
 <style>
   dialog {
-    width: min(560px, calc(100vw - var(--space-6)));
+    width: min(var(--dialog-width, 560px), calc(100vw - var(--space-6)));
     max-height: calc(100vh - var(--space-6));
     padding: 0;
     border: 1px solid var(--color-border-strong);

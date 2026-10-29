@@ -9,7 +9,7 @@ with `render_queue.batch_status` / `cancel_renders`, which every surface already
 Modes
 -----
 `segments` (a recording): each included segment of the video's main track as its own file in `<video>_split/`, named
-as the split export names them (`naming.resolve_export_filename`: export name, label, or the numbered default).
+by its export name, else its label made safe for a filename (`Song 2.mp4`), else the numbered default.
 Without render options a file is a stream copy (`precise` re-encodes for frame accuracy), exactly as the split
 export writes it. With a preset, size, fit or captions each segment is rendered as a one-clip timeline (its clip's crop,
 gain and colour kept) to `.mp4`.
@@ -30,6 +30,7 @@ an agent) owns the list, so unreviewed suggestions are never exported, and nothi
 from __future__ import annotations
 
 import posixpath
+import re
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, replace
@@ -120,6 +121,33 @@ def _stem(name: str) -> str:
     return stem if ext.lower() in VIDEO_EXTENSIONS else posixpath.basename(name)
 
 
+_UNSAFE_NAME = re.compile(r'[\\/:*?"<>|\x00-\x1f]+')
+
+
+def _label_names(chosen: list[Any]) -> list[str | None]:
+    """The custom name of each chosen segment: its `export_name`, else its label made safe for a filename (so a
+    "Song 2" segment is written as `Song 2.mp4`), else None (the numbered default). Two segments with the same label
+    stay distinct (`Song`, `Song (2)`), so a repeated label never fails the whole export."""
+    names: list[str | None] = []
+    taken: set[str] = {s.export_name for s in chosen if s.export_name}
+    for seg in chosen:
+        if seg.export_name:
+            names.append(seg.export_name)
+            continue
+        base = _UNSAFE_NAME.sub(" - ", seg.label or "").strip(" .-")
+        base = re.sub(r"\s+", " ", re.sub(r"( - )+", " - ", base)).strip(" .-")
+        if not base:
+            names.append(None)
+            continue
+        name, n = base, 1
+        while name.lower() in {t.lower() for t in taken}:
+            n += 1
+            name = f"{base} ({n})"
+        taken.add(name)
+        names.append(name)
+    return names
+
+
 def _single_clip(clip: Clip) -> Project:
     """A timeline of just `clip` (crop, gain and colour kept), for rendering one segment on its own."""
     plain = replace(clip, start=0.0, transition="cut", transition_duration=0.0)
@@ -199,7 +227,7 @@ def _segments_items(
     plan = project.plan_export(
         media,
         video,
-        [(s.start, s.end, s.export_name) for s in chosen],
+        [(s.start, s.end, name) for s, name in zip(chosen, _label_names(chosen))],
         output_format="mp4" if rendering else output_format,
         overwrite=True,
     )

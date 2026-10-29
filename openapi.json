@@ -902,6 +902,11 @@
             "title": "In Point",
             "type": "number"
           },
+          "included": {
+            "default": true,
+            "title": "Included",
+            "type": "boolean"
+          },
           "kind": {
             "title": "Kind",
             "type": "string"

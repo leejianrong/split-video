@@ -2,7 +2,7 @@
 
 The editor is being rebuilt as one Svelte 5 app (decisions: [ADR 0004](adr/0004-frontend-stack-and-structure.md),
 layout contract: [ux-spec.md](ux-spec.md)). Today it has the shell (top bar, tab rail and panel, preview, inspector, timeline), a start page and a library, the
-Media tab (see [below](#the-media-tab)), the Highlights tab (see [below](#the-highlights-tab)), the timeline (see [below](#the-timeline)) and empty panels for the other tabs, served at **`/app/`**. The old editor at `/` and `/compose.html` is unchanged.
+Media tab (see [below](#the-media-tab)), the Highlights tab (see [below](#the-highlights-tab)), the [export dialog and render queue](#export), the timeline (see [below](#the-timeline)) and empty panels for the other tabs, served at **`/app/`**. The old editor at `/` and `/compose.html` is unchanged.
 
 ## Views and the shell
 
@@ -276,7 +276,46 @@ stood out in this recording" with a fix) and every card dismissed.
 
 **Known limits.** The preview does not draw frames yet, so a card "previews" through the playhead and the range on the
 timeline. A card's title is the engine's `title_hint` (the first on-screen text or spoken line), else "Highlight N".
-Captions are not clips: the `shorts` captions are burned in at export (SPL-118).
+Captions are not clips: the `shorts` captions are burned in at [export](#export).
+
+## Export
+
+The top bar's **Export** button (and the inspector's, and the `project.export` shortcut) opens `lib/export/ExportDialog.svelte`,
+[ux-spec.md#export](ux-spec.md#export): the settings on the left, the render queue (`RenderQueue.svelte`) on the right.
+It adds no engine capability: it is `POST /compose/export` ([export modes](render-queue.md#export-modes-segments-timeline-highlights)),
+and the rows are the `render` jobs of the [job queue](render-queue.md). State is `state/exports.svelte.ts`
+(`ExportStore`), the pure part (what N is, the request, the estimate) is `export/plan.ts`.
+
+| Choice | What is sent |
+|---|---|
+| **Each segment as its own file** | `mode: segments`, `only` = the numbers of the included main-track clips that are not highlight clips (`included` comes from `GET /project/timeline`). Files are named by label (`Song 2.mp4`). |
+| **The whole timeline as one video** | `mode: timeline`: `<recording>.mp4`; every clip plays, whatever `included` says. |
+| **Each highlight as a short** | A short is a labelled 9:16-cropped clip on the main track ([Highlights tab](#the-highlights-tab)), so this is `mode: segments` with `only` = the clips labelled `Short: ...` or `Highlight N`, preset `vertical-1080`, fit `crop`. A highlight that was only accepted (no clip made) has nothing to export. |
+| Format | YouTube 1080p, Vertical 1080x1920, Square 1080, Draft 720p; segments also offer **Original quality, fastest** (a stream copy, no re-encode, so no fit and no captions). |
+| If the shape differs | `fit`: Crop to fill or Letterbox. |
+| Burn in captions | `captions: shorts`, burned in when the recording has a transcript; without one the file has none. |
+| Save to | `output_dir`, a folder in the library; empty means `<recording>_export` beside the recording. There is no folder chooser. |
+| Replace files that already exist | `overwrite`. |
+
+**Start export (N)** counts the files the choice writes (segments, one, or the highlight clips), not the Highlights tab's footer
+count. "Estimated time" is a rough rule of thumb per format (a stream copy is near instant, a 1080p render about a third of the
+output's length, two at a time), not a measurement.
+
+**Render queue.** One row per output file, newest batch first: Waiting, Rendering (bar and percent), Done ("Saved in <folder>"),
+Cancelled or Failed (the engine's message, then **Fix:** and **Retry**). **Cancel** on a waiting or running row is the job
+cancel (`POST /jobs/{id}/cancel`: a queued render never starts, a running one has ffmpeg terminated and its partial file
+removed); **Cancel all** cancels each batch (`POST /compose/render-queue/{batch}/cancel`). One failed file never stops the rest.
+**Retry** sends that one file again with `overwrite` on, and is offered only for rows this page started (the server keeps
+no request to replay, so after a reload a failed row shows its fix but no Retry: start the export again). The "file exists"
+failure replaces the engine's API-flag hint with "Tick Replace files that already exist or pick another folder".
+
+Renders run on the server, so closing the dialog (or the tab) changes nothing: the top bar's Export button shows a badge with
+the number of active renders and reopens the dialog on the queue. The first frame of the event stream lists only running jobs,
+so the store also reads `GET /jobs?kind=render` on load and after a reconnect; finished and failed rows are therefore back
+after a reload (the server forgets them when it restarts).
+
+Differences from the spec: no "Open folder" (a browser cannot open one; the row says where the file went) and no folder
+chooser; the style of the burned-in captions is fixed to Shorts.
 
 ## The timeline
 
