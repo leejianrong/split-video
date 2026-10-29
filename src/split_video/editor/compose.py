@@ -90,6 +90,7 @@ class ClipOut(BaseModel):
     color: str
     label: str = ""  # a main-track segment's name ("Song 2"); empty if it has none
     label_color: str | None = None  # the segment's band colour (`#rrggbb`) if it has one
+    included: bool = True  # false: the segment is left out of an "each segment" export (the split flag)
 
 
 class TrackOut(BaseModel):
@@ -353,6 +354,7 @@ def clip_out(c: Clip, row: assets.Located | None) -> ClipOut:
         color=c.color,
         label=c.label,
         label_color=c.label_color,
+        included=c.included,
     )
 
 

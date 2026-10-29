@@ -1,6 +1,7 @@
 <script lang="ts">
   import { formatLength } from '../format';
   import { hrefTo } from '../state/route';
+  import { exports } from '../state/exports.svelte';
   import { project } from '../state/project.svelte';
   import { ui } from '../state/ui.svelte';
   import Button from '../ui/Button.svelte';
@@ -46,8 +47,18 @@
       action="help.toggle"
       onclick={() => (ui.helpOpen = true)}
     />
-    <Button variant="primary" onclick={() => (ui.exportOpen = true)} data-testid="export-button">
+    <Button
+      variant="primary"
+      onclick={() => (ui.exportOpen = true)}
+      aria-label={exports.active.length
+        ? `Export and render queue, ${exports.active.length} rendering`
+        : 'Export'}
+      data-testid="export-button"
+    >
       Export
+      {#if exports.active.length}
+        <span class="badge" data-testid="queue-badge">{exports.active.length}</span>
+      {/if}
     </Button>
   </div>
 </header>
@@ -98,6 +109,18 @@
     display: inline-flex;
     align-items: center;
     gap: var(--space-1);
+  }
+
+  .badge {
+    min-width: 18px;
+    margin-left: var(--space-1);
+    padding: 0 5px;
+    border-radius: var(--radius-full);
+    background: var(--color-accent-text);
+    color: var(--color-accent);
+    font-size: var(--font-size-sm);
+    font-variant-numeric: tabular-nums;
+    text-align: center;
   }
 
   .right {

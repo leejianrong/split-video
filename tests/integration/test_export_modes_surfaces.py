@@ -88,7 +88,7 @@ def ws(source, tmp_path):
 
 def _check_segments(ws):
     folder = ws / "gig_split"
-    assert sorted(p.name for p in folder.glob("*.mp4")) == sorted(["01 - gig.mp4", "the-song.mp4"])
+    assert sorted(p.name for p in folder.glob("*.mp4")) == sorted(["Opener.mp4", "the-song.mp4"])
     for p in folder.glob("*.mp4"):
         assert probe_media(p).duration == pytest.approx(4.0, abs=0.5)
 
