@@ -11,7 +11,7 @@ library. `lib/state/route.ts` parses and formats it, and is the only code that r
 
 | Hash | View |
 |---|---|
-| `#/` | Start: "Add your recording" (opens the library, or the video the server was started on) and the goal list |
+| `#/` | Start: the [first-run flow](#first-run): add a recording, pick a goal, watch it prepare, open the editor |
 | `#/library`, `#/library/<folder>` | Library: folders and videos from `GET /api/v1/browse`; loading, error and empty states |
 | `#/p/<project id>` | The editor. The id is the video's path; `POST /api/v1/open` loads it (the timeline project, ADR 0003) |
 
@@ -39,6 +39,33 @@ contents, preview, the inspector's controls are described [below](#the-inspector
 `lib/state/layout.ts` (a test keeps them equal to the `--size-*` tokens). When the window narrows, the panel shrinks
 first, then the inspector, so the preview keeps 480 px. Sizes and the selected tab persist in `localStorage` under
 `split-video.layout.v1` (try/catch; the layout works without it) and never go in the project.
+
+## First run
+
+`lib/firstrun/StartView.svelte` (`#/`) is [ux-spec.md#first-run](ux-spec.md#first-run). State is in
+`state/firstrun.svelte.ts` (`FirstRunStore`); it adds no engine behaviour and no new route.
+
+1. **Add your recording.** Drop a video on the zone, **Choose file** (an upload into the recordings folder, the same
+   `assets.enqueue` as the Media tab's Import, with a percent and Cancel or Retry), **From the recordings folder** (the
+   Media tab's `PickDialog` with an `onpick` callback; nothing is copied) or, when the server was started on one video,
+   **Use <that video>**. The page then shows "gig.mp4, 2 h 41 min".
+2. **Pick a goal** (a toggle button each; it can be picked before the file arrives). The goal starts as soon as a
+   recording and a goal are both set, as the Media tab's quick action: *Split into songs* is **Find songs**, *Find
+   highlights* and *Make vertical shorts* are **Find highlights**, *Start with an empty timeline* runs nothing. Once
+   started the goal is fixed on this page; run the other actions from the Media tab.
+3. **Steps** are read from the jobs store (the page opens the event stream itself, `connectLive`): the goal's job
+   ("Listening for silences and music", with the result, "3 songs found"), "Building a fast preview" (the `proxy` job
+   that import already queues) and "Transcribing speech (optional, runs in the background)", which runs for shorts or
+   when "Also transcribe the speech" is ticked. Each line is waiting, working (percent), done or failed; a failed line
+   shows the catalogue's message and fix hint with Retry, and a missing transcription add-on says you can carry on.
+4. **Open the editor** is enabled once the preview is built (or failed: the original plays). **Skip, I'll choose
+   later** is enabled as soon as there is a recording. Both go to `#/p/<recording>`; the editor opens on the
+   Highlights tab for the highlight goals and on Media otherwise. Jobs still running carry on there (the Media and
+   Highlights tabs show their progress), so the editor never waits for them.
+
+Differences from the spec: *Make vertical shorts* only finds the highlights (turning them into 9:16 shorts with
+captions is **Make short** in the Highlights tab); the goal cannot be changed on this page after it started. Coming
+back to `#/` starts a new first run.
 
 ## Docker
 

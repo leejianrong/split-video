@@ -57,6 +57,8 @@ export class AssetsStore {
   uploads = $state<Upload[]>([]);
 
   #nextUpload = 1;
+  // eslint-disable-next-line svelte/prefer-svelte-reactivity
+  #onImported = new Map<number, (asset: AssetOut) => void>();
   #uploader: Uploader;
   #jobs: JobsStore;
   #current: { id: number; abort: AbortController } | null = null;
@@ -168,10 +170,12 @@ export class AssetsStore {
   // --- uploads ------------------------------------------------------------------------------------------
 
   /** Import files from the computer (a drop or the file picker): uploaded one after the other. */
-  enqueue(files: Iterable<File>): void {
+  enqueue(files: Iterable<File>, onImported?: (asset: AssetOut) => void): void {
     for (const file of files) {
+      const id = this.#nextUpload++;
+      if (onImported) this.#onImported.set(id, onImported);
       this.uploads.push({
-        id: this.#nextUpload++,
+        id,
         name: file.name,
         size: file.size,
         loaded: 0,
@@ -195,7 +199,10 @@ export class AssetsStore {
   /** Stop an upload in flight (the server removes the partial file) or drop a failed or waiting one. */
   cancelUpload(id: number): void {
     if (this.#current?.id === id) this.#current.abort.abort();
-    else this.uploads = this.uploads.filter((u) => u.id !== id);
+    else {
+      this.uploads = this.uploads.filter((u) => u.id !== id);
+      this.#onImported.delete(id);
+    }
   }
 
   async #pump(): Promise<void> {
@@ -229,9 +236,12 @@ export class AssetsStore {
       this.upsert(asset);
       announce(`Imported ${asset.path}`);
       void this.prepare(asset);
+      this.#onImported.get(id)?.(asset);
+      this.#onImported.delete(id);
     } catch (cause) {
       if (cause instanceof ApiError && cause.code === 'cancelled') {
         this.uploads = this.uploads.filter((u) => u.id !== id);
+        this.#onImported.delete(id);
       } else {
         upload.status = 'failed';
         upload.error = toProjectError(cause);

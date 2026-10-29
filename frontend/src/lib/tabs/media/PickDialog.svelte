@@ -1,5 +1,10 @@
 <script lang="ts">
-  import { ApiError, browseApiV1BrowseGet, type BrowseResponse } from '../../api/client';
+  import {
+    ApiError,
+    browseApiV1BrowseGet,
+    type AssetOut,
+    type BrowseResponse,
+  } from '../../api/client';
   import { assets } from '../../state/assets.svelte';
   import { toasts } from '../../state/toasts.svelte';
   import { announce } from '../../a11y/announce';
@@ -10,7 +15,9 @@
   // Add files that are already in the recordings folder to the library, without copying them. The drop and the
   // Import button copy a file from anywhere on the computer in (a browser cannot give the server a path); this is
   // the way to use a very large recording where it already is.
-  let { open = $bindable(false) }: { open: boolean } = $props();
+  // `onpick` (the first-run page) is told which asset was added and the dialog closes.
+  let { open = $bindable(false), onpick }: { open: boolean; onpick?: (asset: AssetOut) => void } =
+    $props();
 
   let dir = $state('');
   let listing = $state<BrowseResponse | null>(null);
@@ -44,8 +51,12 @@
   async function add(path: string, name: string) {
     adding = path;
     try {
-      await assets.register(path);
+      const asset = await assets.register(path);
       announce(`Added ${name} to the library`);
+      if (onpick) {
+        onpick(asset);
+        open = false;
+      }
     } catch (cause) {
       const text =
         cause instanceof ApiError
@@ -91,16 +102,16 @@
               <div class="row file">
                 <Icon name="video" size={14} />
                 <span class="file-name" title={entry.path}>{entry.name}</span>
-                {#if inLibrary(entry.path)}
+                {#if inLibrary(entry.path) && !onpick}
                   <span class="muted">In the library</span>
                 {:else}
                   <Button
                     size="sm"
                     disabled={adding !== null}
-                    aria-label={`Add ${entry.name} to the library`}
+                    aria-label={`${onpick ? 'Choose' : 'Add'} ${entry.name}`}
                     onclick={() => add(entry.path, entry.name)}
                   >
-                    {adding === entry.path ? 'Adding…' : 'Add'}
+                    {adding === entry.path ? 'Adding…' : onpick ? 'Choose' : 'Add'}
                   </Button>
                 {/if}
               </div>
