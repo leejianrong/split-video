@@ -3,7 +3,7 @@
   import { announce } from '../a11y/announce';
   import { assets } from '../state/assets.svelte';
   import { project } from '../state/project.svelte';
-  import { toasts } from '../state/toasts.svelte';
+  import { reportEditError } from '../state/editErrors';
   import Button from '../ui/Button.svelte';
   import Checkbox from '../ui/Checkbox.svelte';
   import Select from '../ui/Select.svelte';
@@ -80,7 +80,7 @@
   function done(ok: boolean, what: string) {
     if (ok) announce(`${what} changed`);
     else if (project.editError) {
-      toasts.error(`${project.editError.message} ${project.editError.fix}`.trim());
+      reportEditError();
     }
   }
 

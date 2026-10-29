@@ -7,6 +7,7 @@
   import { selection } from '../../state/selection.svelte';
   import type { AssetOut } from '../../api/client';
   import { toasts } from '../../state/toasts.svelte';
+  import { reportEditError } from '../../state/editErrors';
   import { announce } from '../../a11y/announce';
   import Icon from '../../ui/icons/Icon.svelte';
   import Button from '../../ui/Button.svelte';
@@ -41,7 +42,7 @@
     if (ok) {
       announce(`Added ${name} to the timeline`);
     } else if (project.editError) {
-      toasts.error(`${project.editError.message} ${project.editError.fix}`.trim());
+      reportEditError();
     }
   }
 

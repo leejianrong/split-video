@@ -226,28 +226,33 @@ describe('ProjectStore', () => {
     it('reloads on a project event for it that is newer, and ignores old or foreign ones', async () => {
       const store = await openStore();
       open.mockClear();
-      store.handleProjectEvent({
-        kind: 'split',
-        project_id: 'gig.mp4',
-        revision: 3,
-        source: 'local',
-      });
-      store.handleProjectEvent({
-        kind: 'split',
-        project_id: 'other.mp4',
-        revision: 9,
-        source: 'external',
-      });
+      expect(
+        await store.handleProjectEvent({
+          kind: 'split',
+          project_id: 'gig.mp4',
+          revision: 3,
+          source: 'local',
+        }),
+      ).toBe(false);
+      expect(
+        await store.handleProjectEvent({
+          kind: 'split',
+          project_id: 'other.mp4',
+          revision: 9,
+          source: 'external',
+        }),
+      ).toBe(false);
       expect(open).not.toHaveBeenCalled();
       open.mockResolvedValue(state('gig.mp4', 4));
       timeline.mockResolvedValue(timelineOf(4));
-      store.handleProjectEvent({
+      const reloaded = await store.handleProjectEvent({
         kind: 'split',
         project_id: 'gig.mp4',
         revision: 4,
         source: 'external',
       });
-      await vi.waitFor(() => expect(store.revision).toBe(4));
+      expect(reloaded).toBe(true);
+      expect(store.revision).toBe(4);
     });
 
     it('applies edit ops with If-Match, then reads the timeline for the new revision', async () => {
@@ -285,6 +290,49 @@ describe('ProjectStore', () => {
       expect(store.editError?.message).toMatch(/changed somewhere else/);
       expect(store.revision).toBe(7);
       expect(store.timeline?.tracks[0]?.clips).toHaveLength(2);
+    });
+
+    it('keeps the lost edit so the user can apply it again on the latest version', async () => {
+      const store = await openStore();
+      applyOps.mockRejectedValueOnce(
+        new ApiError({
+          code: 'revision.conflict',
+          message: 'stale',
+          status: 409,
+          currentRevision: 7,
+        }),
+      );
+      open.mockResolvedValue(state('gig.mp4', 7));
+      timeline.mockResolvedValue(timelineOf(7));
+      const ops = [{ op: 'trim_clip', clip: 'c0', out: 5 }];
+      expect(await store.applyOps(ops)).toBe(false);
+      expect(store.conflict).not.toBeNull();
+      applyOps.mockResolvedValue({ data: { revision: 8 } });
+      timeline.mockResolvedValue(timelineOf(8));
+      expect(await store.conflict?.retry()).toBe(true);
+      expect(applyOps.mock.calls[1]?.[0].headers['If-Match']).toBe('"7"');
+      expect(applyOps.mock.calls[1]?.[0].body.ops).toEqual(ops);
+      expect(store.conflict).toBeNull();
+      expect(store.revision).toBe(8);
+    });
+
+    it('waits for its own edit in flight before judging an event, so it is not a foreign change', async () => {
+      const store = await openStore();
+      let release: (value: unknown) => void = () => undefined;
+      applyOps.mockReturnValue(new Promise((resolve) => (release = resolve)));
+      timeline.mockResolvedValue(timelineOf(4));
+      const edit = store.applyOps([{ op: 'trim_clip', clip: 'c0', out: 5 }]);
+      open.mockClear();
+      const event = store.handleProjectEvent({
+        kind: 'timeline',
+        project_id: 'gig.mp4',
+        revision: 4,
+        source: 'local',
+      });
+      release({ data: { revision: 4 } });
+      await edit;
+      expect(await event).toBe(false);
+      expect(open).not.toHaveBeenCalled();
     });
 
     it('does nothing without an open project', async () => {

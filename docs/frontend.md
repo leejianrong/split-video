@@ -181,10 +181,10 @@ the editor shortcuts off. `announce(message)` in `a11y/announce.ts` speaks a mes
 | Piece | File | Notes |
 |---|---|---|
 | Library | `state/assets.svelte.ts` (`AssetsStore`) | `GET /api/v1/assets` (the workspace's asset table). The open recording is registered into it (`ensure`) so it is always a card. |
-| Jobs and the event stream | `state/jobs.svelte.ts` (`JobsStore`) | The one `EventSource` of the page (`connectEvents`: reconnect with backoff, and a refetch of `GET /jobs` after a reconnect). Started by `state/live.ts` from the editor shell; `project` events move the project store. |
+| Jobs and the event stream | `state/jobs.svelte.ts` (`JobsStore`) | The one `EventSource` of the page (`connectEvents`: reconnect with backoff, and a refetch of `GET /jobs` after a reconnect). Started by `state/live.ts` from the editor shell; `project` events move the project store (`state/live.ts`: reload, prune the clip selection, one notice; the playhead is clamped by `timelineView.setSize`). |
 | Quick actions | `state/quickActions.svelte.ts` | One run per asset and action; progress is read from the jobs store. |
 | Selection | `state/selection.svelte.ts` | The selected library asset. |
-| Add to the timeline | `ProjectStore.addAsset` in `state/project.svelte.ts` | `POST /project/clips` with `If-Match: <revision>`; edits are serialised; a 409 reloads the project and sets `project.editError` ("changed somewhere else"). |
+| Add to the timeline | `ProjectStore.addAsset` in `state/project.svelte.ts` | `POST /project/clips` with `If-Match: <revision>`; edits are serialised; a 409 reloads the project, sets `project.editError` ("changed somewhere else") and `project.conflict.retry()`; `state/editErrors.ts` (`reportEditError`) turns that into the "Apply my change again" prompt. An agent edit while a clip drag is open cancels the drag if its clip is gone. |
 | Drag payload | `state/dnd.ts` | See below. |
 
 **Import.** Two ways, because a browser cannot hand the server a path:

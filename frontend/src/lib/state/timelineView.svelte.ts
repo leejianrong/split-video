@@ -28,6 +28,7 @@ export class TimelineViewStore {
     this.width = width;
     this.duration = duration;
     playhead.duration = duration;
+    playhead.seek(playhead.time); // a shorter project (an agent cut it) must not leave the playhead past the end
     if (width <= 0) return;
     if (this.fitted) this.#apply(fitView(duration, width));
     else {

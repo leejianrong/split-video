@@ -37,6 +37,11 @@ export class ProjectStore {
   error = $state<ProjectError | null>(null);
   /** Why the last edit did not apply (a conflict or a refusal, with the fix hint); null after a good one. */
   editError = $state<ProjectError | null>(null);
+  /**
+   * Set when the last edit lost a race (409): the latest version is already loaded, and `retry()` sends the same
+   * change again on top of it. Null after any later edit, open or close.
+   */
+  conflict = $state<{ retry: () => Promise<boolean> } | null>(null);
 
   /** The server revision the mirror was read at. The project and its timeline share one number; the larger is the newer. */
   revision = $derived(
@@ -63,6 +68,7 @@ export class ProjectStore {
       this.project = data;
       this.timeline = null;
       this.editError = null;
+      this.conflict = null;
       this.status = 'ready';
       await this.#loadTimeline(id, ticket);
     } catch (cause) {
@@ -98,11 +104,19 @@ export class ProjectStore {
     await this.#loadTimeline(id, ticket);
   }
 
-  /** A `project` event from the stream: reload when it is this project and newer than what we hold. */
-  handleProjectEvent(event: ProjectEvent): void {
-    if (this.id === null || this.revision === null) return;
+  /**
+   * A `project` event from the stream: reload when it is this project and newer than what we hold. Resolves with
+   * whether the mirror was reloaded because of it (our own edits already hold their revision, so they do not).
+   */
+  async handleProjectEvent(event: ProjectEvent): Promise<boolean> {
+    if (this.id === null || this.revision === null) return false;
     const mine = event.project_id === this.id || event.project_id === this.project?.filename;
-    if (mine && event.revision > this.revision) void this.refresh();
+    if (!mine || event.revision <= this.revision) return false;
+    // An edit of ours may be in flight; let it land first so its answer is not mistaken for someone else's change.
+    await this.#queue.catch(() => undefined);
+    if (this.revision === null || event.revision <= this.revision) return false;
+    await this.refresh();
+    return true;
   }
 
   /**
@@ -115,6 +129,7 @@ export class ProjectStore {
     const run = async (): Promise<boolean> => {
       if (this.id === null || this.revision === null) return false;
       this.editError = null;
+      this.conflict = null;
       try {
         this.timeline = await change(ifMatch(this.revision));
         if (this.project) this.project = { ...this.project, revision: this.timeline.revision };
@@ -127,6 +142,7 @@ export class ProjectStore {
             message: 'This project changed somewhere else, so your change was not applied.',
             fix: 'Fix: the latest version is loaded now; check it, then make the change again.',
           };
+          this.conflict = { retry: () => this.edit(change) };
           await this.refresh();
         } else {
           this.editError = error;
@@ -179,6 +195,7 @@ export class ProjectStore {
     this.timeline = null;
     this.error = null;
     this.editError = null;
+    this.conflict = null;
     this.status = 'idle';
   }
 }

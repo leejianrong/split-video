@@ -10,7 +10,7 @@
   import { project } from '../state/project.svelte';
   import { rangeSelection } from '../state/rangeSelection.svelte';
   import { timelineView } from '../state/timelineView.svelte';
-  import { toasts } from '../state/toasts.svelte';
+  import { reportEditError } from '../state/editErrors';
   import { waveforms } from '../state/waveforms.svelte';
   import type { ClipOut } from '../api/client';
   import { ClipDrag } from './drag.svelte';
@@ -65,7 +65,11 @@
     });
   });
   $effect(() => {
-    clipSelection.prune(new Set(lanes.flatMap((lane) => lane.clips.map((c) => c.id))));
+    const ids = new Set(lanes.flatMap((lane) => lane.clips.map((c) => c.id)));
+    clipSelection.prune(ids);
+    // A drag of a clip that someone else just removed would only end in a conflict: drop it.
+    const dragged = untrack(() => drag.active?.clipId);
+    if (dragged && !ids.has(dragged)) untrack(() => drag.cancel());
   });
 
   // --- the scrollbar: a native scroller as wide as the content, kept equal to the view ---------------------------
@@ -156,7 +160,7 @@
         );
       } else announce(`${what} ${subject}`.trim());
     } else if (project.editError) {
-      toasts.error(`${project.editError.message} ${project.editError.fix}`.trim());
+      reportEditError();
     }
     return ok;
   }
