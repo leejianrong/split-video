@@ -20,6 +20,7 @@
   const poster = $derived(assetId ? frameUrl(assetId, card.from, 160) : '');
   const loaded = $derived(poster !== '' && thumbs.isLoaded(poster));
   const range = $derived(`${formatClock(card.from)} – ${formatClock(card.to)}`);
+
   const reason = $derived(card.reasons.slice(0, 2).join(' · '));
   const dismissed = $derived(card.state === 'dismissed');
 
@@ -96,6 +97,17 @@
     });
   }
 
+  // The button's name starts with its visible text in the visible order (WCAG 2.5.3, Label in Name), then the state.
+  const pickName = $derived(
+    [
+      `${card.score} ${card.title} ${range} · ${formatLength(card.to - card.from)}`,
+      card.adjusted ? 'adjusted' : '',
+      reason,
+    ]
+      .filter(Boolean)
+      .join(' ') + `, ${card.state === 'pending' ? 'not reviewed' : card.state}`,
+  );
+
   const blockedReason = $derived(
     project.status !== 'ready' ? 'Open a recording first' : highlights.busy ? 'Working…' : '',
   );
@@ -115,7 +127,7 @@
     type="button"
     class="pick"
     aria-pressed={selected}
-    aria-label={`${card.title}, ${range}, score ${card.score}, ${card.state === 'pending' ? 'not reviewed' : card.state}`}
+    aria-label={pickName}
     onclick={() =>
       highlights.select(
         card.key,

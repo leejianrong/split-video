@@ -59,6 +59,7 @@ claude mcp add split-video -- docker run -i --rm -v ~/recordings:/data \
 | [docs/cli.md](docs/cli.md) | `split`, project commands, running without Docker |
 | [docs/editor.md](docs/editor.md) | The visual editor |
 | [docs/frontend.md](docs/frontend.md) | The new Svelte editor (scaffold at `/app/`), building it, the dev loop |
+| [docs/e2e.md](docs/e2e.md) | Browser end-to-end tests in CI, running them locally, the flaky-test policy |
 | [docs/compose.md](docs/compose.md) | Compose, edit plans, edit operations |
 | [docs/library.md](docs/library.md) | Library scan, proxies, thumbnails |
 | [docs/analysis.md](docs/analysis.md) | Transcription, scenes, frames, OCR, search, report, highlights |
