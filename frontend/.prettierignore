@@ -3,3 +3,4 @@ package-lock.json
 ../src/split_video/editor/static_app
 
 src/lib/api/generated
+e2e-results

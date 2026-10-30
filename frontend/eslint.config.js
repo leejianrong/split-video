@@ -9,6 +9,7 @@ export default ts.config(
     ignores: [
       'node_modules/',
       'dist/',
+      'e2e-results/',
       'src/lib/api/generated/',
       '../src/split_video/editor/static_app/',
     ],
