@@ -16,7 +16,7 @@
     "api:generate": "openapi-ts -f openapi-ts.config.ts"
   },
   "dependencies": {
-    "svelte": "5.57.2"
+    "svelte": "5.57.3"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
