@@ -23,10 +23,14 @@ project has changed since, the write is refused and nothing is saved:
   write gets `409` with `{"detail": ..., "error": "revision_conflict",
   "current_revision": N, "base_revision": M}`. Other 409s (output exists, project
   exists) have no `error` field.
-- **The editors** send the revision they last saw with every save. If something
-  else changed the project meanwhile, the page reloads the latest version and
-  shows "Project changed elsewhere; reloaded the latest version, please redo
-  your last change."
+- **The editors** send the revision they last saw with every save. The visual editor (`/app/`) also listens to
+  `GET /api/v1/events`: when the CLI, MCP or another tab saves the open project, it loads the new version within about
+  a second (the watcher polls once a second), keeps the selected clips that still exist and says so in a notice ("The
+  project was changed by another tool", plus "The clip you selected was removed" when that applies). The playhead is
+  clamped to the new length. If a save of the editor itself loses the race (409), the latest version is loaded and a
+  prompt offers **Apply my change again**, which sends the same change on top of it (nothing is re-applied without
+  that click). The older split editor reloads and shows "Project changed elsewhere; reloaded the latest version,
+  please redo your last change."
 
 **`base_revision` is optional by design.** Leave it out and the edit is applied
 to the latest version: the load, change and save happen under a lock, so
