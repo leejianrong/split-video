@@ -18,7 +18,7 @@
     "e2e:quarantine": "E2E_QUARANTINE=1 playwright test"
   },
   "dependencies": {
-    "svelte": "5.57.2"
+    "svelte": "5.57.3"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.14.0",
