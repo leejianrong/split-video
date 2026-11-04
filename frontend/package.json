@@ -13,14 +13,18 @@
     "lint": "eslint . && prettier --check .",
     "format": "prettier --write .",
     "test": "vitest run",
-    "api:generate": "openapi-ts -f openapi-ts.config.ts"
+    "api:generate": "openapi-ts -f openapi-ts.config.ts",
+    "e2e": "playwright test",
+    "e2e:quarantine": "E2E_QUARANTINE=1 playwright test"
   },
   "dependencies": {
     "svelte": "5.57.2"
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.14.0",
     "@eslint/js": "10.0.1",
     "@hey-api/openapi-ts": "0.99.0",
+    "@playwright/test": "1.64.1",
     "@sveltejs/vite-plugin-svelte": "7.3.1",
     "@types/node": "24.19.2",
     "eslint": "10.13.0",

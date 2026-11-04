@@ -99,6 +99,85 @@ jobs:
           uv build --out-dir dist
           python3 scripts/check_wheel_contents.py dist
 
+  # Browser end-to-end tests (docs/e2e.md, ADR 0004): Playwright drives the built app against a real `split-video edit`
+  # server on a media file generated with ffmpeg. Adding this job as a required check is a repository setting.
+  e2e:
+    runs-on: ubuntu-latest
+    # A normal run takes 3 to 5 minutes. The suite also has its own global timeout (12 min) and per-test timeouts, so
+    # this is only the backstop against a wedged runner (SPL-110).
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: frontend/.nvmrc
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install ffmpeg
+        working-directory: .
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10.3.2
+        with:
+          enable-cache: true
+
+      - name: Install Python dependencies
+        working-directory: .
+        run: uv sync --frozen
+
+      - name: Install dependencies
+        run: npm ci
+
+      # The server serves the build at /app/, so the tests need it.
+      - name: Build the app
+        run: npm run build
+
+      # The browser download is cached by the locked Playwright version (it is in package-lock.json). On a hit only
+      # the system libraries are installed (they are not part of the cache).
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('frontend/package-lock.json') }}
+
+      - name: Install Chromium and its system libraries
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: npx playwright install --with-deps chromium
+
+      - name: Install Chromium system libraries
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
+
+      - name: Run the end-to-end tests
+        run: npm run e2e
+
+      # Quarantined tests (tag @quarantine) run here so they stay visible, but never fail the job.
+      - name: Run quarantined tests (non-blocking)
+        if: always()
+        continue-on-error: true
+        run: npm run e2e:quarantine -- --pass-with-no-tests
+
+      # Traces, screenshots and server logs of failed tests, plus the HTML report, on failure.
+      - name: Upload the report and traces
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-report
+          path: |
+            frontend/e2e-results/report
+            frontend/e2e-results/artifacts
+          retention-days: 14
+          if-no-files-found: ignore
+
   test:
     runs-on: ubuntu-latest
     # The identical suite took 8, 12 and 24.6 minutes on GitHub-hosted runners, and one run was cancelled at the old

@@ -76,11 +76,12 @@
 
 <li class="cell" data-testid="media-card" data-asset={asset.id} data-state={card.kind}>
   <div class="card" class:selected>
+    <!-- The name starts with the visible text, in the visible order (WCAG 2.5.3, Label in Name). -->
     <button
       type="button"
       class="select"
       aria-pressed={selected}
-      aria-label={`${name}, ${formatDuration(asset.duration)}${card.kind === 'missing' ? ', file not found' : ''}`}
+      aria-label={`${formatDuration(asset.duration)} ${name}${card.kind === 'missing' ? ', file not found' : ''}`}
       draggable={canAdd}
       ondragstart={onDragStart}
       onclick={() => selection.select(asset.id)}

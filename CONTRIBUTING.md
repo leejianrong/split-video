@@ -20,7 +20,7 @@ automatically if you haven't run `make fetch-model`. Set
 
 The Svelte app lives in `frontend/` and needs Node 24 (`frontend/.nvmrc`); see
 [docs/frontend.md](docs/frontend.md). Before a PR that touches it run `npm run lint`, `npm run check`,
-`npm run test` and `npm run build` there (CI's `frontend` job does the same). A change to routes or schemas also
+`npm run test` and `npm run build` there (CI's `frontend` job does the same); a change to what the editor does in the browser also runs `npm run e2e` ([docs/e2e.md](docs/e2e.md), CI's `e2e` job). A change to routes or schemas also
 needs `make openapi schemas errors` followed by `make api-client` (`npm run api:generate`), and the regenerated
 `frontend/src/lib/api/generated/` goes in the same PR; CI fails when it is stale.
 

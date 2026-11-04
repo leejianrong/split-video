@@ -107,10 +107,12 @@ origin and FastAPI needs no CORS settings.
 | `npm run lint` | ESLint and `prettier --check` |
 | `npm run format` | `prettier --write` |
 | `npm run test` | Vitest |
+| `npm run e2e` | Playwright end-to-end tests against the build ([e2e.md](e2e.md)) |
 | `npm run api:generate` | Regenerate the typed API client from `../openapi.json` (also `make api-client`) |
 
 CI runs the same set in the `frontend` job (plus the API client drift check below), then builds the wheel and sdist and runs
-`scripts/check_wheel_contents.py` on them.
+`scripts/check_wheel_contents.py` on them. The browser tests run in a separate `e2e` job; see [e2e.md](e2e.md) for what they
+cover, how to run them and the flaky-test policy.
 
 ## API client
 
