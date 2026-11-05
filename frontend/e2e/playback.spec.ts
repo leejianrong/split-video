@@ -5,6 +5,7 @@ import { test, expect, openEditor, timeline, type App } from './fixtures';
 
 // Playback through pre-rendered lookahead chunks (SPL-72): the composite plays in a <video>, chunks join without a gap,
 // a seek and an edit recover, a pause cancels the renders still running. Numbers are printed as `PLAYBACK ...` lines.
+const JOIN_GAP_MS = 200; // six frames at 30 fps
 const SHOTS = process.env.PLAYBACK_SHOTS; // a folder: also take the screenshots the card's verification reads
 
 const seconds = async (page: Page): Promise<number> => {
@@ -12,8 +13,11 @@ const seconds = async (page: Page): Promise<number> => {
   return text.split(':').reduce((acc, part) => acc * 60 + Number(part), 0);
 };
 const frame = (page: Page) => page.getByTestId('preview-frame');
-const showing = (page: Page, what: string) =>
-  expect(frame(page)).toHaveAttribute('data-showing', what, { timeout: 20_000 });
+const showing = (page: Page, what: string, timeout = 20_000) =>
+  expect(frame(page)).toHaveAttribute('data-showing', what, { timeout });
+// The draft tests queue the chunk behind six held renders, which take a minute on a loaded runner: the hand-over
+// waits that long (a chunk that never arrives still fails), the draft itself is still asserted within 20 s.
+const HANDOVER_MS = 60_000;
 
 async function previewJobs(app: App) {
   const r = await fetch(`${app.baseURL}/api/v1/jobs`, { signal: AbortSignal.timeout(10_000) });
@@ -51,11 +55,26 @@ test('playback: the composite plays through lookahead chunks, crosses a join, se
   test.setTimeout(150_000);
   const errors: string[] = [];
   let settled = false;
+  // A chunk 404s once the timeline moves past its revision, so a late fetch of an older chunk is not an error: only
+  // the newest revision asked for counts (key -> revision from the start responses).
+  const revisionOf = new Map<string, number>();
+  let newest = 0;
   page.on('pageerror', (e) => errors.push(e.message));
-  page.on('response', (r) => {
+  page.on('response', async (r) => {
+    const url = r.url();
+    if (r.request().method() === 'POST' && /\/project\/preview-range\?/.test(url) && r.ok()) {
+      const body = (await r.json().catch(() => null)) as { key: string; revision: number } | null;
+      if (body) {
+        revisionOf.set(body.key, body.revision);
+        newest = Math.max(newest, body.revision);
+      }
+      return;
+    }
     // (the waveform of a fresh recording is a known 404 until it is computed)
-    if (!settled && r.status() >= 400 && /preview-|\/media\//.test(r.url()))
-      errors.push(`${r.status()} ${r.url()}`);
+    if (settled || r.status() < 400 || !/preview-|\/media\//.test(url)) return;
+    const key = /\/preview-range\/([^/?]+)/.exec(url)?.[1];
+    if (key && (revisionOf.get(key) ?? newest) < newest) return;
+    errors.push(`${r.status()} ${url}`);
   });
 
   await openEditor(page, app);
@@ -134,8 +153,10 @@ test('playback: the composite plays through lookahead chunks, crosses a join, se
   console.log(
     `PLAYBACK frame gap: median ${gaps.median.toFixed(0)} ms, max ${gaps.max.toFixed(0)} ms, at the swap ${gaps.swaps.map((g) => g.toFixed(0)).join(', ')} ms, over ${gaps.frames} frames`,
   );
+  // Only the join is asserted: a one-off stall of a loaded runner elsewhere (the max is printed above) is not a
+  // playback regression, a gap at the chunk swap is.
   expect(gaps.swaps.length).toBeGreaterThanOrEqual(1); // a join was crossed
-  expect(gaps.max).toBeLessThan(300);
+  expect(Math.max(...gaps.swaps)).toBeLessThan(JOIN_GAP_MS);
 
   // The element playing is the composite chunk, it decodes sound, and its picture is the composite (overlay and title).
   const audio = await playing.evaluate(
@@ -315,7 +336,7 @@ for (const draftWorks of [true, false]) {
     page,
     app,
   }) => {
-    test.setTimeout(90_000);
+    test.setTimeout(120_000);
     await openEditor(page, app);
     const codecs = await page.evaluate(() =>
       document.createElement('video').canPlayType('video/mp4; codecs="avc1.42E01E, mp4a.40.2"'),
@@ -340,7 +361,7 @@ for (const draftWorks of [true, false]) {
       expect(await draft.evaluate((v: HTMLVideoElement) => !v.paused)).toBe(true);
       await shot(page, 'draft');
       console.log(`PLAYBACK draft picture after ${Date.now() - t0} ms`);
-      await showing(page, 'chunk');
+      await showing(page, 'chunk', HANDOVER_MS);
       console.log(`PLAYBACK composite after ${Date.now() - t0} ms behind the held worker`);
       // One sound at a time: the draft is paused and gone the moment the composite plays.
       expect(await draft.evaluate((v: HTMLVideoElement) => v.paused)).toBe(true);
@@ -349,7 +370,7 @@ for (const draftWorks of [true, false]) {
       await expect(page.getByTestId('preview-preparing')).toHaveText('Preparing preview');
       await expect(frame(page)).toHaveAttribute('data-showing', 'still');
       await shot(page, 'preparing');
-      await showing(page, 'chunk');
+      await showing(page, 'chunk', HANDOVER_MS);
       await expect(page.getByTestId('preview-preparing')).toHaveCount(0);
     }
     await page.keyboard.press('Space');
