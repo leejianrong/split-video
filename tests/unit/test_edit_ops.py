@@ -593,7 +593,7 @@ def test_every_op_has_a_handler_a_doc_row_and_a_single_edit_twin():
     assert list(edit_ops.OPS) == [
         "add_clip", "trim_clip", "move_clip", "remove_clip", "set_transition", "set_clip_properties",
         "add_text_clip", "set_text_properties", "add_track", "remove_track", "move_track", "place_clip",
-        "set_track_flags",
+        "set_track_flags", "set_canvas",
     ]  # fmt: skip
 
 
@@ -905,7 +905,7 @@ def test_plan_and_ops_dry_runs_share_shape_and_report_type(world):
     ops_dry = edit_ops.apply_ops(world.media, world.store, doc([{"op": "add_track", "kind": "audio"}]), dry_run=True)
     shared = {"project", "revision", "action", "dry_run", "clips", "duration", "tracks", "warnings", "timeline"}
     assert shared <= set(plan_dry) and shared <= set(ops_dry)
-    assert set(plan_dry["timeline"]) == set(ops_dry["timeline"]) == {"name", "revision", "duration", "tracks"}
+    assert set(plan_dry["timeline"]) == set(ops_dry["timeline"]) == {"name", "revision", "duration", "canvas", "tracks"}
     assert plan_dry["tracks"][0].keys() == ops_dry["tracks"][0].keys()
     assert issubclass(edit_ops.OpsReport, edit_plan.PlanReport) and issubclass(OpsInvalidError, TimelineError)
     bad_plan = edit_plan.validate_plan(world.media, {"schema_version": 1, "project": "x", "tracks": []})

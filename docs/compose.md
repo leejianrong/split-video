@@ -206,6 +206,14 @@ file is missing stays in the project and is linked once the file is back.
 video track and a muted track are left out of the render (a muted track is silent), the main video track cannot be hidden.
 They are saved on the track as optional `locked`, `hidden`, `muted` (written only when on), so the file version stays 2.
 
+**Canvas.** The project's output ratio (16:9, 9:16 or 1:1, the editor's top bar) is set with `apply-ops` and `set_canvas`
+(`ratio`), carries revisions like any edit and is saved as an optional `canvas` (written only once chosen, so the file
+version stays 2 and an older file loads as 16:9). A render, `preview-frame` or `preview-range` that names no `--preset`
+and no size uses the canvas's preset (`youtube-1080p`, `vertical-1080`, `square-1080`); a project that never chose one
+keeps the first clip's size. Switching keeps every clip. `show`, `GET /api/v1/compose/projects/{name}` and MCP
+`show_timeline` return `canvas: {ratio, preset, needs_reframe}`, where `needs_reframe` lists the main-track clips whose
+picture (after their crop) is not the canvas's shape, so the export letterboxes or crops them (per-clip fit is SPL-122).
+
 Other commands: `list`, `assets`, `migrate`, `trim`, `move` (reorder the main track), `place`
 (move a clip in time or to another track), `remove`, `remove-track`,
 `move-track`, `set-text`. Text needs a TrueType font: the Docker image has one;

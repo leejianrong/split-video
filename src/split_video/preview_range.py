@@ -139,6 +139,7 @@ def plan_range(
         raise RangeError(f"end ({end:g} s) must be after start ({start:g} s)")
     if end - start > MAX_RANGE + 1e-9:
         raise RangeTooLongError(end - start)
+    preset = presets.canvas_preset(preset, None, None, project.canvas_preset)
     settings = presets.resolve_export(preset, None, None, fit)
     prepared = render.prepare(project, media, settings)
     duration = prepared.project.duration

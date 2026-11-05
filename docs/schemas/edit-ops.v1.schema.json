@@ -299,6 +299,31 @@
       ],
       "type": "object"
     },
+    "set_canvas": {
+      "additionalProperties": false,
+      "description": "Set the project's output ratio. Clips are kept; `canvas.needs_reframe` in the timeline view lists the ones whose picture does not match it (`timeline_ops.set_canvas`).",
+      "properties": {
+        "op": {
+          "const": "set_canvas",
+          "description": "The operation.",
+          "type": "string"
+        },
+        "ratio": {
+          "description": "The canvas ratio.",
+          "enum": [
+            "16:9",
+            "9:16",
+            "1:1"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "op",
+        "ratio"
+      ],
+      "type": "object"
+    },
     "set_clip_properties": {
       "additionalProperties": false,
       "allOf": [
@@ -715,6 +740,9 @@
           },
           {
             "$ref": "#/$defs/set_track_flags"
+          },
+          {
+            "$ref": "#/$defs/set_canvas"
           }
         ]
       },

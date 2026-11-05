@@ -150,6 +150,7 @@ def preview_frame(
         raise frames.FrameArgumentError(f"width must be between 2 and {frames.MAX_DIMENSION} pixels")
     if math.isnan(t) or t < 0:
         raise frames.FrameTimeError(f"time must be 0 or more seconds, not {t}")
+    preset = presets.canvas_preset(preset, None, None, project.canvas_preset)
     settings = presets.resolve_export(preset, None, None, fit)
     prepared = render.prepare(project, media, settings)
     duration = prepared.project.duration

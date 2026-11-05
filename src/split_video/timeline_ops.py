@@ -19,6 +19,7 @@ import re
 from dataclasses import replace
 
 from split_video.timeline import (
+    CANVASES,
     TRACK_KINDS,
     TRANSITIONS,
     Clip,
@@ -545,6 +546,14 @@ def set_track_flags(
         raise RuleViolation("hidden_audio_track", "only video tracks can be hidden; mute an audio track instead")
     changes = {k: v for k, v in (("locked", locked), ("hidden", hidden), ("muted", muted)) if v is not None}
     return _replace_track(project, replace(track, **changes))
+
+
+def set_canvas(project: Project, ratio: str) -> Project:
+    """Set the project's output ratio (a key of `timeline.CANVASES`). Clips are kept as they are, locked tracks
+    included; `timeline_service.canvas_view` says which of them no longer match the new ratio."""
+    if ratio not in CANVASES:
+        raise TimelineError(f"unknown canvas {ratio!r}; valid canvases: {', '.join(CANVASES)}")
+    return replace(project, canvas=ratio)
 
 
 def _main_id(project: Project) -> str | None:

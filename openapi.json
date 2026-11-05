@@ -619,6 +619,32 @@
         "title": "BrowseResponse",
         "type": "object"
       },
+      "CanvasOut": {
+        "properties": {
+          "needs_reframe": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Needs Reframe",
+            "type": "array"
+          },
+          "preset": {
+            "title": "Preset",
+            "type": "string"
+          },
+          "ratio": {
+            "title": "Ratio",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ratio",
+          "preset",
+          "needs_reframe"
+        ],
+        "title": "CanvasOut",
+        "type": "object"
+      },
       "CaptionRange": {
         "properties": {
           "end": {
@@ -3095,6 +3121,9 @@
       },
       "ProjectOut": {
         "properties": {
+          "canvas": {
+            "$ref": "#/components/schemas/CanvasOut"
+          },
           "duration": {
             "title": "Duration",
             "type": "number"
@@ -3119,6 +3148,7 @@
         "required": [
           "name",
           "duration",
+          "canvas",
           "tracks"
         ],
         "title": "ProjectOut",

@@ -6,7 +6,6 @@
   import { canvasOf } from '../state/canvas';
   import { preview } from '../state/preview.svelte';
   import { project } from '../state/project.svelte';
-  import { ui } from '../state/ui.svelte';
   import Button from '../ui/Button.svelte';
   import Icon from '../ui/icons/Icon.svelte';
   import IconButton from '../ui/IconButton.svelte';
@@ -17,7 +16,7 @@
   const total = $derived(project.project ? formatClock(project.project.duration) : '0:00:00');
   const hasClips = $derived(project.timeline?.tracks.some((t) => t.clips.length > 0) ?? false);
 
-  const canvas = $derived(canvasOf(ui.canvas));
+  const canvas = $derived(canvasOf(project.canvas));
 
   // Ask for a picture as wide as the frame is on screen, rounded up to 64 px so dragging a panel edge does not send a
   // request per pixel; the server never goes above the export's own width.
@@ -106,7 +105,7 @@
           draggable="false"
         />
       {:else}
-        <span class="ratio">{ui.canvas}</span>
+        <span class="ratio">{project.canvas}</span>
         <p>Your timeline shows here.</p>
       {/if}
       <PlaybackSurface />

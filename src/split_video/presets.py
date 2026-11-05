@@ -133,6 +133,12 @@ def resolve_export(preset: str | None, width: int | None, height: int | None, fi
     return ExportSettings(chosen, size, chosen.fps if chosen else DEFAULT_FPS, check_fit(fit))
 
 
+def canvas_preset(preset: str | None, width: int | None, height: int | None, canvas: str | None) -> str | None:
+    """The preset to resolve: the one asked for, else (when no size was given either) the one the project's canvas
+    stands for, else None (the first clip's size). Explicit options always win over the canvas."""
+    return preset if preset is not None or width is not None or height is not None else canvas
+
+
 def listing() -> dict:
     """The JSON the HTTP route, CLI and MCP tool all return: every preset with all its fields, and the valid fits."""
     return {"presets": [PRESETS[n].to_dict() for n in names()], "default_fit": DEFAULT_FIT, "fits": list(FITS)}

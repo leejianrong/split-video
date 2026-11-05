@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { CANVASES } from '../state/canvas';
+  import { CANVASES, type CanvasId } from '../state/canvas';
   import { formatLength } from '../format';
   import { hrefTo } from '../state/route';
   import { exports } from '../state/exports.svelte';
@@ -40,7 +40,13 @@
       aria-label="Canvas ratio"
       title="Canvas ratio: the output shape; the preview follows it"
       data-testid="ratio"
-      bind:value={ui.canvas}
+      value={project.canvas}
+      disabled={!project.timeline}
+      onchange={async (e) => {
+        const select = e.currentTarget;
+        await project.setCanvas(select.value as CanvasId);
+        select.value = project.canvas; // a refused edit leaves the stored canvas showing
+      }}
     >
       {#each CANVASES as c (c.id)}
         <option value={c.id}>{c.id}</option>

@@ -373,6 +373,24 @@ export type BrowseResponse = {
 };
 
 /**
+ * CanvasOut
+ */
+export type CanvasOut = {
+    /**
+     * Needs Reframe
+     */
+    needs_reframe: Array<string>;
+    /**
+     * Preset
+     */
+    preset: string;
+    /**
+     * Ratio
+     */
+    ratio: string;
+};
+
+/**
  * CaptionRange
  */
 export type CaptionRange = {
@@ -1993,6 +2011,7 @@ export type ProjectListOut = {
  * ProjectOut
  */
 export type ProjectOut = {
+    canvas: CanvasOut;
     /**
      * Duration
      */

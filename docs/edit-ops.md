@@ -119,6 +119,7 @@ clip ranges of the [plan](edit-plan.md#clip).
 | `remove_track` | `track` | Remove a track and its clips. The last video track stays. |
 | `move_track` | `track`, `to_index` | Reorder tracks (later draws on top). |
 | `place_clip` | `clip`, `start`, `track` | Put a clip at `start` on a free track, optionally moving it to another free track of the same kind. |
+| `set_canvas` | `ratio` (`16:9`, `9:16` or `1:1`) | The project's output ratio, saved in the project file. Clips are kept. A render, preview frame or preview range that names no preset or size uses the canvas's preset (`youtube-1080p`, `vertical-1080`, `square-1080`); a project that never chose one keeps the first clip's size. The timeline view (`canvas`: `ratio`, `preset`, `needs_reframe`) lists the main-track clips whose picture, after their crop, is not the canvas's shape: they get letterboxed or cropped by the export's `fit`. |
 | `set_track_flags` | `track`, `locked`, `hidden`, `muted` (at least one) | The timeline's lane toggles. A **locked** track refuses every edit of its clips (`ops.track.locked`) until unlocked; a **hidden** video track is left out of the preview and the export (not the main track, not audio tracks); a **muted** track is silent. Only the flags you give change. The flags are saved with the track and are not part of an edit plan. |
 
 `render` and project creation are not edits and are not ops.

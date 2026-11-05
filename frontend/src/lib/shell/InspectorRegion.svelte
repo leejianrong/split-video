@@ -47,7 +47,14 @@
         <dt>Length</dt>
         <dd>{project.project ? formatLength(project.project.duration) : ''}</dd>
         <dt>Canvas</dt>
-        <dd>{ui.canvas}</dd>
+        <dd data-testid="inspector-canvas">
+          {project.canvas}{#if project.needsReframe.length}
+            <span class="reframe" data-testid="reframe-count">
+              {project.needsReframe.length === 1
+                ? '1 clip is'
+                : `${project.needsReframe.length} clips are`} not this shape</span
+            >{/if}
+        </dd>
       </dl>
       <Button variant="secondary" onclick={() => (ui.exportOpen = true)}>Export</Button>
     </Panel>
@@ -82,5 +89,11 @@
     margin: 0;
     min-width: 0;
     overflow-wrap: anywhere;
+  }
+
+  .reframe {
+    display: block;
+    color: var(--color-text-muted);
+    font-size: var(--font-size-sm);
   }
 </style>

@@ -54,13 +54,15 @@ sent and the picture is kept as an object URL.
   newest is dropped. The same project, time, width and revision is not asked twice.
 - **Width** is the frame's width on screen times the device pixel ratio (at most 2), rounded up to 64 px and capped at
   1280; the server never goes above the export's width.
-- **Canvas**: the top bar's ratio picker (16:9, 9:16, 1:1; `state/canvas.ts`, `ui.canvas`) is the project canvas. It is
-  a request parameter, not project data: it is not in the timeline or its revision, it is not saved, and it starts at 16:9
-  on each open. Each choice is an export preset (`youtube-1080p`, `vertical-1080`, `square-1080`) sent as `preset` with
+- **Canvas**: the top bar's ratio picker (16:9, 9:16, 1:1; `state/canvas.ts`) is the project canvas. It is project
+  data (SPL-82): `project.canvas` reads `timeline.canvas.ratio` (16:9 until one is chosen) and picking one sends
+  the `set_canvas` op through `project.applyOps`, so it is saved in the sidecar, restored on reopen and a new revision.
+  The Project panel of the inspector shows how many main-track clips are not the canvas's shape
+  (`canvas.needs_reframe`). The Export dialog's preset follows the canvas (it can still be changed there). Each choice is an export preset (`youtube-1080p`, `vertical-1080`, `square-1080`) sent as `preset` with
   every still and every chunk request, so the engine renders the output's shape (the chunk cache key already includes the
   preset). The frame box takes its ratio from the canvas at once; the old still is dropped and the new one arrives
   within the usual still delay. A canvas change drops every chunk like an edit (see below). `fit` is not sent yet (the
-  per-clip fit is SPL-122), and the Export dialog has its own preset.
+  per-clip fit is SPL-122).
 - **While it renders** the previous still stays with a small spinner (`role="status"`). A failure leaves the still and
   shows the catalogue's message and fix under it, inline, with no toast; editing carries on.
 - **Revision**: the project's revision is part of the request, so an edit (also one made by an agent, see live refresh)

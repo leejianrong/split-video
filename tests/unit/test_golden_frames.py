@@ -7,6 +7,8 @@ to catch a real divergence. Both renderers share `render.build_plan`, so a chang
 pinned-colour tests compare against absolute values to catch that. See "Golden-frame tests" in docs/compose.md.
 """
 
+from dataclasses import replace
+
 import numpy as np
 import pytest
 from golden import SIZE, Tolerance, export, export_frame, make_source, measure
@@ -16,6 +18,7 @@ from split_video import assets
 from split_video import timeline_ops as ops
 from split_video.local_media_store import LocalMediaStore
 from split_video.preview import preview_frame
+from split_video.render import render
 from split_video.timeline import empty_project
 
 GRADED = (136, 70, 56)  # (200, 60, 40) at contrast 1.3, saturation 0.5
@@ -238,3 +241,16 @@ def test_a_moved_or_resized_text_box_is_reported(media, what, override):
     boxes = _text_boxes(media, _text_on_black(media, **override), "text-mut.mp4")
     for renderer, box in boxes.items():
         assert _text_pin_failures(box), f"{what} stayed inside the pin in the {renderer}: {box}"
+
+
+def test_an_export_without_a_preset_follows_the_project_canvas(media, capsys):
+    """SPL-82: a project with a canvas exports at the canvas's size by default, and that frame is the preview's."""
+    project = replace(overlay(media), canvas="9:16")
+    render(project, media, "canvas-default.mp4")
+    tol = Tolerance(mean=2.5, share=0.006, separation=3)
+    m = measure(project, media, "canvas-default.mp4", 1.0, tol, preset="vertical-1080")
+    with capsys.disabled():
+        print(f"\ncanvas default {m}")
+    assert not tol.failures(m), (m, tol.failures(m))
+    shown = preview_frame(project, media, 1.0, format="png", source="original")  # no preset: the canvas's
+    assert shown.width < shown.height

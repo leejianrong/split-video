@@ -141,3 +141,21 @@ test('preview: the top bar canvas ratio changes the frame shape and the picture,
   await page.getByTestId('play').click();
   expect(errors).toEqual([]);
 });
+
+test('preview: the canvas is saved with the project, restored on reload and the export starts from it', async ({
+  page,
+  app,
+}) => {
+  await openEditor(page, app);
+  await expect(page.getByTestId('ratio')).toHaveValue('16:9');
+  await page.getByTestId('ratio').selectOption('9:16');
+  await expect(page.getByTestId('inspector-canvas')).toContainText('9:16');
+
+  await page.reload();
+  await expect(page.getByTestId('ratio')).toHaveValue('9:16');
+  const box = (await page.getByTestId('preview-frame').boundingBox())!;
+  expect(box.width / box.height).toBeCloseTo(9 / 16, 1);
+
+  await page.getByTestId('export-button').click();
+  await expect(page.getByTestId('export-preset')).toHaveValue('vertical-1080');
+});
