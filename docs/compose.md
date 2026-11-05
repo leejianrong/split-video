@@ -164,7 +164,11 @@ tolerance in `CASES` and add a mutation to `MUTATIONS`.
 
 What this does not catch: preview and export both call `render.build_plan`, so a change there moves both frames and the
 comparison still passes. `test_pinned_colours_do_not_drift_in_either_renderer` covers that for colour, opacity blending
-and grading with flat sources and fixed pixel values; text and placement are guarded only by the comparison. Captions and
+and grading with flat sources and fixed pixel values. `test_pinned_text_box_does_not_drift_in_either_renderer` pins
+white title text on black (SPL-125): the bright pixels' box must be 224 x 30 px centred on (238.5, 134.5) at 480x270,
+within 4 px on the centre, 8 on the width and 3 on the height, in both renderers. The margins allow for a pixel or two
+of glyph-hinting drift between ffmpeg and font versions and sit just under the smallest change it must catch (text
+moved 5 px, or one font-size step that adds 15 px of width); `test_a_moved_or_resized_text_box_is_reported` checks that. Captions and
 audio are not drawn by the preview and not compared.
 
 **Several renders at once** (the highlight reel plus shorts) run as a background queue with limited concurrency:

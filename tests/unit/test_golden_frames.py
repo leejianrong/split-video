@@ -7,6 +7,7 @@ to catch a real divergence. Both renderers share `render.build_plan`, so a chang
 pinned-colour tests compare against absolute values to catch that. See "Golden-frame tests" in docs/compose.md.
 """
 
+import numpy as np
 import pytest
 from golden import SIZE, Tolerance, export, export_frame, make_source, measure
 from test_frames import decode
@@ -25,6 +26,7 @@ SOURCES = {
     "bars": "smptebars=size=320x180:rate=30:duration=3",
     "flat": "color=c=0xC83C28:s=640x360:r=30:d=3",  # (200, 60, 40)
     "blue": "color=c=0x2850C8:s=320x180:r=30:d=3",  # (40, 80, 200)
+    "black": "color=c=black:s=640x360:r=30:d=3",
 }
 
 
@@ -169,3 +171,70 @@ def test_pinned_colours_do_not_drift_in_either_renderer(media):
         shown = decode(preview_frame(project, media, 1.0, width=SIZE[0], format="png", source="original").data)[2]
         assert _close(_pixel(shown, fx, fy), want), ("preview", i, _pixel(shown, fx, fy), want)
         assert _close(_pixel(export_frame(media, f"pin{i}.mp4", 1.0), fx, fy), want), ("export", i)
+
+
+def _text_box(img):
+    """(left, top, right, bottom) of the bright pixels, inclusive."""
+    ys, xs = np.where(img.max(axis=2) > 128)
+    return int(xs.min()), int(ys.min()), int(xs.max()), int(ys.max())
+
+
+# SPL-125: white "Golden 123" at y=0.5, font_size 0.15 on black, 480x270, measured on ffmpeg 4.4 with the first font
+# `find_font` picks (DejaVu Sans): box (127, 120)-(350, 149), 224 x 30 px, centred on (238.5, 134.5). Glyph hinting
+# and the font differ by a pixel or two between ffmpeg and font versions, so the margins are 4 px on the centre, 8 on
+# the width and 3 on the height: room for that drift, and just under the smallest mutation below (a 5 px move, a
+# font step that adds 15 px of width).
+TEXT_PIN = {
+    "centre": (238.5, 134.5),
+    "centre_slack": 4,
+    "width": 224,
+    "width_slack": 8,
+    "height": 30,
+    "height_slack": 3,
+}
+
+
+def _text_pin_failures(box):
+    left, top, right, bottom = box
+    p = TEXT_PIN
+    out = []
+    if (
+        abs((left + right) / 2 - p["centre"][0]) > p["centre_slack"]
+        or abs((top + bottom) / 2 - p["centre"][1]) > p["centre_slack"]
+    ):
+        out.append(f"centre {(left + right) / 2, (top + bottom) / 2} is off {p['centre']}")
+    if abs(right - left + 1 - p["width"]) > p["width_slack"]:
+        out.append(f"width {right - left + 1} is off {p['width']}")
+    if abs(bottom - top + 1 - p["height"]) > p["height_slack"]:
+        out.append(f"height {bottom - top + 1} is off {p['height']}")
+    return out
+
+
+def _text_on_black(media, **kw):
+    p = empty_project()
+    p, _ = _clip(media, p, p.tracks[0].id, "black", 3.0)
+    p, track = ops.add_track(p, "video")
+    p, _ = ops.add_text_clip(p, track.id, "Golden 123", 2.0, start=0.5, **{"font_size": 0.15, "y": 0.5, **kw})
+    return p
+
+
+def _text_boxes(media, project, name):
+    export(project, media, name)
+    shown = decode(preview_frame(project, media, 1.0, width=SIZE[0], format="png", source="original").data)[2]
+    return {"preview": _text_box(shown.astype(int)), "export": _text_box(export_frame(media, name, 1.0))}
+
+
+def test_pinned_text_box_does_not_drift_in_either_renderer(media):
+    """A change to text position or size in `build_plan` moves preview and export together: pin the box."""
+    for renderer, box in _text_boxes(media, _text_on_black(media), "text-pin.mp4").items():
+        assert not _text_pin_failures(box), (renderer, box, _text_pin_failures(box))
+
+
+@pytest.mark.parametrize(
+    ("what", "override"),
+    [("moved 5 px down", {"y": 0.52}), ("moved 5 px left", {"x": 0.489}), ("font 0.15 to 0.16", {"font_size": 0.16})],
+)
+def test_a_moved_or_resized_text_box_is_reported(media, what, override):
+    boxes = _text_boxes(media, _text_on_black(media, **override), "text-mut.mp4")
+    for renderer, box in boxes.items():
+        assert _text_pin_failures(box), f"{what} stayed inside the pin in the {renderer}: {box}"
