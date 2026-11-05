@@ -21,10 +21,9 @@ from split_video.editor.revisions import WRITE_RESPONSES, base_revision
 from split_video.job_work import split_work
 from split_video.jobs import SPLIT, JobQueue
 from split_video.media_store import MediaError
+from split_video.project import AUDIO_MISSING
 from split_video.store_provider import StoreProvider
 from split_video.timeline import TimelineError
-
-AUDIO_MISSING = "the asset has no audio track, so there is no silence to split at"
 
 
 class SplitRequest(BaseModel):

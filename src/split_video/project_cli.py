@@ -21,6 +21,7 @@ from rich.console import Console
 from rich.table import Table
 
 from split_video import cli_errors, project
+from split_video.compose_cli import _show
 from split_video.editor.cache import ClassificationCache
 from split_video.editor.classify import ModelNotFoundError
 from split_video.ffmpeg import ExtractError, FfmpegNotFoundError, ProbeError
@@ -29,6 +30,7 @@ from split_video.local_store import LocalProjectStore
 from split_video.media_store import MediaStore
 from split_video.store import ProjectStore, SavedSegment
 from split_video.timefmt import format_timestamp, parse_time
+from split_video.timeline import TimelineError
 
 console = Console()
 error_console = Console(stderr=True)
@@ -177,6 +179,58 @@ def propose_cmd(
     _report(source, segments, as_json, f"Proposed segments ({len(segments)})", revision, applied=apply)
     if apply and not as_json:
         console.print("[green]Saved[/green] — replaced the project's splits (labels and exclusions reset).")
+
+
+def split_by_silence_cmd(
+    source: Path = _Source,
+    silence_threshold: float = typer.Option(-35.0, "--silence-threshold", help="Silence level in dB."),
+    min_silence_duration: float = typer.Option(2.0, "--min-silence-duration", help="Shortest gap between songs (s)."),
+    min_song_length: float = typer.Option(30.0, "--min-song-length", help="Shortest song kept on its own (s)."),
+    silence_padding: float = typer.Option(0.15, "--silence-padding", help="Silence kept on each side of a cut (s)."),
+    label_prefix: str | None = typer.Option(
+        None, "--label-prefix", help='Label the pieces "<prefix> 1", "<prefix> 2" ... (for example Song).'
+    ),
+    base_revision: int | None = _BaseRevision,
+    as_json: bool = _Json,
+) -> None:
+    """Split a video at its silences and save the pieces as its segments (what `POST /assets/{id}/split` queues as a job)."""
+    try:
+        store, media, source_id = _stores(source)
+        result = project.split_by_silence(
+            store,
+            media,
+            source_id,
+            silence_threshold=silence_threshold,
+            min_silence_duration=min_silence_duration,
+            min_song_length=min_song_length,
+            padding=silence_padding,
+            label_prefix=label_prefix,
+            base_revision=base_revision,
+        )
+    except _EXPECTED_ERRORS as exc:
+        raise _fail(exc, as_json, source)
+    if as_json:
+        _emit_json(result)
+        return
+    console.print(f"Saved {result['segments']} segment(s) as revision {result['revision']}.")
+
+
+def add_asset_clip_cmd(
+    source: Path = _Source,
+    asset: str = typer.Option(..., "--asset", help="An asset id from `library list`."),
+    at: int | None = typer.Option(None, "--at", min=1, help="Insert as this clip number (default: the end)."),
+    base_revision: int | None = _BaseRevision,
+    as_json: bool = _Json,
+) -> None:
+    """Add a library asset as a clip on the video's own main track (what `POST /project/clips` does)."""
+    try:
+        store, media, source_id = _stores(source)
+        saved = project.add_asset_clip(
+            store, media, source_id, asset, index=None if at is None else at - 1, base_revision=base_revision
+        )
+    except (*_EXPECTED_ERRORS, TimelineError) as exc:
+        raise _fail(exc, as_json, source)
+    _show(media, source_id, saved, as_json)
 
 
 def add_split_cmd(
@@ -354,6 +408,8 @@ def analyze_cmd(
 def register(app: typer.Typer) -> None:
     app.command("segments")(segments_cmd)
     app.command("propose")(propose_cmd)
+    app.command("split-by-silence")(split_by_silence_cmd)
+    app.command("add-asset-clip")(add_asset_clip_cmd)
     app.command("add-split")(add_split_cmd)
     app.command("move-split")(move_split_cmd)
     app.command("remove-split")(remove_split_cmd)

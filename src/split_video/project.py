@@ -60,6 +60,9 @@ class ExportConflictError(ProjectError):
     """Output files already exist and overwriting wasn't asked for."""
 
 
+AUDIO_MISSING = "the asset has no audio track, so there is no silence to split at"
+
+
 class AudioOnlyClipError(ProjectError):
     """An audio-only asset was added to the main video track."""
 
@@ -302,7 +305,9 @@ def split_by_silence(
     """Propose splits by silence (`propose_segments`) and save them as the video's segments, replacing the saved
     ones: the one operation behind "Split by silence" and "Find songs" in the editor. A cancelled run saves
     nothing. With `base_revision` a project that changed meanwhile is `RevisionConflictError` and nothing is
-    written. Returns `{video, segments (count), revision, labels}`."""
+    written. A recording without audio is `ProjectError`. Returns `{video, segments (count), revision, labels}`."""
+    if not media.probe(source).has_audio:
+        raise ProjectError(AUDIO_MISSING)
     segments = propose_segments(
         media,
         source,
