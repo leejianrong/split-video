@@ -36,6 +36,7 @@ Every failure of the CLI, the MCP server and the HTTP API carries the same four 
 | `time.negative` | 422 | 1 | A time, start or in point is below 0. | Use 0 or a later time: the earliest point of any media is 0 s. |
 | `time.out_of_range` | 422 | 1 | A time lies outside the media or the editable span. | Use a time within {range}. The media's duration is in `list_assets` (CLI `split-video library list DIR`, HTTP GET /api/v1/assets). |
 | `time.range_inverted` | 422 | 1 | A range ends at or before the point where it starts. | Make the end later than the start (start < end, both in seconds) and send the range again. |
+| `preview.range_too_long` | 400 | 1 | A preview range is longer than the 30 s a chunk may cover. | Use a range of at most {max} s (`end` - `start`), then ask for the next consecutive range, starting at the previous end. |
 | `segments.overlap` | 422 | 1 | Two segments of a split project overlap. | Make each segment start where the previous one ends (no overlap), or remove one with `remove_split`; `list_segments` (CLI `split-video segments VIDEO`) shows the current boundaries. |
 | `segments.too_close` | 422 | 1 | A split would sit on top of an existing split. | Choose a time at least a second away from every existing split, or move the existing one with `move_split`; `list_segments` shows where they are. |
 | `segments.not_found` | 422 | 1 | A segment or split number does not exist. | Use a number from 1 up to the count `list_segments` (CLI `split-video segments VIDEO`) reports; split N is the cut between segments N and N+1. |

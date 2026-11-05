@@ -56,6 +56,7 @@ from split_video.editor.ops import make_router as make_ops_router
 from split_video.editor.plan import make_router as make_plan_router
 from split_video.editor.presets import make_router as make_presets_router
 from split_video.editor.preview import make_router as make_preview_router
+from split_video.editor.preview_range import make_router as make_preview_range_router
 from split_video.editor.proxies import make_router as make_proxies_router
 from split_video.editor.revisions import WRITE_RESPONSES, base_revision, conflict_response
 from split_video.editor.scenes import make_router as make_scenes_router
@@ -99,6 +100,7 @@ from split_video.jobs import (
     ANALYSIS,
     DEFAULT_MAX_WORKERS,
     EXPORT,
+    PREVIEW_RANGE,
     RENDER,
     InProcessJobQueue,
     JobInfo,
@@ -209,14 +211,16 @@ def create_app(
     projects: dict[tuple[str, str], _ProjectState] = {}  # (principal id, source media id)
     projects_lock = threading.Lock()
     if jobs is None:
-        # Renders are capped (SPLIT_VIDEO_RENDER_CONCURRENCY, default 2) and the pool has one more worker than that,
-        # so a full queue of renders never keeps a proxy or an analysis from starting.
+        # Renders are capped (SPLIT_VIDEO_RENDER_CONCURRENCY, default 2), preview chunks run one at a time, and the pool
+        # has one worker more than both, so a full queue of renders never keeps a proxy or an analysis from starting.
         renders = (
             render_concurrency_from_env()
             if render_concurrency is None
             else check_render_concurrency(render_concurrency)
         )
-        jobs = InProcessJobQueue(max_workers=max(DEFAULT_MAX_WORKERS, renders + 1), kind_limits={RENDER: renders})
+        jobs = InProcessJobQueue(
+            max_workers=max(DEFAULT_MAX_WORKERS, renders + 2), kind_limits={RENDER: renders, PREVIEW_RANGE: 1}
+        )
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
@@ -630,6 +634,7 @@ def create_app(
     app.include_router(make_highlights_router(provider), prefix=API_PREFIX, **guard)
     app.include_router(make_frames_router(provider), prefix=API_PREFIX, **guard)
     app.include_router(make_preview_router(provider), prefix=API_PREFIX, **guard)
+    app.include_router(make_preview_range_router(provider, jobs), prefix=API_PREFIX, **guard)
     app.include_router(make_waveform_router(provider, jobs), prefix=API_PREFIX, **guard)
     app.include_router(make_contact_sheet_router(provider), prefix=API_PREFIX, **guard)
     app.include_router(make_plan_router(provider), prefix=API_PREFIX, **guard)

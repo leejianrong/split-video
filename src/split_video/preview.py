@@ -70,11 +70,14 @@ class PreviewFrame:
         }
 
 
-def window(project: Project, t: float) -> tuple[Project, float]:
+def window(project: Project, t: float, end: float | None = None) -> tuple[Project, float]:
     """The part of `project` that matters at `t`, moved to start at the returned offset `w0` (so `t - w0` is where
     the frame is in the result). Clips that are over or not yet started at `t` are dropped, the others lose the part
     before `w0` (their `in_point` moves up, their `start` down) and audio tracks go. `w0` is `t`, except while two main
-    track clips cross-fade: it is then the later one's start, so the fade plays out exactly as in the export."""
+    track clips cross-fade: it is then the later one's start, so the fade plays out exactly as in the export.
+
+    With `end` it is the window `[t, end)` for `preview_range.py`: every clip that overlaps it is kept whole after
+    its head is cut (the render stops at `end - w0`), and audio tracks stay."""
     main = render._main_track(project)
     w0 = t
     if main is not None:
@@ -86,10 +89,13 @@ def window(project: Project, t: float) -> tuple[Project, float]:
         head = max(0.0, w0 - clip.start)
         return replace(clip, in_point=clip.in_point + head, start=max(0.0, clip.start - w0))
 
+    def keep(c: Clip) -> bool:
+        return c.start <= t < c.end if end is None else c.end > w0 and c.start < end
+
     tracks = [
-        replace(track, clips=tuple(cut(c) for c in track.clips if c.start <= t < c.end))
+        replace(track, clips=tuple(cut(c) for c in track.clips if keep(c)))
         for track in project.tracks
-        if track.kind == "video"
+        if track.kind == "video" or end is not None
     ]
     return replace(project, tracks=tuple(tracks)), w0
 
@@ -98,7 +104,7 @@ def _even(n: float) -> int:
     return max(2, round(n / 2) * 2)
 
 
-def _use_proxies(media: MediaStore, project: Project, infos: dict[str, Any]) -> tuple[Project, str]:
+def use_proxies(media: MediaStore, project: Project, infos: dict[str, Any]) -> tuple[Project, str]:
     """`project` with the media clips pointed at their proxies where there is one, and what was read (see
     `PreviewFrame.source`). The proxies' `MediaInfo` is added to `infos`."""
     kinds: set[str] = set()
@@ -161,7 +167,7 @@ def preview_frame(
     infos = dict(prepared.infos)
     kind = "original"
     if source == "auto":
-        windowed, kind = _use_proxies(media, windowed, infos)
+        windowed, kind = use_proxies(media, windowed, infos)
     plan = render.build_plan(windowed, infos, out_width, out_height, prepared.font, fps, settings.fit, audio=False)
 
     if fmt == "jpeg":

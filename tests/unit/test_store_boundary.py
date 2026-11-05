@@ -56,6 +56,7 @@ GUARDED = [
     "editor/highlights.py",
     "editor/frames.py",
     "editor/preview.py",
+    "editor/preview_range.py",
     "editor/waveform.py",
     "editor/contact_sheet.py",
     "editor/plan.py",
@@ -64,6 +65,7 @@ GUARDED = [
     "error_catalogue.py",
     "cli_errors.py",
     "editor/errors.py",
+    "preview_range.py",
 ]
 FORBIDDEN = re.compile(
     r"_project_path|project_path|FILE_SUFFIX|\.split-video-project\.json|\.split-video-timeline\.json"
@@ -101,6 +103,7 @@ ENGINE = [
     "edit_ops.py",
     "frames.py",
     "preview.py",
+    "preview_range.py",
     "contact_sheet.py",
     "render.py",
     "presets.py",
@@ -137,6 +140,7 @@ ADAPTERS = [
     "editor/highlights.py",
     "editor/frames.py",
     "editor/preview.py",
+    "editor/preview_range.py",
     "editor/waveform.py",
     "editor/contact_sheet.py",
     "editor/plan.py",

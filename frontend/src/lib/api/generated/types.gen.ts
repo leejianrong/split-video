@@ -1922,6 +1922,64 @@ export type PresetsOut = {
 };
 
 /**
+ * PreviewRangeRequest
+ */
+export type PreviewRangeRequest = {
+    /**
+     * End
+     */
+    end: number;
+    /**
+     * Fit
+     */
+    fit?: string | null;
+    /**
+     * Height
+     */
+    height?: number | null;
+    /**
+     * Preset
+     */
+    preset?: string | null;
+    /**
+     * Source
+     */
+    source?: string;
+    /**
+     * Start
+     */
+    start: number;
+};
+
+/**
+ * PreviewRangeStartOut
+ */
+export type PreviewRangeStartOut = {
+    /**
+     * Cached
+     */
+    cached: boolean;
+    /**
+     * Job Id
+     */
+    job_id: string;
+    /**
+     * Key
+     */
+    key: string;
+    /**
+     * Result
+     */
+    result?: {
+        [key: string]: unknown;
+    } | null;
+    /**
+     * Revision
+     */
+    revision: number;
+};
+
+/**
  * ProjectListOut
  */
 export type ProjectListOut = {
@@ -6611,6 +6669,98 @@ export type GetPreviewFrameApiV1ComposeProjectsNamePreviewFrameGetResponses = {
 
 export type GetPreviewFrameApiV1ComposeProjectsNamePreviewFrameGetResponse = GetPreviewFrameApiV1ComposeProjectsNamePreviewFrameGetResponses[keyof GetPreviewFrameApiV1ComposeProjectsNamePreviewFrameGetResponses];
 
+export type StartNamedApiV1ComposeProjectsNamePreviewRangePostData = {
+    body: PreviewRangeRequest;
+    path: {
+        /**
+         * Name
+         */
+        name: string;
+    };
+    query?: never;
+    url: '/api/v1/compose/projects/{name}/preview-range';
+};
+
+export type StartNamedApiV1ComposeProjectsNamePreviewRangePostErrors = {
+    /**
+     * No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN).
+     */
+    401: UnauthorizedOut;
+    /**
+     * The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next.
+     */
+    404: ApiErrorOut;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+    /**
+     * The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next.
+     */
+    501: ApiErrorOut;
+};
+
+export type StartNamedApiV1ComposeProjectsNamePreviewRangePostError = StartNamedApiV1ComposeProjectsNamePreviewRangePostErrors[keyof StartNamedApiV1ComposeProjectsNamePreviewRangePostErrors];
+
+export type StartNamedApiV1ComposeProjectsNamePreviewRangePostResponses = {
+    /**
+     * Successful Response
+     */
+    200: PreviewRangeStartOut;
+};
+
+export type StartNamedApiV1ComposeProjectsNamePreviewRangePostResponse = StartNamedApiV1ComposeProjectsNamePreviewRangePostResponses[keyof StartNamedApiV1ComposeProjectsNamePreviewRangePostResponses];
+
+export type GetNamedChunkApiV1ComposeProjectsNamePreviewRangeKeyGetData = {
+    body?: never;
+    path: {
+        /**
+         * Name
+         */
+        name: string;
+        /**
+         * Key
+         */
+        key: string;
+    };
+    query?: never;
+    url: '/api/v1/compose/projects/{name}/preview-range/{key}';
+};
+
+export type GetNamedChunkApiV1ComposeProjectsNamePreviewRangeKeyGetErrors = {
+    /**
+     * No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN).
+     */
+    401: UnauthorizedOut;
+    /**
+     * The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next.
+     */
+    404: ApiErrorOut;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+    /**
+     * The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next.
+     */
+    501: ApiErrorOut;
+};
+
+export type GetNamedChunkApiV1ComposeProjectsNamePreviewRangeKeyGetError = GetNamedChunkApiV1ComposeProjectsNamePreviewRangeKeyGetErrors[keyof GetNamedChunkApiV1ComposeProjectsNamePreviewRangeKeyGetErrors];
+
+export type GetNamedChunkApiV1ComposeProjectsNamePreviewRangeKeyGetResponses = {
+    /**
+     * The mp4 (H.264 and AAC).
+     */
+    200: Blob | File;
+    /**
+     * The requested byte range.
+     */
+    206: unknown;
+};
+
+export type GetNamedChunkApiV1ComposeProjectsNamePreviewRangeKeyGetResponse = GetNamedChunkApiV1ComposeProjectsNamePreviewRangeKeyGetResponses[keyof GetNamedChunkApiV1ComposeProjectsNamePreviewRangeKeyGetResponses];
+
 export type StartRenderApiV1ComposeProjectsNameRenderPostData = {
     body: RenderRequest;
     path: {
@@ -8021,6 +8171,103 @@ export type GetVideoPreviewFrameApiV1ProjectPreviewFrameGetResponses = {
 };
 
 export type GetVideoPreviewFrameApiV1ProjectPreviewFrameGetResponse = GetVideoPreviewFrameApiV1ProjectPreviewFrameGetResponses[keyof GetVideoPreviewFrameApiV1ProjectPreviewFrameGetResponses];
+
+export type StartVideoApiV1ProjectPreviewRangePostData = {
+    body: PreviewRangeRequest;
+    path?: never;
+    query: {
+        /**
+         * Path
+         *
+         * The video's path relative to the browse root (the project id the editor opens).
+         */
+        path: string;
+    };
+    url: '/api/v1/project/preview-range';
+};
+
+export type StartVideoApiV1ProjectPreviewRangePostErrors = {
+    /**
+     * No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN).
+     */
+    401: UnauthorizedOut;
+    /**
+     * The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next.
+     */
+    404: ApiErrorOut;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+    /**
+     * The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next.
+     */
+    501: ApiErrorOut;
+};
+
+export type StartVideoApiV1ProjectPreviewRangePostError = StartVideoApiV1ProjectPreviewRangePostErrors[keyof StartVideoApiV1ProjectPreviewRangePostErrors];
+
+export type StartVideoApiV1ProjectPreviewRangePostResponses = {
+    /**
+     * Successful Response
+     */
+    200: PreviewRangeStartOut;
+};
+
+export type StartVideoApiV1ProjectPreviewRangePostResponse = StartVideoApiV1ProjectPreviewRangePostResponses[keyof StartVideoApiV1ProjectPreviewRangePostResponses];
+
+export type GetVideoChunkApiV1ProjectPreviewRangeKeyGetData = {
+    body?: never;
+    path: {
+        /**
+         * Key
+         */
+        key: string;
+    };
+    query: {
+        /**
+         * Path
+         *
+         * The video's path relative to the browse root (the project id the editor opens).
+         */
+        path: string;
+    };
+    url: '/api/v1/project/preview-range/{key}';
+};
+
+export type GetVideoChunkApiV1ProjectPreviewRangeKeyGetErrors = {
+    /**
+     * No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN).
+     */
+    401: UnauthorizedOut;
+    /**
+     * The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next.
+     */
+    404: ApiErrorOut;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+    /**
+     * The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next.
+     */
+    501: ApiErrorOut;
+};
+
+export type GetVideoChunkApiV1ProjectPreviewRangeKeyGetError = GetVideoChunkApiV1ProjectPreviewRangeKeyGetErrors[keyof GetVideoChunkApiV1ProjectPreviewRangeKeyGetErrors];
+
+export type GetVideoChunkApiV1ProjectPreviewRangeKeyGetResponses = {
+    /**
+     * The mp4 (H.264 and AAC).
+     */
+    200: Blob | File;
+    /**
+     * The requested byte range.
+     */
+    206: unknown;
+};
+
+export type GetVideoChunkApiV1ProjectPreviewRangeKeyGetResponse = GetVideoChunkApiV1ProjectPreviewRangeKeyGetResponses[keyof GetVideoChunkApiV1ProjectPreviewRangeKeyGetResponses];
 
 export type GetVideoTimelineApiV1ProjectTimelineGetData = {
     body?: never;

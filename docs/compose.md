@@ -94,6 +94,48 @@ time up to the H.264 encoding of the export, which the golden-frame tests below 
 after a cross-fade, ffmpeg's `xfade` can show the incoming clip one frame late in the export (ffmpeg 4.4 does), while the
 preview shows it on time (SPL-123).
 
+### Preview a range as a video
+
+**Preview a range** to judge transitions and pacing, which need motion: a low-resolution mp4 of up to 30 s of the
+edited result, drawn by the same code as the export and the single frame (the project is cut to the window, so ffmpeg
+seeks each source and decodes only the chunk). All tracks are drawn and all audio is mixed (clip gain and mute included);
+captions are not. It is slow work, so over HTTP it is a `preview_range` job (cancel and progress as for any job); the CLI
+and MCP tool run it inline.
+
+```bash
+split-video compose preview-range mix 12 22 --height 360      # prints JSON: key, path of the mp4, start, end, size, source, bytes, cached
+split-video compose preview-range --video talk.mp4 12 22      # a recording's own timeline
+curl -X POST localhost:8765/api/v1/compose/projects/mix/preview-range -H 'content-type: application/json' \
+     -d '{"start": 12, "end": 22}'                             # {job_id, cached, key, revision, result}
+curl localhost:8765/api/v1/jobs/JOB_ID                         # state done: result is the chunk
+curl -o chunk.mp4 localhost:8765/api/v1/compose/projects/mix/preview-range/KEY   # video/mp4, Range supported
+```
+
+The chunk is H.264 (Constrained Baseline, `ultrafast`, crf 30) and AAC 64 kbit/s in an mp4 with `+faststart`, which every
+browser plays and seeks in without downloading it first. It is `height` pixels high (default 480, at most 720, never above
+the export's) with the export's aspect ratio and frame rate (`preset` and `fit` are the export's). `source=auto` (default)
+reads clips' proxies where they exist (15 fps and mono audio, so motion is coarser), `original` reads the files. A range
+longer than 30 s is `preview.range_too_long` (400 over HTTP): ask for consecutive ranges. 30 s keeps one render to a few
+seconds and one file to a few MB; an `end` past the timeline is cut to it. A `start` inside a cross-fade is exact: ffmpeg
+renders from the fade's start and the lead-in is cut off.
+
+Every surface says the same thing: `project`, `revision`, `key`, `media` (the chunk's opaque media id), `path` (where the
+mp4 is, `display_path` of the media id), `mime`, `start`, `end`, `duration`, `width`, `height`, `fps`, `source` (`proxy`,
+`original` or `mixed`), `bytes` and `cached`. MCP (`preview_range`) returns this reference and never the video bytes. A
+recording's own timeline is `POST /api/v1/project/preview-range?path=` and `GET /api/v1/project/preview-range/{key}?path=`,
+`compose preview-range --video` and MCP `video`.
+
+The cache lives in the video's `.split-video-cache/` sidecar (for a named project, next to its `<name>.timeline` anchor),
+never under `~/.cache`. The key hashes the project revision, the range and the options, so any edit gives new keys: the
+old key answers `404` and the old files are deleted when the next chunk is stored. Asking again for the same range
+before an edit answers at once (`cached: true`, no ffmpeg; a job that is already `done`). At most 8 chunks are kept per
+project, least recently used first out (about 20 MB at 30 s each). The key does not cover the source files: replacing a
+source without editing the project keeps serving the old chunk.
+
+Measured on a 1080p project (two 40 s main clips with a cross-fade, a picture-in-picture, a title; `source=original`,
+854x480): a 10 s range renders in 1.8 s (930 KB), a 30 s range in 5.7 s (2.4 MB; test footage is noisier than most);
+a cache hit takes under a millisecond in the engine.
+
 ### Golden-frame tests
 
 `tests/unit/test_golden_frames.py` (harness in `tests/unit/golden.py`) renders a small project per feature, exports

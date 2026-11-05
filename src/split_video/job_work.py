@@ -18,6 +18,7 @@ from split_video import (
     library,
     media_report,
     ocr,
+    preview_range,
     project,
     proxy,
     scenes,
@@ -319,5 +320,20 @@ def library_scan_work(
                 if a.has_video
             ]
         return result
+
+    return work
+
+
+def preview_range_work(media: MediaStore, plan: preview_range.RangePlan) -> Callable[[JobContext], dict[str, Any]]:
+    """Render the preview chunk `plan` (`preview_range.render_range`; a chunk that is already cached just
+    answers). Progress is `RENDER_STEPS` thousandths of the chunk; the result is the chunk's description
+    `{project, revision, key, media, path, mime, start, end, duration, width, height, fps, source, bytes, cached}`.
+    A cancelled job leaves no file."""
+
+    def work(ctx: JobContext) -> dict[str, Any]:
+        def on_progress(fraction: float) -> None:
+            ctx.progress(round(fraction * RENDER_STEPS), RENDER_STEPS)
+
+        return preview_range.render_range(media, plan, on_progress, ctx)
 
     return work
