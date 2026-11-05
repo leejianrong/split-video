@@ -643,6 +643,37 @@
       ],
       "type": "object"
     },
+    "split_clip": {
+      "additionalProperties": false,
+      "description": "Cut a clip in two at a time on the timeline (`timeline_service.split_clip`).",
+      "properties": {
+        "at": {
+          "description": "Where to cut, seconds on the timeline; at least 0.1 s inside the clip on both sides.",
+          "minimum": 0.0,
+          "type": "number"
+        },
+        "clip": {
+          "description": "Id of the clip (from show_timeline, or the `id` of an earlier op in this batch).",
+          "type": "string"
+        },
+        "id": {
+          "description": "Id for the new right-hand clip, so later ops in this batch can name it (letters, digits, `_`, `-`, `.`). Generated deterministically from the batch and this op's position when absent; the result reports it.",
+          "maxLength": 64,
+          "type": "string"
+        },
+        "op": {
+          "const": "split_clip",
+          "description": "The operation.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "op",
+        "clip",
+        "at"
+      ],
+      "type": "object"
+    },
     "trim_clip": {
       "additionalProperties": false,
       "allOf": [
@@ -721,6 +752,9 @@
           },
           {
             "$ref": "#/$defs/trim_clip"
+          },
+          {
+            "$ref": "#/$defs/split_clip"
           },
           {
             "$ref": "#/$defs/move_clip"

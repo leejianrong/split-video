@@ -423,7 +423,14 @@ step, and with Ctrl also held its start. The result is spoken ("Moved Song 3 to 
 lanes other than the main one) and mute (audio lanes) buttons are `aria-pressed` toggles and change the track's flags
 through `set_track_flags`.
 
-**Not yet** (later cards): snapping, ripple, undo and redo, split at the playhead, delete, box selection, dragging a cut
+**Split at the playhead** (`S`, Ctrl/Cmd+B, or the scissors button): `shell/TimelineRegion.svelte` sends one `split_clip`
+op per target through `project.applyOps`, so a split is one edit and one revision. The targets (`splitTargets` in
+`timeline/edits.ts`) are the selected clips the playhead is strictly inside, or with nothing selected the topmost clip
+under it (lanes top to bottom: later overlay and title tracks, the main track, music); locked lanes are skipped. The
+right-hand halves become the selection and the playhead stays. A playhead off every clip shows a warning toast; one
+within 0.1 s of an edge is refused by the engine (`ops.clip.split_point`) and shown as any edit error.
+
+**Not yet** (later cards): snapping, ripple, undo and redo, delete, box selection, dragging a cut
 between two segments, double click to rename, a Captions lane (the model has no caption clips), and playback.
 
 ## The inspector

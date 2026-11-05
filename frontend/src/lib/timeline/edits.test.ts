@@ -8,6 +8,8 @@ import {
   reorderIndex,
   reorderMarker,
   reorderOps,
+  splitOps,
+  splitTargets,
   trimClip,
   trimLimits,
   trimOps,
@@ -191,5 +193,43 @@ describe('keyboard steps', () => {
     expect(keyboardStep(0.1)).toBe(1);
     expect(keyboardStep(4.9)).toBe(1);
     expect(keyboardStep(5)).toBe(0.1);
+  });
+});
+
+describe('splitTargets and splitOps', () => {
+  const title = clip('title', 2, 6, { kind: 'text' });
+  const main = clip('main', 0, 10);
+  const song = clip('song', 1, 8);
+  const lanes = [
+    lane([title], false, 'text', 'text'),
+    lane([main], true, 'm', 'video'),
+    lane([main], true, 'm:audio', 'main-audio'),
+    lane([song], false, 'au', 'music'),
+  ];
+
+  it('picks the topmost clip under the playhead when nothing is selected', () => {
+    expect(splitTargets(lanes, 4, []).map((c) => c.id)).toEqual(['title']);
+    expect(splitTargets(lanes, 1.5, []).map((c) => c.id)).toEqual(['main']);
+  });
+
+  it('cuts only the selected clips, each once, even the main one shown on two lanes', () => {
+    expect(splitTargets(lanes, 4, ['main', 'song']).map((c) => c.id)).toEqual(['main', 'song']);
+    expect(splitTargets(lanes, 9.5, ['title'])).toEqual([]);
+  });
+
+  it('does nothing on an edge, outside every clip, or on a locked lane', () => {
+    expect(splitTargets(lanes, 10, [])).toEqual([]);
+    expect(splitTargets(lanes, 2, ['title'])).toEqual([]);
+    expect(splitTargets(lanes, 11, [])).toEqual([]);
+    const text = lane([title], false, 'text', 'text');
+    const locked = [{ ...text, track: { ...text.track, locked: true } }, lanes[1]!];
+    expect(splitTargets(locked, 4, []).map((c) => c.id)).toEqual(['main']);
+  });
+
+  it('is one split_clip op per target, so a batch is one revision', () => {
+    expect(splitOps([title, main], 4.0004)).toEqual([
+      { op: 'split_clip', clip: 'title', at: 4 },
+      { op: 'split_clip', clip: 'main', at: 4 },
+    ]);
   });
 });

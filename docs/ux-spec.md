@@ -316,9 +316,11 @@ ripple on, delete or trim closes the gap on that lane and moves later clips on
 it. With it off, delete leaves a gap, on the main track too. Shift+Delete
 ripple-deletes the selection whatever the toggle says.
 
-**Split at playhead.** `S` (Ctrl/Cmd+B as an alias) or the toolbar button cuts the clip(s) under the
-playhead on every unlocked lane (selected clips only if any are selected). The
-result is two segments with the same label plus " (2)" until renamed.
+**Split at playhead.** `S` (Ctrl/Cmd+B as an alias) or the toolbar button cuts the selected clips the
+playhead is inside, or, with nothing selected, the topmost clip under it (overlay and title lanes first, then the
+main track, then music) on an unlocked lane. It is one `split_clip` edit (one revision), the playhead stays, and the
+right-hand halves become the selection. A playhead outside every clip, or within 0.1 s of an edge, changes nothing and
+says so. Both halves keep the label and every property; a crossfade stays with the left half.
 
 **Undo and redo.** Unlimited within a session, shared by UI and agent edits.
 History is session-only: it is not saved in the project file and is gone after a
@@ -417,7 +419,7 @@ The `?` overlay lists exactly this table.
 |---|---|---|
 | Space / K | Play / pause | current |
 | J / L | Step back / forward 5 s | current |
-| S | Split at the playhead (adds a cut) | current (was "add a split") |
+| S | Split at the playhead | built (SPL-76) |
 | Ctrl/Cmd+B | Split at the playhead | new, CapCut-like alias |
 | Delete / Backspace | Delete the selected clip or cut (a cut: remove the cut) | current, widened |
 | Shift+Delete | Ripple delete: delete the selection and close the gap | new |

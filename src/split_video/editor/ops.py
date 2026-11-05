@@ -101,7 +101,7 @@ def make_router(provider: StoreProvider) -> APIRouter:
         base: int | None = Depends(base_revision),
         ctx: RequestContext = ctx_dep,
     ) -> Any:
-        """Apply a batch of timeline edits (add_clip, trim_clip, move_clip, remove_clip, set_transition,
+        """Apply a batch of timeline edits (add_clip, trim_clip, split_clip, move_clip, remove_clip, set_transition,
         set_clip_properties, add_text_clip, set_text_properties, add_track, remove_track, move_track, place_clip) to the
         existing project `name`, atomically: every op or none, saved once. Clips and tracks are addressed by id; a
         creating op may be given an `id` that later ops in the batch use. The body is validated against

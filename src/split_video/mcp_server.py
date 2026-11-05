@@ -1169,7 +1169,7 @@ def create_server(
         `dry_run=true`, which writes nothing and returns the resulting project as `timeline`). `ops` is the document
         `{"schema_version": 1, "project": "<name>", "ops": [{"op": "add_clip", "id": "c1", "asset": "a_...", "in": 0,
         "out": 10}, {"op": "set_transition", "clip": "c1", "transition": "crossfade", "duration": 1}, ...]}`; the ops
-        are add_clip, trim_clip, move_clip, remove_clip, set_transition, set_clip_properties (incl. `crop`), add_text_clip,
+        are add_clip, trim_clip, split_clip (cut at a timeline time), move_clip, remove_clip, set_transition, set_clip_properties (incl. `crop`), add_text_clip,
         set_text_properties, add_track, remove_track, move_track, place_clip, set_canvas (the output ratio), set_track_flags (lock, hide or mute a
         track); call get_edit_ops_schema for every field
         (strict: unknown ops and fields are errors). Clips and tracks are addressed by id (show_timeline lists them);
