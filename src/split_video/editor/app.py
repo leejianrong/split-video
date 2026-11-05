@@ -55,6 +55,7 @@ from split_video.editor.ocr import make_router as make_ocr_router
 from split_video.editor.ops import make_router as make_ops_router
 from split_video.editor.plan import make_router as make_plan_router
 from split_video.editor.presets import make_router as make_presets_router
+from split_video.editor.preview import make_router as make_preview_router
 from split_video.editor.proxies import make_router as make_proxies_router
 from split_video.editor.revisions import WRITE_RESPONSES, base_revision, conflict_response
 from split_video.editor.scenes import make_router as make_scenes_router
@@ -628,6 +629,7 @@ def create_app(
     app.include_router(make_media_report_router(provider, jobs), prefix=API_PREFIX, **guard)
     app.include_router(make_highlights_router(provider), prefix=API_PREFIX, **guard)
     app.include_router(make_frames_router(provider), prefix=API_PREFIX, **guard)
+    app.include_router(make_preview_router(provider), prefix=API_PREFIX, **guard)
     app.include_router(make_waveform_router(provider, jobs), prefix=API_PREFIX, **guard)
     app.include_router(make_contact_sheet_router(provider), prefix=API_PREFIX, **guard)
     app.include_router(make_plan_router(provider), prefix=API_PREFIX, **guard)

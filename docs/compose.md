@@ -62,6 +62,34 @@ clip with its own `compose crop` region keeps that crop either way. The same opt
 `POST /api/v1/compose/projects/{name}/render` (list: `GET /api/v1/presets`) and on the MCP tool `render_timeline`
 (list: `list_export_presets`). Presets are about how to export, so they are not part of an edit plan.
 
+**Preview one frame** of the edited result without rendering the whole timeline: the main track, overlays, titles, colour
+and crop at a time, drawn by the export's own filter graph (cut to that instant, so ffmpeg seeks each source and decodes a
+few frames). It takes a fraction of a second for a typical 1080p project (measured 0.2 to 0.3 s, with or without proxies)
+and is synchronous, not a job. Captions and sound are not drawn.
+
+```bash
+split-video compose preview-frame mix 12.5 --width 640 --out look.jpg     # prints JSON: project, revision, time, size, source, out
+split-video compose preview-frame mix 1:02 --preset vertical-1080 --width 270 --format png
+curl -o look.jpg "localhost:8765/api/v1/compose/projects/mix/preview-frame?time=12.5&width=640"
+```
+
+The same options (`time`, `width`, `preset`, `fit`, `format`, `quality`, `source`) are on
+`GET /api/v1/compose/projects/{name}/preview-frame` and the MCP tool `preview_frame`, which all say the same thing about
+the frame: `project`, `revision` (of the timeline it came from), `time` (the frame shown: the requested time on the
+output's frame grid, at most one frame earlier), `requested_time`, `width`, `height` (the export's aspect ratio; `width`
+defaults to 640 and is never above the export's), `mime`, `format`, `source`, `duration` and `bytes`. The CLI adds `out`; the
+HTTP route sends them as `X-Preview-*` headers and the image as the body (`image/jpeg` or `image/png`) with an `ETag` that
+hashes the revision and the request, so `If-None-Match` gets a `304` without a render while the timeline has not changed;
+MCP returns an image block plus the JSON text block (width at most 1280, as the image is inlined). `source=auto` (default)
+reads a clip's proxy when it has one (right to within 1/15 s), `original` reads the files like the export, which never
+reads a proxy. A time past the end is `time.out_of_range`.
+
+How close it is to the export: with `source=original` and the same size, the frame equals the export's frame at that
+time up to the H.264 encoding of the export (`tests/unit/test_preview.py` allows a mean difference of 4 of 255 per
+channel and checks the frame is at least 3 times closer than the export's frame 0.2 s later). One known difference:
+after a cross-fade, ffmpeg's `xfade` can show the incoming clip one frame late in the export (ffmpeg 4.4 does), while the
+preview shows it on time.
+
 **Several renders at once** (the highlight reel plus shorts) run as a background queue with limited concurrency:
 `split-video compose render-queue batch.json`, `POST /api/v1/compose/render-queue`, MCP `queue_renders`; see
 [docs/render-queue.md](render-queue.md).

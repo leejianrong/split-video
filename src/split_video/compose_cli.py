@@ -27,7 +27,7 @@ from rich.console import Console
 from rich.markup import escape
 from rich.table import Table
 
-from split_video import assets, cli_errors, export_modes, render_queue, timeline_service
+from split_video import assets, cli_errors, export_modes, frames, preview, render_queue, timeline_service
 from split_video import captions as captions_module
 from split_video import project as split_project
 from split_video.captions import CaptionError
@@ -69,7 +69,7 @@ _BaseRevision = typer.Option(
     "since, nothing is written and the command exits with code 3. Omit to edit the latest version.",
 )
 
-_EXPECTED_ERRORS = (TimelineError, FfmpegNotFoundError, ProbeError, ExtractError)
+_EXPECTED_ERRORS = (TimelineError, FfmpegNotFoundError, ProbeError, ExtractError, frames.FrameError)
 
 CONFLICT_EXIT_CODE = 3
 
@@ -712,6 +712,43 @@ def render_cmd(
             )
 
 
+def preview_frame_cmd(
+    name: str = _Name,
+    at: str = typer.Argument(..., metavar="TIME", help="Seconds, mm:ss or hh:mm:ss on the timeline."),
+    out: Path | None = typer.Option(
+        None, "--out", "-o", help="Where to write the image (default: ./<name>-<time>s.jpg, or .png with --format png)."
+    ),
+    width: int | None = typer.Option(
+        None, "--width", min=2, max=frames.MAX_DIMENSION, help="Pixels wide (default 640, never above the export's)."
+    ),
+    preset: str | None = typer.Option(None, "--preset", help="Export preset: sets the frame's size and aspect."),
+    fit: str | None = typer.Option(None, "--fit", help="letterbox (default) or crop, as in `render`."),
+    fmt: str | None = typer.Option(None, "--format", help="jpeg or png (default: from --out's suffix, else jpeg)."),
+    quality: int = typer.Option(frames.DEFAULT_QUALITY, "--quality", min=1, max=100, help="JPEG quality."),
+    source: str = typer.Option("auto", "--source", help="auto (proxies where there are any) or original."),
+    root: Path = _Root,
+) -> None:
+    """Write the timeline's edited result at TIME to an image (overlays, titles, colour and crop as the export draws
+    them; no captions or sound) and print what it is as JSON: project, revision, time, size, source and the `out` path."""
+    seconds = _time(at)
+    root = root.resolve()
+    store = LocalProjectStore(root)
+    media = LocalMediaStore(root)
+    try:
+        project = timeline_service.load_existing(store, name, media)
+        if fmt is None:
+            fmt = "png" if out is not None and out.suffix.lower() == ".png" else "jpeg"
+        frame = preview.preview_frame(
+            project, media, seconds, name=name, width=width, preset=preset, fit=fit, format=fmt, quality=quality,
+            source=source,
+        )  # fmt: skip
+    except _EXPECTED_ERRORS as exc:
+        raise _fail(exc)
+    out = out or Path(f"{name}-{seconds:g}s.{'png' if frame.format == 'png' else 'jpg'}")
+    out.write_bytes(frame.data)
+    typer.echo(json.dumps({**frame.info(), "out": str(out)}, indent=2))
+
+
 def render_queue_cmd(
     spec: typer.FileText = typer.Argument(
         ...,
@@ -911,6 +948,7 @@ def register(app: typer.Typer) -> None:
         ("assets", assets_cmd),
         ("migrate", migrate_cmd),
         ("render", render_cmd),
+        ("preview-frame", preview_frame_cmd),
         ("render-queue", render_queue_cmd),
         ("export", export_cmd),
     ):

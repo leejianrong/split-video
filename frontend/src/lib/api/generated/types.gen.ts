@@ -6540,6 +6540,77 @@ export type ApplyPlanApiV1ComposeProjectsNamePlanPutResponses = {
 
 export type ApplyPlanApiV1ComposeProjectsNamePlanPutResponse = ApplyPlanApiV1ComposeProjectsNamePlanPutResponses[keyof ApplyPlanApiV1ComposeProjectsNamePlanPutResponses];
 
+export type GetPreviewFrameApiV1ComposeProjectsNamePreviewFrameGetData = {
+    body?: never;
+    path: {
+        /**
+         * Name
+         */
+        name: string;
+    };
+    query: {
+        /**
+         * Time
+         */
+        time: number;
+        /**
+         * Width
+         */
+        width?: number | null;
+        /**
+         * Preset
+         */
+        preset?: string | null;
+        /**
+         * Fit
+         */
+        fit?: string | null;
+        /**
+         * Format
+         */
+        format?: string;
+        /**
+         * Quality
+         */
+        quality?: number;
+        /**
+         * Source
+         */
+        source?: string;
+    };
+    url: '/api/v1/compose/projects/{name}/preview-frame';
+};
+
+export type GetPreviewFrameApiV1ComposeProjectsNamePreviewFrameGetErrors = {
+    /**
+     * No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN).
+     */
+    401: UnauthorizedOut;
+    /**
+     * The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next.
+     */
+    404: ApiErrorOut;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+    /**
+     * The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next.
+     */
+    501: ApiErrorOut;
+};
+
+export type GetPreviewFrameApiV1ComposeProjectsNamePreviewFrameGetError = GetPreviewFrameApiV1ComposeProjectsNamePreviewFrameGetErrors[keyof GetPreviewFrameApiV1ComposeProjectsNamePreviewFrameGetErrors];
+
+export type GetPreviewFrameApiV1ComposeProjectsNamePreviewFrameGetResponses = {
+    /**
+     * The encoded image.
+     */
+    200: Blob | File;
+};
+
+export type GetPreviewFrameApiV1ComposeProjectsNamePreviewFrameGetResponse = GetPreviewFrameApiV1ComposeProjectsNamePreviewFrameGetResponses[keyof GetPreviewFrameApiV1ComposeProjectsNamePreviewFrameGetResponses];
+
 export type StartRenderApiV1ComposeProjectsNameRenderPostData = {
     body: RenderRequest;
     path: {
