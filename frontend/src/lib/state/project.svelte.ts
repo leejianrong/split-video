@@ -5,8 +5,10 @@ import {
   getVideoTimelineApiV1ProjectTimelineGet,
   ifMatch,
   openFileApiV1OpenPost,
+  redoVideoApiV1ProjectRedoPost,
   type ProjectOut,
   type StateResponse,
+  undoVideoApiV1ProjectUndoPost,
 } from '../api/client';
 import { type CanvasId } from './canvas';
 import type { ProjectEvent } from './jobs.svelte';
@@ -54,6 +56,8 @@ export class ProjectStore {
   canvas = $derived<CanvasId>((this.timeline?.canvas.ratio as CanvasId | undefined) ?? '16:9');
   /** Ids of the main-track clips whose picture is not the canvas's shape (the engine's `canvas.needs_reframe`). */
   needsReframe = $derived<readonly string[]>(this.timeline?.canvas.needs_reframe ?? []);
+  /** What undo and redo can do now, and what the next undo reverts ("Split clip"); the engine keeps the history. */
+  history = $derived(this.timeline?.history ?? null);
   /** The name shown in the top bar: the video's file name. */
   name = $derived(this.project?.filename ?? null);
 
@@ -190,6 +194,17 @@ export class ProjectStore {
       const { data } = await getVideoTimelineApiV1ProjectTimelineGet({ query: { path: id ?? '' } });
       return data;
     });
+  }
+
+  /**
+   * Undo or redo the latest edit (any writer's: the engine's history is linear). Saved as a new revision, so the
+   * timeline, preview and playback treat it like any other edit. Resolves with whether it applied.
+   */
+  step(direction: 'undo' | 'redo'): Promise<boolean> {
+    const id = this.id;
+    const send =
+      direction === 'undo' ? undoVideoApiV1ProjectUndoPost : redoVideoApiV1ProjectRedoPost;
+    return this.edit(async (match) => (await send({ query: { path: id ?? '' }, ...match })).data);
   }
 
   /** Set the project canvas (a stored edit: a new revision, so playback and stills treat it like any other). */

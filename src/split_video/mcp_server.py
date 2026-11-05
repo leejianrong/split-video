@@ -68,6 +68,7 @@ from split_video import captions as captions_module
 from split_video import preview_range as preview_range_module
 from split_video.editor.cache import ClassificationCache
 from split_video.error_catalogue import ErrorInfo, argument_error, error_dict
+from split_video.history import Step
 from split_video.jobs import (
     RENDER,
     InProcessJobQueue,
@@ -78,7 +79,7 @@ from split_video.jobs import (
 from split_video.local_media_store import LocalMediaStore
 from split_video.local_store import LocalProjectStore
 from split_video.media_store import MediaNotFoundError, MediaOutsideRootError, MediaStore
-from split_video.store import ProjectStore
+from split_video.store import HistoryKind, ProjectStore
 from split_video.timeline import OutsideRootError, SourceNotFoundError, TimelineError
 
 _READ_ONLY = ToolAnnotations(read_only_hint=True, destructive_hint=False, idempotent_hint=True, open_world_hint=False)
@@ -127,6 +128,8 @@ in show_timeline; track 1 is the main video track); add_clip_to_timeline with
 track/start places clips on them, place_timeline_clip moves them,
 set_timeline_clip sets volume, position, opacity and colour, and
 add_timeline_text puts titles over the picture. Later video tracks draw on top.
+
+undo and redo step through a project's edit history (show_timeline reports `history`); each is a new revision.
 """
 
 
@@ -378,7 +381,7 @@ def create_server(
             index=None if position is None else position - 1,
             base_revision=base_revision,
         )
-        return timeline_result(source, saved)
+        return timeline_result(source, saved, "split")
 
     @server.tool(annotations=_EDITS_PROJECT)
     async def add_split(video: str, at: float, base_revision: int | None = None) -> dict[str, Any]:
@@ -477,8 +480,11 @@ def create_server(
 
     # --- timeline (multi-clip) projects ---------------------------------------
 
-    def timeline_result(name: str, project_: timeline.Project, **extra: Any) -> dict[str, Any]:
-        return {**extra, **timeline_service.describe(media, name, project_)}
+    def timeline_result(
+        name: str, project_: timeline.Project, kind: HistoryKind = "timeline", **extra: Any
+    ) -> dict[str, Any]:
+        history = store.history_state(kind, name)
+        return {**extra, **timeline_service.describe(media, name, project_, history=history)}
 
     # Clip and track numbers are resolved against the version the caller saw: with a base_revision that has
     # since been superseded the lookup itself fails with a conflict, since the number could mean another clip.
@@ -517,7 +523,36 @@ def create_server(
             )
 
         label, project_ = await run(load)
-        return timeline_result(label, project_)
+        return timeline_result(label, project_, "timeline" if name is not None else "split")
+
+    async def step_timeline(
+        step: Step, name: str | None, video: str | None, base_revision: int | None
+    ) -> dict[str, Any]:
+        if (name is None) == (video is None):
+            raise ValueError("give exactly one of name (a timeline project) and video (a recording)")
+        kind: HistoryKind = "timeline" if name is not None else "split"
+        target = name if name is not None else resolve(video or "")
+        return timeline_result(target, await run(store.step_history, kind, target, step, base_revision), kind)
+
+    @server.tool(annotations=_EDITS_PROJECT)
+    async def undo(
+        name: str | None = None, video: str | None = None, base_revision: int | None = None
+    ) -> dict[str, Any]:
+        """Undo the latest edit of the timeline project `name`, or of `video`'s own timeline (the one the editor shows),
+        whoever made it (the editor, the CLI, you). It is saved as a NEW revision whose content is the state before that
+        edit, so revisions only go up. show_timeline's `history` says in advance: `can_undo`, `can_redo` and `undo_label`
+        (what the next undo reverts, e.g. "Split clip"). `base_revision` (optional): fail with revision_conflict instead
+        of undoing if someone edited since that revision. Nothing to undo is the error history.empty. Returns the
+        timeline like show_timeline."""
+        return await step_timeline("undo", name, video, base_revision)
+
+    @server.tool(annotations=_EDITS_PROJECT)
+    async def redo(
+        name: str | None = None, video: str | None = None, base_revision: int | None = None
+    ) -> dict[str, Any]:
+        """Redo the edit the last undo reverted, as a new revision. Any new edit clears what could be redone. Same
+        arguments and result as undo; nothing to redo is the error history.empty."""
+        return await step_timeline("redo", name, video, base_revision)
 
     @server.tool(annotations=_READ_ONLY)
     async def list_assets() -> dict[str, Any]:

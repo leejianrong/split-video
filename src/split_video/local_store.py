@@ -20,6 +20,9 @@ Where `flock` isn't available (Windows) or fails (some network filesystems) the
 store falls back to a per-process lock: writers in one process still exclude
 each other, writers in different processes then don't.
 
+Each project's undo log (`history.py`) is `.split-video-history/<project file name>.json` next to it, so it survives
+a reload and, under Docker, lives in the bind-mounted video folder. It is written under the project's write lock.
+
 Deliberately separate from `local_media_store.py`, which holds *derived*
 results that are safe to lose; these files hold what the user placed by hand.
 """
@@ -37,8 +40,10 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
-from split_video import timeline
+from split_video import history, timeline
 from split_video.store import (
+    CONFLICT_KINDS,
+    HistoryKind,
     RevisionChange,
     SavedSegment,
     Versioned,
@@ -60,6 +65,7 @@ SPLIT_SUFFIX = ".split-video-project.json"
 TIMELINE_SUFFIX = ".split-video-timeline.json"
 LOCK_SUFFIX = ".lock"  # appended to a project file's name: the file `flock`ed around its writes
 LOCK_DIR = ".split-video-locks"  # hidden directory next to the project file that holds its lock file
+HISTORY_DIR = ".split-video-history"  # hidden directory next to the project file that holds its undo log
 
 _process_locks: dict[str, threading.Lock] = {}
 _process_locks_guard = threading.Lock()
@@ -255,14 +261,21 @@ class LocalProjectStore:
         return Versioned(project, revision)
 
     def update_video_timeline(
-        self, project_id: str, change: Callable[[Project | None], Project], base_revision: int | None = None
+        self,
+        project_id: str,
+        change: Callable[[Project | None], Project],
+        base_revision: int | None = None,
+        label: str = "Edit",
+        initial: Callable[[], Project] | None = None,
     ) -> Versioned[Project]:
         path = self.video_timeline_path(project_id)
         with announcing_write("split", project_id, self), _write_lock(path):
             _, stored, current = self._read_video_timeline(project_id)
             check_base_revision("split project", project_id, current, base_revision)
             new = change(stored)
+            before = stored if stored is not None or initial is None else initial()
             self._write_timeline(path, new, current + 1)
+            self._record(path, before, current, new, current + 1, label)
         announce_revision(RevisionChange("split", project_id, current + 1, self))
         return Versioned(replace(new, revision=current + 1), current + 1)
 
@@ -303,17 +316,19 @@ class LocalProjectStore:
         payload = {"version": body.pop("version"), "revision": revision, **body}
         _write_json_atomically(path, payload)
 
-    def save_timeline(self, name: str, project: Project, base_revision: int | None = None) -> int:
+    def save_timeline(self, name: str, project: Project, base_revision: int | None = None, label: str = "Edit") -> int:
         path = self.timeline_path(name)
         with announcing_write("timeline", name, self), _write_lock(path):
             current = _revision_of(_read_json(path))
             check_base_revision("timeline project", name, current, base_revision)
+            before = self._read_timeline(path) if path.exists() else None
             self._write_timeline(path, project, current + 1)
+            self._record(path, before, current, project, current + 1, label)
         announce_revision(RevisionChange("timeline", name, current + 1, self))
         return current + 1
 
     def update_timeline(
-        self, name: str, change: Callable[[Project], Project], base_revision: int | None = None
+        self, name: str, change: Callable[[Project], Project], base_revision: int | None = None, label: str = "Edit"
     ) -> Project:
         path = self.timeline_path(name)
         with announcing_write("timeline", name, self), _write_lock(path):
@@ -323,6 +338,7 @@ class LocalProjectStore:
             check_base_revision("timeline project", name, stored.revision, base_revision)
             new = change(stored)
             self._write_timeline(path, new, stored.revision + 1)
+            self._record(path, stored, stored.revision, new, stored.revision + 1, label)
         announce_revision(RevisionChange("timeline", name, stored.revision + 1, self))
         return replace(new, revision=stored.revision + 1)
 
@@ -333,8 +349,68 @@ class LocalProjectStore:
                 raise ProjectExistsError(f"project {name!r} already exists")
             project = timeline.empty_project()
             self._write_timeline(path, project, 0)
+            self._history_path(path).unlink(missing_ok=True)
         announce_revision(RevisionChange("timeline", name, 0, self))
         return project
+
+    # --- undo and redo -------------------------------------------------------------
+
+    @staticmethod
+    def _history_path(project_file: Path) -> Path:
+        return project_file.parent / HISTORY_DIR / f"{project_file.name}.json"
+
+    def _record(
+        self, path: Path, before: Project | None, before_rev: int, after: Project, after_rev: int, label: str
+    ) -> None:
+        """Add the write that just committed to the project's undo log. Called under the write lock; a log that
+        can't be written costs the undo, never the edit."""
+        new = history.record(
+            self._read_log(path),
+            None if before is None else timeline.to_dict(before),
+            before_rev,
+            timeline.to_dict(after),
+            after_rev,
+            label,
+        )
+        try:
+            _write_json_atomically(self._history_path(path), new)
+        except OSError as exc:
+            log.warning("can't write the undo log of %s: %s", path, exc)
+
+    def _read_log(self, path: Path) -> history.Log | None:
+        saved = _read_json(self._history_path(path))
+        try:
+            return saved if saved["states"][saved["cursor"]]["revision"] >= 0 else None
+        except (KeyError, IndexError, TypeError):
+            return None  # absent or damaged: no history, the next write starts a new one
+
+    def _project_file(self, kind: HistoryKind, project_id: str) -> Path:
+        return self.timeline_path(project_id) if kind == "timeline" else self.video_timeline_path(project_id)
+
+    def _head(self, kind: HistoryKind, project_id: str, path: Path) -> int:
+        if kind == "timeline":
+            if not path.exists():
+                raise ProjectNotFoundError(f"no project named {project_id!r}")
+            return _revision_of(_read_json(path))
+        return self._read_video_timeline(project_id)[2]
+
+    def history_state(self, kind: HistoryKind, project_id: str) -> history.HistoryState:
+        path = self._project_file(kind, project_id)
+        return history.state_of(self._read_log(path), self._head(kind, project_id, path))
+
+    def step_history(
+        self, kind: HistoryKind, project_id: str, step: history.Step, base_revision: int | None = None
+    ) -> Project:
+        path = self._project_file(kind, project_id)
+        with announcing_write(kind, project_id, self), _write_lock(path):
+            current = self._head(kind, project_id, path)
+            check_base_revision(CONFLICT_KINDS[kind], project_id, current, base_revision)
+            data, moved = history.step(self._read_log(path), step, current, current + 1)
+            project = timeline.from_dict(data)
+            self._write_timeline(path, project, current + 1)
+            _write_json_atomically(self._history_path(path), moved)
+        announce_revision(RevisionChange(kind, project_id, current + 1, self))
+        return replace(project, revision=current + 1)
 
     # --- noticing other processes' writes ------------------------------------------
 

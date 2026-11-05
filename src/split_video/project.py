@@ -126,9 +126,13 @@ def video_ops_target(store: ProjectStore, media: MediaStore, project_id: str) ->
     def load() -> Project:
         return replace(video_timeline(store, media, project_id), revision=current_revision(store, project_id))
 
-    def update(change: Callable[[Project], Project], base_revision: int | None) -> Project:
+    def update(change: Callable[[Project], Project], base_revision: int | None, label: str) -> Project:
         saved = store.update_video_timeline(
-            project_id, lambda stored: change(_editable(store, media, project_id, stored)), base_revision
+            project_id,
+            lambda stored: change(_editable(store, media, project_id, stored)),
+            base_revision,
+            label,
+            _initial(store, media, project_id),
         )
         return replace(saved.value, revision=saved.revision)
 
@@ -169,6 +173,11 @@ def _unified(
     return project if media is None else replace(assets.link_project(media, project), revision=0)
 
 
+def _initial(store: ProjectStore, media: MediaStore, project_id: str) -> Callable[[], Project]:
+    """The project a video with nothing saved shows, for `update_video_timeline` to undo its first edit back to."""
+    return lambda: _unified(store, media, project_id, None, current_segments(store, media, project_id))
+
+
 def _check_main_unlocked(stored: Project | None) -> None:
     """Split operations rewrite the main track, so a locked one (the lane's lock toggle) refuses them."""
     index = None if stored is None else split_model.main_track_index(stored)
@@ -191,7 +200,8 @@ def save_segments(
         _check_main_unlocked(stored)
         return _unified(store, media, project_id, stored, segments)
 
-    return store.update_video_timeline(project_id, change, base_revision).revision
+    initial = None if media is None else _initial(store, media, project_id)
+    return store.update_video_timeline(project_id, change, base_revision, "Edit splits", initial).revision
 
 
 def edit_segments(
@@ -217,7 +227,9 @@ def edit_segments(
             current = [SavedSegment(start=0.0, end=media.probe(project_id).duration)]
         return _unified(store, media, project_id, stored, change(current))
 
-    saved = store.update_video_timeline(project_id, apply, base_revision)
+    saved = store.update_video_timeline(
+        project_id, apply, base_revision, "Edit splits", _initial(store, media, project_id)
+    )
     return Versioned(split_model.to_segments(saved.value), saved.revision)
 
 
@@ -350,7 +362,10 @@ def add_asset_clip(
         new, _ = timeline_ops.add_clip(base, track.id, record.path, record.duration, index=index, asset=record.id)
         return new
 
-    return store.update_video_timeline(project_id, change, base_revision).value
+    saved = store.update_video_timeline(
+        project_id, change, base_revision, "Add clip", _initial(store, media, project_id)
+    )
+    return saved.value
 
 
 # --- editing ----------------------------------------------------------------

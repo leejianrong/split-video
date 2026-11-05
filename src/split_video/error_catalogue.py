@@ -268,6 +268,13 @@ _register(
     exit_code=3,
 )
 
+_register(
+    "history.empty",
+    "There is no edit to undo (or redo) in the project's history.",
+    "Check `history.can_undo` / `history.can_redo` on `show_timeline` (CLI `split-video compose show NAME`, HTTP GET "
+    "/api/v1/compose/projects/{{name}}) first. A new edit clears what could be redone.",
+)
+
 # --- render options -----------------------------------------------------------------------------------------------
 
 _register(

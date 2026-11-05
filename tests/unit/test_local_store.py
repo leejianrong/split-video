@@ -81,9 +81,10 @@ def test_atomic_save_goes_through_a_temp_file_and_leaves_none_behind(tmp_path, m
     monkeypatch.setattr("split_video.local_store.os.replace", spy)
     store.save_split("v.mp4", [SavedSegment(start=0.0, end=1.0)])
     store.save_timeline("show", _project())
-    assert len(replaced) == 2
+    assert len(replaced) == 3  # the two projects and the timeline's undo log
     # No temp files left behind, and no `.lock` files beside the videos: the locks are in a hidden directory.
     assert sorted(p.name for p in tmp_path.iterdir()) == [
+        ".split-video-history",
         ".split-video-locks",
         "show.split-video-timeline.json",
         "v.mp4.split-video-project.json",
@@ -93,6 +94,7 @@ def test_atomic_save_goes_through_a_temp_file_and_leaves_none_behind(tmp_path, m
         "v.mp4.split-video-project.json.lock",
     ]
     assert all(p.stat().st_size == 0 for p in (tmp_path / ".split-video-locks").iterdir())
+    assert [p.name for p in (tmp_path / ".split-video-history").iterdir()] == ["show.split-video-timeline.json.json"]
 
 
 def test_locking_still_excludes_writers_with_the_lock_in_the_hidden_directory(tmp_path):

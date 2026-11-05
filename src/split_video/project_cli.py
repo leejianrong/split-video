@@ -230,7 +230,7 @@ def add_asset_clip_cmd(
         )
     except (*_EXPECTED_ERRORS, TimelineError) as exc:
         raise _fail(exc, as_json, source)
-    _show(media, source_id, saved, as_json)
+    _show(store, media, source_id, saved, as_json, "split")
 
 
 def add_split_cmd(

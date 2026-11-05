@@ -42,6 +42,7 @@ from split_video import project as split_project
 from split_video.captions import CaptionError
 from split_video.errors import ProjectError
 from split_video.ffmpeg import ExtractError, FfmpegNotFoundError, ProbeError
+from split_video.history import Step
 from split_video.jobs import (
     MAX_RENDER_CONCURRENCY,
     RENDER,
@@ -53,7 +54,7 @@ from split_video.local_media_store import LocalMediaStore
 from split_video.local_store import LocalProjectStore
 from split_video.media_store import MediaOutsideRootError, MediaStore
 from split_video.render import parse_size
-from split_video.store import ProjectStore
+from split_video.store import HistoryKind, ProjectStore
 from split_video.timefmt import format_timestamp, parse_time
 from split_video.timeline import Project, SourceNotFoundError, TimelineError
 
@@ -96,8 +97,16 @@ def _time(text: str) -> float:
         raise cli_errors.fail(exc, exit_code=2) from None
 
 
-def _show(media: MediaStore, name: str, project: Project, as_json: bool, **extra: Any) -> None:
-    info = timeline_service.describe(media, name, project)
+def _show(
+    store: ProjectStore,
+    media: MediaStore,
+    name: str,
+    project: Project,
+    as_json: bool,
+    kind: HistoryKind = "timeline",
+    **extra: Any,
+) -> None:
+    info = timeline_service.describe(media, name, project, history=store.history_state(kind, name))
     if as_json:
         typer.echo(json.dumps({**extra, **info}, indent=2))
         return
@@ -169,7 +178,7 @@ def new_cmd(name: str = _Name, root: Path = _Root, as_json: bool = _Json) -> Non
         project = timeline_service.create_project(store, name)
     except _EXPECTED_ERRORS as exc:
         raise _fail(exc, as_json)
-    _show(media, name, project, as_json)
+    _show(store, media, name, project, as_json)
 
 
 def show_cmd(
@@ -200,7 +209,7 @@ def show_cmd(
             )
     except (*_EXPECTED_ERRORS, MediaOutsideRootError) as exc:
         raise _fail(exc, as_json)
-    _show(media, name, project, as_json)
+    _show(store, media, name, project, as_json, "timeline" if video is None else "split")
 
 
 def add_clip_cmd(
@@ -242,7 +251,7 @@ def add_clip_cmd(
         )
     except _EXPECTED_ERRORS as exc:
         raise _fail(exc, as_json)
-    _show(media, name, project, as_json)
+    _show(store, media, name, project, as_json)
 
 
 def trim_cmd(
@@ -273,7 +282,7 @@ def trim_cmd(
         )
     except _EXPECTED_ERRORS as exc:
         raise _fail(exc, as_json)
-    _show(media, name, project, as_json)
+    _show(store, media, name, project, as_json)
 
 
 def move_cmd(
@@ -295,7 +304,7 @@ def move_cmd(
         )
     except _EXPECTED_ERRORS as exc:
         raise _fail(exc, as_json)
-    _show(media, name, project, as_json)
+    _show(store, media, name, project, as_json)
 
 
 def remove_cmd(
@@ -316,7 +325,7 @@ def remove_cmd(
         )
     except _EXPECTED_ERRORS as exc:
         raise _fail(exc, as_json)
-    _show(media, name, project, as_json)
+    _show(store, media, name, project, as_json)
 
 
 def transition_cmd(
@@ -345,7 +354,7 @@ def transition_cmd(
         )
     except _EXPECTED_ERRORS as exc:
         raise _fail(exc, as_json)
-    _show(media, name, project, as_json)
+    _show(store, media, name, project, as_json)
 
 
 def add_track_cmd(
@@ -363,7 +372,7 @@ def add_track_cmd(
         project = timeline_service.add_track(store, name, kind, media, base_revision=base_revision)
     except _EXPECTED_ERRORS as exc:
         raise _fail(exc, as_json)
-    _show(media, name, project, as_json)
+    _show(store, media, name, project, as_json)
 
 
 def remove_track_cmd(
@@ -383,7 +392,7 @@ def remove_track_cmd(
         )
     except _EXPECTED_ERRORS as exc:
         raise _fail(exc, as_json)
-    _show(media, name, project, as_json)
+    _show(store, media, name, project, as_json)
 
 
 def move_track_cmd(
@@ -404,7 +413,7 @@ def move_track_cmd(
         )
     except _EXPECTED_ERRORS as exc:
         raise _fail(exc, as_json)
-    _show(media, name, project, as_json)
+    _show(store, media, name, project, as_json)
 
 
 def place_cmd(
@@ -437,7 +446,7 @@ def place_cmd(
         )
     except _EXPECTED_ERRORS as exc:
         raise _fail(exc, as_json)
-    _show(media, name, project, as_json)
+    _show(store, media, name, project, as_json)
 
 
 def set_cmd(
@@ -482,7 +491,7 @@ def set_cmd(
         )
     except _EXPECTED_ERRORS as exc:
         raise _fail(exc, as_json)
-    _show(media, name, project, as_json)
+    _show(store, media, name, project, as_json)
 
 
 def set_canvas_cmd(
@@ -500,9 +509,34 @@ def set_canvas_cmd(
         project = timeline_service.set_canvas(store, name, ratio, media=media, base_revision=base_revision)
     except _EXPECTED_ERRORS as exc:
         raise _fail(exc, as_json)
-    _show(media, name, project, as_json)
+    _show(store, media, name, project, as_json)
     if not as_json:
         console.print(f"Canvas {project.canvas_ratio} (export preset {project.canvas_preset}).")
+
+
+def _step(step: Step, name: str, base_revision: int | None, root: Path, as_json: bool) -> None:
+    root = root.resolve()
+    store = LocalProjectStore(root)
+    media = LocalMediaStore(root)
+    try:
+        project = store.step_history("timeline", name, step, base_revision)
+    except _EXPECTED_ERRORS as exc:
+        raise _fail(exc, as_json)
+    _show(store, media, name, project, as_json)
+
+
+def undo_cmd(
+    name: str = _Name, base_revision: int | None = _BaseRevision, root: Path = _Root, as_json: bool = _Json
+) -> None:
+    """Undo the latest edit of the project (whoever made it) as a new revision; `show` says what the next undo reverts."""
+    _step("undo", name, base_revision, root, as_json)
+
+
+def redo_cmd(
+    name: str = _Name, base_revision: int | None = _BaseRevision, root: Path = _Root, as_json: bool = _Json
+) -> None:
+    """Redo the edit the last undo reverted, as a new revision."""
+    _step("redo", name, base_revision, root, as_json)
 
 
 def crop_cmd(
@@ -553,7 +587,7 @@ def crop_cmd(
         )
     except _EXPECTED_ERRORS as exc:
         raise _fail(exc, as_json)
-    _show(media, name, project, as_json)
+    _show(store, media, name, project, as_json)
 
 
 def add_text_cmd(
@@ -599,7 +633,7 @@ def add_text_cmd(
         )
     except _EXPECTED_ERRORS as exc:
         raise _fail(exc, as_json)
-    _show(media, name, project, as_json)
+    _show(store, media, name, project, as_json)
 
 
 def set_text_cmd(
@@ -632,7 +666,7 @@ def set_text_cmd(
         )
     except _EXPECTED_ERRORS as exc:
         raise _fail(exc, as_json)
-    _show(media, name, project, as_json)
+    _show(store, media, name, project, as_json)
 
 
 def assets_cmd(root: Path = _Root, as_json: bool = _Json) -> None:
@@ -669,7 +703,7 @@ def migrate_cmd(
         project = timeline_service.migrate_project(store, media, name, base_revision=base_revision)
     except _EXPECTED_ERRORS as exc:
         raise _fail(exc, as_json)
-    _show(media, name, project, as_json)
+    _show(store, media, name, project, as_json)
 
 
 def render_cmd(
@@ -1044,6 +1078,8 @@ def register(app: typer.Typer) -> None:
         ("place", place_cmd),
         ("set", set_cmd),
         ("set-canvas", set_canvas_cmd),
+        ("undo", undo_cmd),
+        ("redo", redo_cmd),
         ("crop", crop_cmd),
         ("add-text", add_text_cmd),
         ("set-text", set_text_cmd),

@@ -1098,7 +1098,9 @@ class OpsTarget:
 
     name: str
     load: Callable[[], Project]  # read only; the project stamped with its revision
-    update: Callable[[Callable[[Project], Project], int | None], Project]  # atomic read-modify-write
+    update: Callable[
+        [Callable[[Project], Project], int | None, str], Project
+    ]  # atomic read-modify-write; the undo label
 
 
 def with_project(doc: Any, name: str) -> Any:
@@ -1125,7 +1127,7 @@ def named_target(media: MediaStore, store: ProjectStore, name: str) -> OpsTarget
     return OpsTarget(
         name,
         lambda: store.load_existing_timeline(name),
-        lambda change, base: store.update_timeline(name, change, base),
+        lambda change, base, label: store.update_timeline(name, change, base, label),
     )
 
 
@@ -1297,6 +1299,12 @@ def _view(media: MediaStore, name: str, project: Project, revision: int) -> dict
     return timeline_service.describe(media, name, replace(project, revision=revision), read_only=True)
 
 
+def _undo_label(parsed: list[_Op]) -> str:
+    """The batch as one undo entry: its op's name ("Split clip") or, for mixed ops, their count."""
+    names = {op.spec.name for op in parsed if op.spec}
+    return next(iter(names)).replace("_", " ").capitalize() if len(names) == 1 else f"{len(parsed)} edits"
+
+
 def apply_ops(
     media: MediaStore,
     store: ProjectStore,
@@ -1340,5 +1348,5 @@ def apply_ops(
             raise OpsInvalidError(report)  # nothing is written: update_timeline saves only what `change` returns
         return done
 
-    saved = target.update(change, base)
+    saved = target.update(change, base, _undo_label(parsed))
     return _summary(name, saved, saved.revision, report, doc, False)

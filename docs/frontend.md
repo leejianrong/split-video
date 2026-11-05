@@ -396,8 +396,9 @@ chooser; the style of the burned-in captions is fixed to Shorts.
 `lib/timeline/` implements [ux-spec.md#timeline](ux-spec.md#timeline): lanes with headers, a ruler, the playhead, zoom,
 selection, a filmstrip and waveform on the main track, and drag, trim and keyboard editing. It draws `project.timeline`
 (`GET /project/timeline`) and holds no editing rule: every gesture ends in **one** call, `project.applyOps(ops)`
-(`POST /project/ops`, [edit ops](edit-ops.md) with `If-Match`), and the engine says yes or no. Undo will wrap that one
-function. A stale revision reloads the project and shows "This project changed somewhere else, so your change was not
+(`POST /project/ops`, [edit ops](edit-ops.md) with `If-Match`), and the engine says yes or no. Undo and redo (Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z or Ctrl+Y, and the toolbar buttons) call
+`project.step('undo' | 'redo')`: the engine's history, a new revision, so the timeline, selection, playhead, preview and
+playback follow it like an agent's edit; the buttons follow `project.history` (`can_undo`, `can_redo`). A stale revision reloads the project and shows "This project changed somewhere else, so your change was not
 applied" (the same path as every edit); a refused edit (a locked lane, an overlap) shows the engine's message and fix.
 
 | Piece | File | Notes |
@@ -430,7 +431,7 @@ under it (lanes top to bottom: later overlay and title tracks, the main track, m
 right-hand halves become the selection and the playhead stays. A playhead off every clip shows a warning toast; one
 within 0.1 s of an edge is refused by the engine (`ops.clip.split_point`) and shown as any edit error.
 
-**Not yet** (later cards): snapping, ripple, undo and redo, delete, box selection, dragging a cut
+**Not yet** (later cards): snapping, ripple, delete, box selection, dragging a cut
 between two segments, double click to rename, a Captions lane (the model has no caption clips), and playback.
 
 ## The inspector
@@ -472,7 +473,7 @@ Things to know:
   value stays in the box with a `Fix:` hint and nothing is sent (the engine still checks every range). A slider
   commits when the value has settled for 350 ms, so holding an arrow key writes one revision.
 - **Locked lanes** disable the controls with a note.
-- Keyframes, undo steps per drag and playback of the result are not here yet.
+- Keyframes are not here yet; a drag is one edit, so one undo step.
 
 ## Caching
 

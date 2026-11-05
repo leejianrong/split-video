@@ -26,6 +26,7 @@ from split_video.errors import RevisionConflictError
 from split_video.export_modes import ExportError
 from split_video.ffmpeg import ExtractError, FfmpegNotFoundError, MediaInfo, ProbeError
 from split_video.frames import FrameAudioOnlyError, FrameTimeError
+from split_video.history import HistoryEmptyError
 from split_video.jobs import JobFailedError, UnknownJobError
 from split_video.media_store import InMemoryMediaStore, MediaNotFoundError, MediaOutsideRootError
 from split_video.ocr import OcrNotFoundError, OcrUnavailableError
@@ -136,6 +137,7 @@ def _samples() -> dict[str, BaseException]:
         "upload.unsupported_type": raised(media_import.clean_name, "notes.txt"),
         "upload.empty": media_import.ImportError_("the upload is empty", "upload.empty"),
         "revision.conflict": RevisionConflictError("reel", 3, 1, "timeline project"),
+        "history.empty": HistoryEmptyError("undo"),
         "preset.unknown": raised(presets.get, "zzz"),
         "fit.unknown": raised(presets.check_fit, "zzz"),
         "caption.style_unknown": raised(captions.get, "zzz"),

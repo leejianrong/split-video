@@ -21,6 +21,10 @@ the write is applied to whatever is stored. Either way the read-check-write is
 atomic, including across processes for the local store. `update_*` is the
 atomic read-modify-write that every edit goes through, so two writers that
 don't pass a base revision still can't lose each other's changes.
+
+History: every committed write of a timeline project (`save_timeline`, `update_timeline`, `update_video_timeline`)
+also records one undo entry, named by its `label`, in a log that lives with the project (see `history.py`).
+`history_state` reports it and `step_history` undoes or redoes as a new revision.
 """
 
 from __future__ import annotations
@@ -33,7 +37,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
 from typing import Generic, Literal, Protocol, TypeVar, runtime_checkable
 
-from split_video import timeline
+from split_video import history, timeline
 from split_video.errors import RevisionConflictError
 from split_video.timeline import Project, ProjectExistsError, ProjectNotFoundError
 
@@ -69,9 +73,13 @@ class Versioned(Generic[T]):
 # MCP server) editing the same files announces in its own process.
 
 
+HistoryKind = Literal["split", "timeline"]  # a video's own timeline project, or a named one
+CONFLICT_KINDS = {"split": "split project", "timeline": "timeline project"}  # `RevisionConflictError.kind`
+
+
 @dataclass(frozen=True)
 class RevisionChange:
-    kind: Literal["split", "timeline"]
+    kind: HistoryKind
     project_id: str  # the video's id for a split project, the name for a timeline
     revision: int  # the new revision
     # The store instance that wrote it, so a listener can tell its own store's writes from another
@@ -206,12 +214,19 @@ class ProjectStore(Protocol):
         ...
 
     def update_video_timeline(
-        self, project_id: str, change: Callable[[Project | None], Project], base_revision: int | None = None
+        self,
+        project_id: str,
+        change: Callable[[Project | None], Project],
+        base_revision: int | None = None,
+        label: str = "Edit",
+        initial: Callable[[], Project] | None = None,
     ) -> Versioned[Project]:
         """Atomic read-modify-write of the video's timeline project: `change` gets the stored one (None if
         there is none yet, whatever a legacy split project holds: the engine migrates that) and returns the new
         one, saved as the revision after the one `load_video_timeline` reports. Nothing is written if `change`
-        raises. Holds the write lock while `change` runs: it may read the store but not write the project."""
+        raises. Holds the write lock while `change` runs: it may read the store but not write the project.
+        Records an undo entry named `label`; `initial` (called only while nothing is stored) is the project the
+        caller showed for that, which the first undo goes back to."""
         ...
 
     # --- timeline projects, keyed by name -------------------------------------
@@ -233,13 +248,13 @@ class ProjectStore(Protocol):
         doesn't exist."""
         ...
 
-    def save_timeline(self, name: str, project: Project, base_revision: int | None = None) -> int:
+    def save_timeline(self, name: str, project: Project, base_revision: int | None = None, label: str = "Edit") -> int:
         """Replace timeline project `name`, atomically, and return the new revision. With
         `base_revision`, raises `RevisionConflictError` (writing nothing) if it isn't the stored one."""
         ...
 
     def update_timeline(
-        self, name: str, change: Callable[[Project], Project], base_revision: int | None = None
+        self, name: str, change: Callable[[Project], Project], base_revision: int | None = None, label: str = "Edit"
     ) -> Project:
         """Atomic read-modify-write of an existing project: `change` gets the stored project and
         returns the new one, which is saved as the next revision and returned (stamped with it).
@@ -250,6 +265,20 @@ class ProjectStore(Protocol):
     def create_timeline(self, name: str) -> Project:
         """Create an empty timeline project at revision 0; `ProjectExistsError` if `name`
         is taken. Atomic with respect to other creators."""
+        ...
+
+    # --- undo and redo (history.py) --------------------------------------------
+
+    def history_state(self, kind: HistoryKind, project_id: str) -> history.HistoryState:
+        """What can be undone or redone for the project (`kind` "split": the video `project_id`'s own timeline)."""
+        ...
+
+    def step_history(
+        self, kind: HistoryKind, project_id: str, step: history.Step, base_revision: int | None = None
+    ) -> Project:
+        """Undo or redo the latest edit by saving the earlier or later state as the next revision, returned stamped
+        with it. `history.HistoryEmptyError` if there is nothing to step to; `RevisionConflictError` if
+        `base_revision` is not the stored one; `ProjectNotFoundError` for a missing named project."""
         ...
 
     def peek_revisions(self, split_ids: Iterable[str] = ()) -> dict[tuple[str, str], int]:
@@ -268,6 +297,7 @@ class InMemoryProjectStore:
         self._splits: dict[str, tuple[list[SavedSegment], int]] = {}
         self._timelines: dict[str, tuple[Project, int]] = {}
         self._video_timelines: dict[str, tuple[Project, int]] = {}
+        self._logs: dict[tuple[str, str], history.Log] = {}
         # Re-entrant so `change` callbacks can read (never write) the project they are editing.
         self._lock = threading.RLock()
 
@@ -327,14 +357,21 @@ class InMemoryProjectStore:
         return Versioned(replace(copy.deepcopy(found[0]), revision=revision), revision)
 
     def update_video_timeline(
-        self, project_id: str, change: Callable[[Project | None], Project], base_revision: int | None = None
+        self,
+        project_id: str,
+        change: Callable[[Project | None], Project],
+        base_revision: int | None = None,
+        label: str = "Edit",
+        initial: Callable[[], Project] | None = None,
     ) -> Versioned[Project]:
         with announcing_write("split", project_id, self), self._lock:
             found = self._video_timelines.get(project_id)
             current = self._video_revision(project_id)
             check_base_revision("split project", project_id, current, base_revision)
             new = change(None if found is None else replace(copy.deepcopy(found[0]), revision=current))
+            before = found[0] if found is not None else initial() if initial is not None else None
             self._video_timelines[project_id] = (new, current + 1)
+            self._record(("split", project_id), before, current, new, current + 1, label)
         announce_revision(RevisionChange("split", project_id, current + 1, self))
         return Versioned(replace(new, revision=current + 1), current + 1)
 
@@ -362,15 +399,17 @@ class InMemoryProjectStore:
             raise ProjectNotFoundError(f"no project named {name!r}")
         return self.load_timeline(name)
 
-    def save_timeline(self, name: str, project: Project, base_revision: int | None = None) -> int:
+    def save_timeline(self, name: str, project: Project, base_revision: int | None = None, label: str = "Edit") -> int:
         timeline.validate_name(name)
         with announcing_write("timeline", name, self), self._lock:
+            found = self._timelines.get(name)
             revision = self._commit_timeline(name, project, base_revision)
+            self._record(("timeline", name), found and found[0], revision - 1, project, revision, label)
         announce_revision(RevisionChange("timeline", name, revision, self))
         return revision
 
     def update_timeline(
-        self, name: str, change: Callable[[Project], Project], base_revision: int | None = None
+        self, name: str, change: Callable[[Project], Project], base_revision: int | None = None, label: str = "Edit"
     ) -> Project:
         timeline.validate_name(name)
         with announcing_write("timeline", name, self), self._lock:
@@ -380,6 +419,7 @@ class InMemoryProjectStore:
             check_base_revision("timeline project", name, found[1], base_revision)
             new = change(replace(copy.deepcopy(found[0]), revision=found[1]))
             revision = self._commit_timeline(name, new, None)
+            self._record(("timeline", name), found[0], found[1], new, revision, label)
         announce_revision(RevisionChange("timeline", name, revision, self))
         return replace(new, revision=revision)
 
@@ -397,8 +437,48 @@ class InMemoryProjectStore:
                 raise ProjectExistsError(f"project {name!r} already exists")
             project = timeline.empty_project()
             self._timelines[name] = (project, 0)
+            self._logs.pop(("timeline", name), None)
         announce_revision(RevisionChange("timeline", name, 0, self))
         return project
+
+    # --- undo and redo -----------------------------------------------------------
+
+    def _record(
+        self, key: tuple[str, str], before: Project | None, before_rev: int, after: Project, after_rev: int, label: str
+    ) -> None:
+        self._logs[key] = history.record(
+            self._logs.get(key),
+            None if before is None else timeline.to_dict(before),
+            before_rev,
+            timeline.to_dict(after),
+            after_rev,
+            label,
+        )
+
+    def _head(self, kind: HistoryKind, project_id: str) -> int:
+        if kind == "split":
+            return self._video_revision(project_id)
+        found = self._timelines.get(project_id)
+        if found is None:
+            raise ProjectNotFoundError(f"no project named {project_id!r}")
+        return found[1]
+
+    def history_state(self, kind: HistoryKind, project_id: str) -> history.HistoryState:
+        with self._lock:
+            return history.state_of(self._logs.get((kind, project_id)), self._head(kind, project_id))
+
+    def step_history(
+        self, kind: HistoryKind, project_id: str, step: history.Step, base_revision: int | None = None
+    ) -> Project:
+        with announcing_write(kind, project_id, self), self._lock:
+            current = self._head(kind, project_id)
+            check_base_revision(CONFLICT_KINDS[kind], project_id, current, base_revision)
+            data, log = history.step(self._logs.get((kind, project_id)), step, current, current + 1)
+            project = timeline.from_dict(data)
+            (self._timelines if kind == "timeline" else self._video_timelines)[project_id] = (project, current + 1)
+            self._logs[(kind, project_id)] = log
+        announce_revision(RevisionChange(kind, project_id, current + 1, self))
+        return replace(project, revision=current + 1)
 
     def peek_revisions(self, split_ids: Iterable[str] = ()) -> dict[tuple[str, str], int]:
         with self._lock:

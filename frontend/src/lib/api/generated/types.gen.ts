@@ -931,6 +931,28 @@ export type HighlightsOut = {
 };
 
 /**
+ * HistoryOut
+ */
+export type HistoryOut = {
+    /**
+     * Can Redo
+     */
+    can_redo: boolean;
+    /**
+     * Can Undo
+     */
+    can_undo: boolean;
+    /**
+     * Redo Label
+     */
+    redo_label?: string | null;
+    /**
+     * Undo Label
+     */
+    undo_label?: string | null;
+};
+
+/**
  * JobListOut
  */
 export type JobListOut = {
@@ -2044,6 +2066,7 @@ export type ProjectOut = {
      * Duration
      */
     duration: number;
+    history?: HistoryOut | null;
     /**
      * Name
      */
@@ -6700,6 +6723,60 @@ export type GetNamedChunkApiV1ComposeProjectsNamePreviewRangeKeyGetResponses = {
 
 export type GetNamedChunkApiV1ComposeProjectsNamePreviewRangeKeyGetResponse = GetNamedChunkApiV1ComposeProjectsNamePreviewRangeKeyGetResponses[keyof GetNamedChunkApiV1ComposeProjectsNamePreviewRangeKeyGetResponses];
 
+export type RedoApiV1ComposeProjectsNameRedoPostData = {
+    body?: never;
+    headers?: {
+        /**
+         * If-Match
+         *
+         * The project revision this change is based on, as an integer, bare or quoted (`If-Match: "3"`). If the project has moved on, the request fails with 409 `revision_conflict` and nothing is written. Omit it to apply the change to the latest version.
+         */
+        'If-Match'?: string | null;
+    };
+    path: {
+        /**
+         * Name
+         */
+        name: string;
+    };
+    query?: never;
+    url: '/api/v1/compose/projects/{name}/redo';
+};
+
+export type RedoApiV1ComposeProjectsNameRedoPostErrors = {
+    /**
+     * No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN).
+     */
+    401: UnauthorizedOut;
+    /**
+     * The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next.
+     */
+    404: ApiErrorOut;
+    /**
+     * `If-Match` didn't match the project's current revision (`error` is `revision_conflict`). Other 409s on some routes (output file or project already exists) have only `detail`.
+     */
+    409: RevisionConflictOut;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+    /**
+     * The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next.
+     */
+    501: ApiErrorOut;
+};
+
+export type RedoApiV1ComposeProjectsNameRedoPostError = RedoApiV1ComposeProjectsNameRedoPostErrors[keyof RedoApiV1ComposeProjectsNameRedoPostErrors];
+
+export type RedoApiV1ComposeProjectsNameRedoPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: ProjectOut;
+};
+
+export type RedoApiV1ComposeProjectsNameRedoPostResponse = RedoApiV1ComposeProjectsNameRedoPostResponses[keyof RedoApiV1ComposeProjectsNameRedoPostResponses];
+
 export type StartRenderApiV1ComposeProjectsNameRenderPostData = {
     body: RenderRequest;
     path: {
@@ -6969,6 +7046,60 @@ export type AddTextApiV1ComposeProjectsNameTracksTrackIdTextPostResponses = {
 };
 
 export type AddTextApiV1ComposeProjectsNameTracksTrackIdTextPostResponse = AddTextApiV1ComposeProjectsNameTracksTrackIdTextPostResponses[keyof AddTextApiV1ComposeProjectsNameTracksTrackIdTextPostResponses];
+
+export type UndoApiV1ComposeProjectsNameUndoPostData = {
+    body?: never;
+    headers?: {
+        /**
+         * If-Match
+         *
+         * The project revision this change is based on, as an integer, bare or quoted (`If-Match: "3"`). If the project has moved on, the request fails with 409 `revision_conflict` and nothing is written. Omit it to apply the change to the latest version.
+         */
+        'If-Match'?: string | null;
+    };
+    path: {
+        /**
+         * Name
+         */
+        name: string;
+    };
+    query?: never;
+    url: '/api/v1/compose/projects/{name}/undo';
+};
+
+export type UndoApiV1ComposeProjectsNameUndoPostErrors = {
+    /**
+     * No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN).
+     */
+    401: UnauthorizedOut;
+    /**
+     * The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next.
+     */
+    404: ApiErrorOut;
+    /**
+     * `If-Match` didn't match the project's current revision (`error` is `revision_conflict`). Other 409s on some routes (output file or project already exists) have only `detail`.
+     */
+    409: RevisionConflictOut;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+    /**
+     * The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next.
+     */
+    501: ApiErrorOut;
+};
+
+export type UndoApiV1ComposeProjectsNameUndoPostError = UndoApiV1ComposeProjectsNameUndoPostErrors[keyof UndoApiV1ComposeProjectsNameUndoPostErrors];
+
+export type UndoApiV1ComposeProjectsNameUndoPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: ProjectOut;
+};
+
+export type UndoApiV1ComposeProjectsNameUndoPostResponse = UndoApiV1ComposeProjectsNameUndoPostResponses[keyof UndoApiV1ComposeProjectsNameUndoPostResponses];
 
 export type RenderQueueOverviewApiV1ComposeRenderQueueGetData = {
     body?: never;
@@ -8080,6 +8211,62 @@ export type GetVideoChunkApiV1ProjectPreviewRangeKeyGetResponses = {
 
 export type GetVideoChunkApiV1ProjectPreviewRangeKeyGetResponse = GetVideoChunkApiV1ProjectPreviewRangeKeyGetResponses[keyof GetVideoChunkApiV1ProjectPreviewRangeKeyGetResponses];
 
+export type RedoVideoApiV1ProjectRedoPostData = {
+    body?: never;
+    headers?: {
+        /**
+         * If-Match
+         *
+         * The project revision this change is based on, as an integer, bare or quoted (`If-Match: "3"`). If the project has moved on, the request fails with 409 `revision_conflict` and nothing is written. Omit it to apply the change to the latest version.
+         */
+        'If-Match'?: string | null;
+    };
+    path?: never;
+    query: {
+        /**
+         * Path
+         *
+         * The video's path relative to the browse root (the project id the editor opens).
+         */
+        path: string;
+    };
+    url: '/api/v1/project/redo';
+};
+
+export type RedoVideoApiV1ProjectRedoPostErrors = {
+    /**
+     * No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN).
+     */
+    401: UnauthorizedOut;
+    /**
+     * The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next.
+     */
+    404: ApiErrorOut;
+    /**
+     * `If-Match` didn't match the project's current revision (`error` is `revision_conflict`). Other 409s on some routes (output file or project already exists) have only `detail`.
+     */
+    409: RevisionConflictOut;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+    /**
+     * The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next.
+     */
+    501: ApiErrorOut;
+};
+
+export type RedoVideoApiV1ProjectRedoPostError = RedoVideoApiV1ProjectRedoPostErrors[keyof RedoVideoApiV1ProjectRedoPostErrors];
+
+export type RedoVideoApiV1ProjectRedoPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: ProjectOut;
+};
+
+export type RedoVideoApiV1ProjectRedoPostResponse = RedoVideoApiV1ProjectRedoPostResponses[keyof RedoVideoApiV1ProjectRedoPostResponses];
+
 export type GetVideoTimelineApiV1ProjectTimelineGetData = {
     body?: never;
     path?: never;
@@ -8123,6 +8310,62 @@ export type GetVideoTimelineApiV1ProjectTimelineGetResponses = {
 };
 
 export type GetVideoTimelineApiV1ProjectTimelineGetResponse = GetVideoTimelineApiV1ProjectTimelineGetResponses[keyof GetVideoTimelineApiV1ProjectTimelineGetResponses];
+
+export type UndoVideoApiV1ProjectUndoPostData = {
+    body?: never;
+    headers?: {
+        /**
+         * If-Match
+         *
+         * The project revision this change is based on, as an integer, bare or quoted (`If-Match: "3"`). If the project has moved on, the request fails with 409 `revision_conflict` and nothing is written. Omit it to apply the change to the latest version.
+         */
+        'If-Match'?: string | null;
+    };
+    path?: never;
+    query: {
+        /**
+         * Path
+         *
+         * The video's path relative to the browse root (the project id the editor opens).
+         */
+        path: string;
+    };
+    url: '/api/v1/project/undo';
+};
+
+export type UndoVideoApiV1ProjectUndoPostErrors = {
+    /**
+     * No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN).
+     */
+    401: UnauthorizedOut;
+    /**
+     * The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next.
+     */
+    404: ApiErrorOut;
+    /**
+     * `If-Match` didn't match the project's current revision (`error` is `revision_conflict`). Other 409s on some routes (output file or project already exists) have only `detail`.
+     */
+    409: RevisionConflictOut;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+    /**
+     * The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next.
+     */
+    501: ApiErrorOut;
+};
+
+export type UndoVideoApiV1ProjectUndoPostError = UndoVideoApiV1ProjectUndoPostErrors[keyof UndoVideoApiV1ProjectUndoPostErrors];
+
+export type UndoVideoApiV1ProjectUndoPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: ProjectOut;
+};
+
+export type UndoVideoApiV1ProjectUndoPostResponse = UndoVideoApiV1ProjectUndoPostResponses[keyof UndoVideoApiV1ProjectUndoPostResponses];
 
 export type EditOpsSchemaApiV1SchemasEditOpsGetData = {
     body?: never;

@@ -51,3 +51,36 @@ two simultaneous writes to the same file could drop one.
 
 A split project migrated from a legacy `.split-video-project.json` keeps counting from the
 legacy file's revision: it reads as N before the first save and the first save writes N+1.
+
+## Undo and redo
+
+Every project (a video's timeline and a named one) has a linear edit history, kept by the engine, so the editor, the
+CLI, MCP and the HTTP API share it. Each write is one entry: a batch of ops, or the editor's split of several clips, is
+one undo. The history is not part of the project file (its format does not change): it is a sidecar,
+`.split-video-history/<project file name>.json` next to the project, written under the same lock as the project, so it
+survives a reload and, under Docker, lives in the video folder. It is git-ignored and safe to delete (the project
+then has nothing to undo).
+
+**Undo is a forward write.** It saves the state before the latest edit as a NEW revision, so revisions only go up and
+every client, the events stream, stills and the playback cache treat it like any other edit. Redo does the same in the
+other direction; a new edit clears what could be redone (no branching). `base_revision` works as on any write.
+
+- **HTTP**: `POST /compose/projects/{name}/undo` and `/redo`, and `POST /project/undo?path=` and `/redo` for a
+  recording's timeline (`If-Match` as everywhere). Every project view (`GET`, any edit) carries
+  `history: {can_undo, can_redo, undo_label, redo_label}`.
+- **CLI**: `split-video compose undo NAME [--base-revision N]` and `compose redo NAME`; `compose show` (also with
+  `--video`) and every edit's `--json` carry the same `history`.
+- **MCP**: tools `undo` and `redo` (`name` or `video`, optional `base_revision`); `show_timeline` and every timeline
+  result carry `history`.
+- Nothing to undo or redo is the error `history.empty` (HTTP 422, CLI exit 1); `can_undo` / `can_redo` say so in advance.
+  `undo_label` names what the next undo reverts ("Split clip"); a batch of mixed ops is "N edits".
+
+**Other writers.** The history is per project and linear, and the CLI, MCP and other tabs record into the same one, so
+undo reverses the latest write whoever made it (the editor then shows the usual "changed by another tool" notice).
+Pass `base_revision` to refuse instead when someone has edited since you looked: a stale undo is a `revision_conflict`
+like any other write. A project changed by something that does not record history (a hand-edited file, an older
+version) has no usable history: `can_undo` is false until the next edit, which starts a new one.
+
+**Limits.** The latest 100 entries, within 4 MiB of stored project states; the oldest are dropped first. A video with
+nothing saved yet is its recording as one clip, and undoing its first edit goes back to that.
+
