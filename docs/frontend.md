@@ -110,7 +110,10 @@ elements, `state/videoSlot.ts` wraps one, `state/playbackApi.ts` talks to `POST 
   "The browser blocked playback. Press play to start the preview." A failed chunk pauses with "The preview could not be
   prepared. Press play to try again."
 - **Controls**: the transport's Play/Pause (icon and `aria-pressed` toggle), Space or K, a click on the picture, Home/End
-  (playhead to start/end). Previous/next cut and J/L stay for later cards.
+  (playhead to start/end). Previous/next cut (buttons, Up/Down) jumps to the nearest clip edge on any track (0 and the end are the
+  limits; a cut within one frame of the playhead is skipped); J/L step 5 s and Comma/Period one frame (1/30 s, the rate of every canvas
+  preset). They are `playback.step` and `playback.cut`, which seek, so playing carries on from the new place. Left/Right stay free for
+  nudging the selected cut; shuttle speeds (J/L held) are not built.
 
 ## First run
 

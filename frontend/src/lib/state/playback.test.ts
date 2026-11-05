@@ -291,6 +291,30 @@ describe('PlaybackStore', () => {
     expect(t.reqs[3]!.range.start).toBe(32);
   });
 
+  it('steps and cut jumps while playing seek and keep playing; paused they only move the playhead', async () => {
+    const t = setup();
+    t.store.play();
+    await t.flush();
+    await t.finish(0);
+    await t.finish(1);
+    t.setTime(3);
+    t.store.step(5);
+    expect(t.getTime()).toBe(8);
+    t.store.cut([0, 12, 40], 'next');
+    expect(t.getTime()).toBe(12);
+    expect(t.store.state).not.toBe('paused');
+    t.store.step(-100);
+    expect(t.getTime()).toBe(0);
+    t.store.step(1000);
+    expect(t.getTime()).toBe(40);
+    t.store.cut([0, 12, 40], 'next');
+    expect(t.getTime()).toBe(40);
+    t.store.pause();
+    t.store.cut([0, 12, 40], 'prev');
+    expect(t.getTime()).toBe(12);
+    expect(t.store.state).toBe('paused');
+  });
+
   it('a seek inside what is in memory is a seek in the video, with no request', async () => {
     const t = setup();
     t.store.play();

@@ -3,6 +3,7 @@
   import { formatClock } from '../format';
   import { playback } from '../state/playback.svelte';
   import { playhead } from '../state/playhead.svelte';
+  import { cutPoints, FRAME, STEP_SECONDS } from '../timeline/cuts';
   import { canvasOf } from '../state/canvas';
   import { preview } from '../state/preview.svelte';
   import { project } from '../state/project.svelte';
@@ -70,6 +71,20 @@
   });
   $effect(() => playhead.onSeek((time) => playback.seeked(time)));
   $effect(() => registerAction('transport.toggle', () => playback.toggle()));
+  const cuts = $derived(cutPoints(project.timeline));
+  $effect(() =>
+    registerAction('transport.step', ({ key }) =>
+      playback.step(key === 'j' ? -STEP_SECONDS : STEP_SECONDS),
+    ),
+  );
+  $effect(() =>
+    registerAction('transport.frame', ({ key }) => playback.step(key === ',' ? -FRAME : FRAME)),
+  );
+  $effect(() =>
+    registerAction('transport.cut', ({ key }) =>
+      playback.cut(cuts, key === 'arrowup' ? 'prev' : 'next'),
+    ),
+  );
   $effect(() =>
     registerAction('transport.edge', ({ key }) => {
       playhead.seek(key === 'home' ? 0 : playhead.duration);
@@ -121,7 +136,13 @@
     </div>
   </div>
   <div class="transport" role="group" aria-label="Playback">
-    <IconButton label="Previous cut" icon="skipBack" action="transport.cut" disabled />
+    <IconButton
+      label="Previous cut"
+      icon="skipBack"
+      action="transport.cut"
+      disabled={!hasClips}
+      onclick={() => playback.cut(cuts, 'prev')}
+    />
     <IconButton
       label={playing ? 'Pause' : 'Play'}
       icon={playing ? 'pause' : 'play'}
@@ -132,7 +153,13 @@
       onclick={() => playback.toggle()}
       data-testid="play"
     />
-    <IconButton label="Next cut" icon="skipForward" action="transport.cut" disabled />
+    <IconButton
+      label="Next cut"
+      icon="skipForward"
+      action="transport.cut"
+      disabled={!hasClips}
+      onclick={() => playback.cut(cuts, 'next')}
+    />
   </div>
 </main>
 
