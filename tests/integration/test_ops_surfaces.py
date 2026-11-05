@@ -276,3 +276,29 @@ async def test_mcp_over_a_real_stdio_subprocess(media_dir, tmp_path, anyio_backe
     assert LocalProjectStore(root).load_existing_timeline(NAME) == LocalProjectStore(
         engine_root
     ).load_existing_timeline(NAME)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("anyio_backend", ["asyncio"])
+async def test_set_canvas_shows_the_same_canvas_on_every_surface(media_dir, tmp_path, anyio_backend):  # noqa: F811
+    root, _ = seeded(media_dir, tmp_path, "canvas")
+    out = runner.invoke(
+        app, ["compose", "set-canvas", NAME, "9:16", "--root", str(root), "--base-revision", "1", "--json"]
+    )
+    assert out.exit_code == 0, out.output
+    shown = json.loads(out.stdout)
+    assert (
+        shown["revision"] == 2 and shown["canvas"]["ratio"] == "9:16" and shown["canvas"]["preset"] == "vertical-1080"
+    )
+    http = TestClient(create_app(root, DEFAULTS)).get(f"/api/v1/compose/projects/{NAME}").json()
+    async with Client(create_server(root)) as mcp:
+        assert (await mcp_call(mcp, "show_timeline", name=NAME))["canvas"] == shown["canvas"] == http["canvas"]
+    stale = runner.invoke(
+        app, ["compose", "set-canvas", NAME, "1:1", "--root", str(root), "--base-revision", "1", "--json"]
+    )
+    assert stale.exit_code == 3
+    bad = runner.invoke(app, ["compose", "set-canvas", NAME, "4:3", "--root", str(root), "--json"])
+    assert (
+        bad.exit_code == 1 and json.loads(bad.stdout)["code"] == "timeline.invalid" and "16:9, 9:16, 1:1" in bad.stdout
+    )
+    assert LocalProjectStore(root).load_timeline(NAME).canvas == "9:16"
