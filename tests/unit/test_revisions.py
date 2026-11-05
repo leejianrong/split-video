@@ -502,7 +502,7 @@ def test_older_readers_ignore_the_extra_revision_key(tmp_path):
     store.create_timeline("show")
     timeline_service.add_track(store, "show", "audio")
     data = json.loads((tmp_path / "show.split-video-timeline.json").read_text())
-    assert data["revision"] == 1 and data["version"] == 2
+    assert data["revision"] == 1 and data["version"] == 3
     old = timeline.from_dict(data)  # from_dict is unchanged since before revisions: it reads named keys only
     assert old == store.load_timeline("show") and old.revision == 0  # an old reader just doesn't see it
 

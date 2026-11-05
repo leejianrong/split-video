@@ -113,7 +113,7 @@ def test_conversion_is_deterministic():
 def test_clip_split_metadata_is_written_only_when_set():
     plain = timeline.to_dict(timeline.Project(tracks=(timeline.Track(id="t", clips=(Clip("c", "a.mp4", 0, 1),)),)))
     clip = plain["tracks"][0]["clips"][0]
-    assert plain["version"] == 2
+    assert plain["version"] == 3
     assert not {"label", "label_color", "included", "export_name"} & clip.keys()
     tagged = Clip("c", "a.mp4", 0, 1, label="x", label_color="#112233", included=False, export_name="N")
     back = timeline.from_dict(timeline.to_dict(timeline.Project(tracks=(timeline.Track(id="t", clips=(tagged,)),))))
@@ -197,7 +197,7 @@ def test_the_first_edit_writes_the_timeline_next_to_the_legacy_file_and_continue
 
     if unified is not None:
         data = json.loads(unified.read_text())
-        assert data["version"] == 2 and data["revision"] == before + 1
+        assert data["version"] == 3 and data["revision"] == before + 1
         clips = data["tracks"][0]["clips"]
         assert [(c["in"], c["out"]) for c in clips] == [(s.start, s.end) for s in saved.value]
         legacy = unified.parent / f"{VIDEO}{SPLIT_SUFFIX}"

@@ -207,8 +207,9 @@ video track and a muted track are left out of the render (a muted track is silen
 They are saved on the track as optional `locked`, `hidden`, `muted` (written only when on), so the file version stays 2.
 
 **Canvas.** The project's output ratio (16:9, 9:16 or 1:1, the editor's top bar) is set with `apply-ops` and `set_canvas`
-(`ratio`), carries revisions like any edit and is saved as an optional `canvas` (written only once chosen, so the file
-version stays 2 and an older file loads as 16:9). A render, `preview-frame` or `preview-range` that names no `--preset`
+(`ratio`), carries revisions like any edit and is saved as an optional `canvas` (written only once chosen). Adding it
+made the file format version 3: a version 1 or 2 file migrates on load (no canvas, shown as 16:9) and is written back as
+3, on the next edit or `compose migrate`. A render, `preview-frame` or `preview-range` that names no `--preset`
 and no size uses the canvas's preset (`youtube-1080p`, `vertical-1080`, `square-1080`); a project that never chose one
 keeps the first clip's size. Switching keeps every clip. `show`, `GET /api/v1/compose/projects/{name}` and MCP
 `show_timeline` return `canvas: {ratio, preset, needs_reframe}`, where `needs_reframe` lists the main-track clips whose

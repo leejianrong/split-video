@@ -93,11 +93,10 @@ def test_text_and_audio_clips_cannot_be_cropped():
     assert caught.value.reason == "crop_not_applicable"
 
 
-# --- persistence: the format stays version 2 ------------------------------------------------------------------------
+# --- persistence: the crop is additive ------------------------------------------------------------------------
 
 
-def test_format_version_stays_two_and_a_file_without_crop_loads_unchanged():
-    assert timeline.FORMAT_VERSION == 2
+def test_a_file_without_crop_loads_unchanged():
     old = {
         "version": 2,
         "tracks": [{"id": "t", "kind": "video", "clips": [{"id": "c", "source": "a.mp4", "in": 0, "out": 4}]}],
@@ -112,7 +111,7 @@ def test_a_crop_round_trips_and_is_omitted_when_default():
     p, cid = _project()
     p = timeline_ops.set_clip_properties(p, cid, crop=RIGHT_HALF)
     data = json.loads(json.dumps(timeline.to_dict(p)))
-    assert data["version"] == 2 and data["tracks"][0]["clips"][0]["crop"] == RIGHT_HALF
+    assert data["version"] == timeline.FORMAT_VERSION and data["tracks"][0]["clips"][0]["crop"] == RIGHT_HALF
     assert timeline.from_dict(data) == p
     cleared = timeline_ops.set_clip_properties(p, cid, crop=None)
     assert "crop" not in timeline.to_dict(cleared)["tracks"][0]["clips"][0]

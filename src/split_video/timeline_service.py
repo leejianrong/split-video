@@ -86,7 +86,7 @@ def load_existing(
     is how a front door that turns clip numbers into ids does so against the version the caller saw.
 
     With `media`, its clips are linked to assets (see `assets.link_project`): a version 1 project
-    gains asset ids and a moved file is found again. The result is the version 2 model, but the
+    gains asset ids and a moved file is found again. The result is the current model, but the
     project file is not rewritten by reading; the next edit saves it, or `migrate_project` does."""
     project = store.load_existing_timeline(name)
     store_module.check_base_revision("timeline project", name, project.revision, base_revision)
@@ -94,8 +94,8 @@ def load_existing(
 
 
 def migrate_project(store: ProjectStore, media: MediaStore, name: str, *, base_revision: int | None = None) -> Project:
-    """Link `name`'s clips to assets and save the project now, rewriting a version 1 file as
-    version 2. A clip whose file is missing keeps its `source` and stays unlinked."""
+    """Link `name`'s clips to assets and save the project now, rewriting an older file in
+    the current version. A clip whose file is missing keeps its `source` and stays unlinked."""
     return store.update_timeline(name, lambda p: assets.link_project(media, p), base_revision)
 
 
@@ -118,7 +118,7 @@ def edit(
     concurrent edits never lose each other. With `base_revision` the edit only applies if the project
     is still at that revision, else `RevisionConflictError` and nothing is written; without it, the
     edit applies to the latest version. Given `media`, the clips are linked to assets first, so the
-    first edit of a version 1 project saves it as version 2."""
+    first edit of an older project saves it in the current version."""
 
     def apply(project: Project) -> Project:
         return change(project if media is None else assets.link_project(media, project))
