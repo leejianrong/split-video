@@ -1667,7 +1667,8 @@ def create_server(
         """One export operation with three modes; it returns at once and the files are written in the background
         on the render queue (a few at a time). mode `segments`: each included segment of `video` as its own file in
         '<video name>_split/' (`only` = segment numbers instead; a stream copy unless you pass a preset, size, fit or
-        captions, then each is rendered). mode `timeline`: the whole timeline as one `<name>.mp4`, named after the
+        captions, or the recording's timeline has a canvas, then each is rendered at the canvas's preset; preset 'original'
+        keeps the stream copy and, for mode `timeline`, skips the canvas). mode `timeline`: the whole timeline as one `<name>.mp4`, named after the
         timeline `project` (or `video`'s own timeline). mode `highlights`: each timeline in `timelines` (the highlights
         the user accepted; suggestions nobody accepted are never exported) as a vertical short (default preset
         vertical-1080, fit crop, 'shorts' captions when there is a transcript). Render options are those of

@@ -14,11 +14,15 @@ import pytest
 from golden import SIZE, Tolerance, export, export_frame, make_source, measure
 from test_frames import decode
 
-from split_video import assets
+from split_video import assets, export_modes, render_queue
+from split_video import project as projects
 from split_video import timeline_ops as ops
+from split_video.jobs import RENDER, InProcessJobQueue
 from split_video.local_media_store import LocalMediaStore
+from split_video.local_store import LocalProjectStore
 from split_video.preview import preview_frame
 from split_video.render import render
+from split_video.store import SavedSegment
 from split_video.timeline import empty_project
 
 GRADED = (136, 70, 56)  # (200, 60, 40) at contrast 1.3, saturation 0.5
@@ -285,6 +289,47 @@ def test_an_export_without_a_preset_follows_the_project_canvas(media, capsys):
     assert not tol.failures(m), (m, tol.failures(m))
     shown = preview_frame(project, media, 1.0, format="png", source="original")  # no preset: the canvas's
     assert shown.width < shown.height
+
+
+def _export_batch(media, store, mode, **kw):
+    """`submit_export` on real ffmpeg (what the CLI and MCP call), waited for; returns the finished jobs."""
+    jobs = InProcessJobQueue(max_workers=1, kind_limits={RENDER: 1})
+    try:
+        batch = export_modes.submit_export(jobs, store, media, mode, **kw)
+        for job in batch["jobs"]:
+            jobs.wait(job["job_id"], 120)
+        done = render_queue.batch_status(jobs, batch["batch_id"])
+    finally:
+        jobs.shutdown()
+    assert [j["state"] for j in done["jobs"]] == ["done"] * len(batch["jobs"]), done
+    return done["jobs"]
+
+
+def test_cli_and_mcp_exports_without_a_preset_match_the_canvas_preview(media, capsys):
+    """SPL-136: segment and timeline exports of a project with a canvas are the preview's frame at the canvas; preset
+    `original` keeps the stream copy of a segment."""
+    store = LocalProjectStore(media.root)
+    canvas = replace(overlay(media), canvas="9:16")
+    store.save_timeline("canvas-golden", canvas)
+    tol = Tolerance(mean=2.5, share=0.006, separation=3)
+    (job,) = _export_batch(media, store, "timeline", project_name="canvas-golden")
+    m = measure(canvas, media, job["output"], 1.0, tol, preset="vertical-1080")
+    assert not tol.failures(m), (m, tol.failures(m))
+    assert (job["result"]["width"], job["result"]["height"]) == (1080, 1920)
+
+    projects.save_segments(store, "a.mp4", [SavedSegment(0.0, 3.0)], media=media)
+    video = replace(projects.video_timeline(store, media, "a.mp4"), canvas="9:16")
+    store.update_video_timeline("a.mp4", lambda _: video, None)
+    (job,) = _export_batch(media, store, "segments", video="a.mp4", overwrite=True)
+    m = measure(video, media, f"a_split/{job['output']}", 1.0, tol, preset="vertical-1080")
+    with capsys.disabled():
+        print(f"\ncanvas segment {m}")
+    assert not tol.failures(m), (m, tol.failures(m))
+
+    options = export_modes.RenderOptions(preset=export_modes.ORIGINAL)
+    (job,) = _export_batch(media, store, "segments", video="a.mp4", overwrite=True, options=options)
+    assert "preset" not in job["result"]  # a stream copy, not a render
+    assert export_frame(media, f"a_split/{job['output']}", 0.5).shape[:2] == (360, 640)
 
 
 def test_a_clip_with_its_own_fit_renders_differently_from_the_export_default(media):
