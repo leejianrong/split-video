@@ -96,10 +96,10 @@ def test_a_version_1_project_loads_gains_assets_and_is_not_rewritten_by_reading(
     assert (legacy / "legacy.split-video-timeline.json").read_text() == before
 
 
-def test_the_first_edit_saves_the_project_as_version_3(legacy):
+def test_the_first_edit_saves_the_project_as_version_4(legacy):
     _cli(legacy, "remove", "legacy", 3)  # drop the clip whose file doesn't exist
     saved = _timeline_file(legacy, "legacy")
-    assert saved["version"] == 3
+    assert saved["version"] == 4
     media_clips = [c for t in saved["tracks"] for c in t["clips"] if c["kind"] == "media"]
     assert media_clips and all(c["asset"].startswith("a_") and c["source"] for c in media_clips)
     assert not any("asset" in c for t in saved["tracks"] for c in t["clips"] if c["kind"] == "text")
@@ -129,7 +129,7 @@ def test_migrate_command_rewrites_the_file_now(legacy):
     assert _timeline_file(legacy, "legacy")["version"] == 1
     _cli(legacy, "migrate", "legacy")
     saved = _timeline_file(legacy, "legacy")
-    assert saved["version"] == 3
+    assert saved["version"] == 4
     assert all(c["asset"] for t in saved["tracks"] for c in t["clips"] if c["kind"] == "media")
 
 
@@ -272,7 +272,7 @@ def test_api_serves_media_by_asset_id_with_ranges_and_keeps_the_path_route(clien
     assert client.get(f"/api/v1/media/asset/{asset['id']}").status_code == 200
 
 
-def test_api_loads_a_version_1_project_and_the_first_edit_saves_version_3(legacy, client):
+def test_api_loads_a_version_1_project_and_the_first_edit_saves_version_4(legacy, client):
     path = legacy / "legacy.split-video-timeline.json"
     before = path.read_text()
     body = client.get("/api/v1/compose/projects/legacy").json()
@@ -285,7 +285,7 @@ def test_api_loads_a_version_1_project_and_the_first_edit_saves_version_3(legacy
 
     client.patch("/api/v1/compose/projects/legacy/clips/c1/properties", json={"gain": 0.5})
     saved = json.loads(path.read_text())
-    assert saved["version"] == 3 and saved["tracks"][0]["clips"][0]["asset"] == clips["c1"]["asset"]
+    assert saved["version"] == 4 and saved["tracks"][0]["clips"][0]["asset"] == clips["c1"]["asset"]
 
 
 def test_api_render_finds_a_renamed_source(client, root):

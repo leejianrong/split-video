@@ -69,16 +69,16 @@ V2_FILE = {
 
 
 def test_a_version_2_file_migrates_on_load_and_keeps_its_fields():
-    assert timeline.FORMAT_VERSION == 3
+    assert timeline.FORMAT_VERSION == 4
     migrated = timeline.migrate(V2_FILE)
-    assert migrated["version"] == 3 and V2_FILE["version"] == 2  # a new dict
+    assert migrated["version"] == 4 and V2_FILE["version"] == 2  # a new dict
     project = timeline.from_dict(V2_FILE)
     track, clip = project.tracks[0], project.tracks[0].clips[0]
     assert project.canvas is None and (track.locked, track.muted, track.hidden) == (True, True, False)
     assert clip.crop == {"x": 0.25, "y": 0.0, "w": 0.5, "h": 1.0}
     assert (clip.label, clip.label_color, clip.included, clip.export_name) == ("Song 1", "#ff0000", False, "one")
     again = timeline.to_dict(project)
-    assert again["version"] == 3 and "canvas" not in again
+    assert again["version"] == 4 and "canvas" not in again
     assert again["tracks"][0]["clips"][0]["crop"] == clip.crop
 
 
@@ -95,7 +95,7 @@ def test_a_version_1_file_still_loads_and_a_stray_v2_canvas_is_not_a_choice():
     assert timeline.from_dict({"version": 2, "canvas": "9:16", "tracks": []}).canvas is None
 
 
-def test_the_first_edit_of_a_version_2_file_writes_version_3(tmp_path):
+def test_the_first_edit_of_a_version_2_file_writes_version_4(tmp_path):
     w = World("local", tmp_path)
     timeline_service.create_project(w.store, NAME)
     timeline_service.add_clip(w.store, w.media, NAME, asset=w.ids["a"], in_point=0, out_point=30)
@@ -104,7 +104,7 @@ def test_the_first_edit_of_a_version_2_file_writes_version_3(tmp_path):
     path.write_text(json.dumps({**old, "version": 2}))
     set_canvas(w, "9:16")
     saved = json.loads(path.read_text())
-    assert saved["version"] == 3 and saved["canvas"] == "9:16"
+    assert saved["version"] == 4 and saved["canvas"] == "9:16"
 
 
 def test_an_unknown_canvas_in_a_file_is_refused():
@@ -123,7 +123,7 @@ def test_the_canvas_round_trips_and_survives_other_edits(world):
     if world.kind == "local":
         saved = json.loads((world.media.root / f"{NAME}.split-video-timeline.json").read_text())
         assert saved["canvas"] == "9:16"
-        assert saved["version"] == 3
+        assert saved["version"] == 4
 
 
 def test_switching_keeps_every_clip_and_flags_those_of_another_shape(world):

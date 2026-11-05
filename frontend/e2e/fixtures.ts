@@ -137,6 +137,8 @@ interface ClipJson {
   start: number;
   end: number;
   gain: number;
+  scale: number;
+  fit: string;
   label: string;
   crop: { x: number; y: number; w: number; h: number } | null;
 }

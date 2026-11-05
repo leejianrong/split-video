@@ -84,6 +84,7 @@ class ClipOut(BaseModel):
     contrast: float
     saturation: float
     crop: CropBox | None = None  # the part of the source frame shown; None = the full frame
+    fit: str = "default"  # letterbox, crop, or default (the export's fit)
     kind: str
     text: str
     font_size: float
@@ -191,6 +192,7 @@ class PropertiesRequest(BaseModel):
     saturation: float | None = None
     # The part of the source frame to show; `null` removes the crop. Absent = unchanged.
     crop: CropBox | None = None
+    fit: str | None = None  # letterbox, crop or default (the export's fit)
 
 
 class AddTextRequest(BaseModel):
@@ -355,6 +357,7 @@ def clip_out(c: Clip, row: assets.Located | None) -> ClipOut:
         contrast=c.contrast,
         saturation=c.saturation,
         crop=CropBox(**timeline_module.shown_crop(c.crop)) if c.crop else None,
+        fit=c.fit,
         kind=c.kind,
         text=c.text,
         font_size=c.font_size,

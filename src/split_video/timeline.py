@@ -44,12 +44,18 @@ from split_video.media_store import MediaOutsideRootError, MediaStore
 # Version 3 (canvas, SPL-82): the project's optional `canvas` (an output ratio from `CANVASES`) is written only when
 # one was chosen. `migrate` brings a version 1 or 2 file to 3 on load (no canvas: "not chosen", shown as 16:9), so
 # the next save writes version 3. A build that only knows version 2 ignores `canvas` and writes version 2 back.
-FORMAT_VERSION = 3
+#
+# Version 4 (per-clip fit, SPL-122): a media clip's optional `fit` ("letterbox" or "crop"; absent means "default",
+# the export's fit) is written only when set, and the main track now honours `x`, `y`, `scale` and `opacity`. Those
+# four were stored on every clip but ignored on the main track, so `_v3_to_v4` resets them there to the neutral values:
+# a file never starts drawing differently because of numbers nobody could see take effect.
+FORMAT_VERSION = 4
 
 # The output ratios the editor offers and the export preset each one is (`presets.py`).
 CANVASES: dict[str, str] = {"16:9": "youtube-1080p", "9:16": "vertical-1080", "1:1": "square-1080"}
 DEFAULT_CANVAS = "16:9"
 
+CLIP_FITS = ("default", "letterbox", "crop")  # "default": follow the export's fit
 TRACK_KINDS = ("video", "audio")
 TRANSITIONS = ("cut", "crossfade")
 
@@ -95,6 +101,9 @@ class Clip:
     crop_y: float = 0.0
     crop_w: float = 1.0
     crop_h: float = 1.0
+    # How a picture of another shape fills the frame: "letterbox", "crop" (cover and cut the overflow), or
+    # "default" to follow the export's fit. One of `CLIP_FITS`.
+    fit: str = "default"
     # A text clip ("text" kind) has no source file: it draws `text` for its
     # duration, `font_size` as a fraction of the frame height, in `color`.
     kind: str = "media"
@@ -250,6 +259,7 @@ def to_dict(project: Project) -> dict[str, Any]:
                         "contrast": c.contrast,
                         "saturation": c.saturation,
                         **({"crop": c.crop} if c.cropped else {}),
+                        **({"fit": c.fit} if c.fit != "default" else {}),
                         "kind": c.kind,
                         "text": c.text,
                         "font_size": c.font_size,
@@ -284,9 +294,25 @@ def _v2_to_v3(data: dict[str, Any]) -> dict[str, Any]:
     return {k: v for k, v in data.items() if k != "canvas"}
 
 
+def _v3_to_v4(data: dict[str, Any]) -> dict[str, Any]:
+    neutral = {"x": 0.5, "y": 0.5, "scale": 1.0, "opacity": 1.0}
+
+    def fix(t: Any) -> Any:
+        if not isinstance(t, dict) or t.get("kind", "video") != "video" or not t.get("magnetic", True):
+            return t
+        clips = [
+            {**c, **neutral} if isinstance(c, dict) and c.get("kind", "media") == "media" else c
+            for c in t.get("clips", [])
+        ]
+        return {**t, "clips": clips}
+
+    tracks = data.get("tracks")
+    return {**data, "tracks": [fix(t) for t in tracks]} if isinstance(tracks, list) else dict(data)
+
+
 # One step per version: MIGRATIONS[n] turns a version n file into a version n + 1 one. Version 1 to 2 changes no key
 # the model reads (the clips' missing `asset` is filled by `assets.link_project`), so it only stamps the version.
-MIGRATIONS = {1: lambda data: dict(data), 2: _v2_to_v3}
+MIGRATIONS = {1: lambda data: dict(data), 2: _v2_to_v3, 3: _v3_to_v4}
 
 
 def migrate(data: dict[str, Any]) -> dict[str, Any]:
@@ -328,6 +354,7 @@ def from_dict(data: dict[str, Any]) -> Project:
                 contrast=float(c.get("contrast", 1.0)),
                 saturation=float(c.get("saturation", 1.0)),
                 **_crop_from_dict(c.get("crop")),
+                fit=str(c.get("fit", "default")),
                 kind=str(c.get("kind", "media")),
                 text=str(c.get("text", "")),
                 font_size=float(c.get("font_size", 0.08)),

@@ -61,8 +61,8 @@ sent and the picture is kept as an object URL.
   (`canvas.needs_reframe`). The Export dialog's preset follows the canvas (it can still be changed there). Each choice is an export preset (`youtube-1080p`, `vertical-1080`, `square-1080`) sent as `preset` with
   every still and every chunk request, so the engine renders the output's shape (the chunk cache key already includes the
   preset). The frame box takes its ratio from the canvas at once; the old still is dropped and the new one arrives
-  within the usual still delay. A canvas change drops every chunk like an edit (see below). `fit` is not sent yet (the
-  per-clip fit is SPL-122).
+  within the usual still delay. A canvas change drops every chunk like an edit (see below). A clip's own fit
+  (inspector) is part of the project, so it arrives with the revision; the export-wide `fit` is not sent.
 - **While it renders** the previous still stays with a small spinner (`role="status"`). A failure leaves the still and
   shows the catalogue's message and fix under it, inline, with no toast; editing carries on.
 - **Revision**: the project's revision is part of the request, so an edit (also one made by an agent, see live refresh)
@@ -441,12 +441,12 @@ listed as working below.
 | One video clip | Tabs **Video**, **Audio**, **Speed**, **Crop**, **Captions** |
 | An audio-lane clip | **Audio** only |
 | A title | Text, size (% of the frame height), colour, position |
-| Several clips of one kind | Only what is valid for all of them: **Audio**, and **Video** (scale, position, opacity) when all are on overlay lanes; one batch, one revision |
+| Several clips of one kind | Only what is valid for all of them: **Audio**, and **Video** (scale, position, opacity) when all are video clips on overlay lanes; one batch, one revision |
 | Titles mixed with media | A note to select one kind |
 
 | Tab | Controls | Op field |
 |---|---|---|
-| Video | Scale, position X/Y, opacity (overlay lanes only), brightness, contrast, saturation, **Reset clip** | `scale`, `x`, `y`, `opacity`, `brightness`, `contrast`, `saturation` |
+| Video | Canvas fit (Export setting, Crop to fill, Letterbox), scale, position X/Y, opacity, brightness, contrast, saturation, **Reset clip** | `fit`, `scale`, `x`, `y`, `opacity`, `brightness`, `contrast`, `saturation` |
 | Audio | Volume in dB (field and slider, -40 to +12; the bottom is silence) and Mute | `gain` (linear: `10^(dB/20)`), `muted` |
 | Crop | 9:16, 1:1, 16:9 (the largest centred crop of the source picture; the buttons need the asset's size), Full frame, and Left/Top/Width/Height in percent | `crop` (`{x,y,w,h}` or null) |
 | Speed | disabled, with a note | none: the engine has no clip speed |
@@ -454,10 +454,11 @@ listed as working below.
 
 Things to know:
 
-- **Main-track clips fill the frame.** The engine (and the export) ignores position, scale and opacity on the main
-  track, so those controls are disabled there with a note; Crop is how a main-track clip is reframed. They work for
-  clips on overlay lanes.
-- **Canvas fit** is shown disabled: fit is an export-wide option today, not a per-clip property.
+- **Main-track clips** honour scale, position and opacity too (SPL-122): the fitted picture is scaled and placed on a
+  black frame of its own, so a join or crossfade still sees full frames. 100% scale at the centre, the default, is the
+  plain fitted picture. On an overlay lane scale is a fraction of the frame width; on the main track, of the fitted picture.
+- **Canvas fit** is per clip (`fit`: `default` follows the Export dialog's option, `crop` or `letterbox` override it). A
+  main-track clip with its own fit is no longer listed in `canvas.needs_reframe`. "Reframe" (a chosen region) is the Crop tab.
 - **Pick region** (dragging a box on the preview) needs the preview (E12); the Left/Top/Width/Height fields are the
   honest version until then. A region outside the frame is refused locally with a `Fix:` hint and nothing is sent.
 - **Commit rules.** A number is committed on Enter or when the field loses focus, never per keystroke; an invalid

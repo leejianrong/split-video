@@ -7,11 +7,14 @@ The picture is built bottom-up on a black canvas as long as the project:
    with `concat` for cuts or `xfade`/`acrossfade` for crossfades.
 2. Every clip on any other video track is overlaid at its own start time with
    its own position, size and opacity, in track order (later tracks on top).
-3. A cropped clip (`Clip.crop`, fractions of the source frame) is cut to its region first, in source
+3. A clip's own `fit` (letterbox or crop to fill) overrides the export's. A main-track clip's `scale`, `x`, `y`
+   and `opacity` place its fitted picture on a black frame of its own, so the join still sees full frames
+   (the defaults skip that step and give the plain padded picture).
+4. A cropped clip (`Clip.crop`, fractions of the source frame) is cut to its region first, in source
    pixels, before it is scaled to fit the frame or overlaid; it then fits like any other clip.
    Clips with a colour adjustment get ffmpeg's `eq` filter (brightness,
    contrast, saturation), before padding or overlaying.
-4. Audio: each clip's sound (the main track's already joined) gets its gain
+5. Audio: each clip's sound (the main track's already joined) gets its gain
    (muted clips contribute silence), is delayed to its start time, and all of
    it is summed with `amix` at unchanged levels.
 
@@ -149,6 +152,16 @@ def _fit(cw: int, ch: int, width: int, height: int, cropped: bool, fit: str = "l
     return f"scale={width}:{height}:force_original_aspect_ratio=decrease"
 
 
+def _clip_fit(clip: Clip, fit: str) -> str:
+    """The fit a clip is drawn with: its own, or the export's when it has none (`"default"`)."""
+    return fit if clip.fit == "default" else clip.fit
+
+
+def _placed(clip: Clip) -> bool:
+    """Whether a main-track clip is moved, scaled or faded (otherwise it just fills the frame)."""
+    return (clip.scale, clip.x, clip.y, clip.opacity) != (1.0, 0.5, 0.5, 1.0)
+
+
 def _gain(clip: Clip) -> str:
     return "0" if clip.muted else f"{clip.gain:g}"
 
@@ -168,11 +181,20 @@ def _main_chain(
     for n, clip in enumerate(clips):
         i = first_input + n
         crop, cw, ch = _crop(clip, infos[clip.source])
-        parts.append(
-            f"[{i}:v]setpts=PTS-STARTPTS,fps={fps}{crop},"
-            f"{_fit(cw, ch, width, height, clip.cropped, fit)}{_eq(clip)},"
-            f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,setsar=1,format=yuv420p[v{n}]"
-        )
+        fitted = _fit(cw, ch, width, height, clip.cropped, _clip_fit(clip, fit))
+        picture = f"[{i}:v]setpts=PTS-STARTPTS,fps={fps}{crop},{fitted}{_eq(clip)}"
+        if _placed(clip):
+            k = clip.scale
+            sized = f",scale=max(2\\,trunc(iw*{k:g}/2)*2):max(2\\,trunc(ih*{k:g}/2)*2)" if k != 1.0 else ""
+            faded = f",format=yuva420p,colorchannelmixer=aa={clip.opacity:g}" if clip.opacity != 1.0 else ""
+            parts.append(f"{picture}{sized}{faded}[t{n}]")
+            parts.append(f"color=c=black:s={width}x{height}:r={fps}:d={clip.duration:.3f}[bg{n}]")
+            parts.append(
+                f"[bg{n}][t{n}]overlay=x={width * clip.x:g}-w/2:y={height * clip.y:g}-h/2:eof_action=pass:format=auto,"
+                f"setsar=1,format=yuv420p[v{n}]"
+            )
+        else:
+            parts.append(f"{picture},pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,setsar=1,format=yuv420p[v{n}]")
         if not audio:
             continue
         if infos[clip.source].has_audio:
@@ -265,7 +287,7 @@ def build_plan(
         media_seen += 1
         w = max(2, int(width * clip.scale) // 2 * 2)
         crop = _crop(clip, infos[clip.source])[0]
-        if fit == "crop" and not clip.cropped:
+        if _clip_fit(clip, fit) == "crop" and not clip.cropped:
             # Cover a box with the frame's aspect (like main-track clips cover the frame), cutting the overflow.
             box_h = max(2, round(w * height / width / 2) * 2)
             scaled = f"scale={w}:{box_h}:force_original_aspect_ratio=increase,crop={w}:{box_h}"

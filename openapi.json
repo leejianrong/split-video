@@ -912,6 +912,11 @@
             "title": "End",
             "type": "number"
           },
+          "fit": {
+            "default": "default",
+            "title": "Fit",
+            "type": "string"
+          },
           "font_size": {
             "title": "Font Size",
             "type": "number"
@@ -3254,6 +3259,17 @@
                 "type": "null"
               }
             ]
+          },
+          "fit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fit"
           },
           "gain": {
             "anyOf": [

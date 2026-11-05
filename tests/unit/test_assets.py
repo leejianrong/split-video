@@ -265,7 +265,7 @@ def test_version_2_to_dict_writes_asset_and_source_and_loads_version_1_and_2(med
     linked = assets.link_project(media, _project_with_sources("a.mp4"))
     data = timeline.to_dict(linked)
     clip = data["tracks"][0]["clips"][0]
-    assert data["version"] == 3 and clip["asset"] == linked.tracks[0].clips[0].asset and clip["source"] == "a.mp4"
+    assert data["version"] == 4 and clip["asset"] == linked.tracks[0].clips[0].asset and clip["source"] == "a.mp4"
     assert timeline.from_dict(json.loads(json.dumps(data))) == linked
     del clip["asset"]  # a version 1 clip
     data["version"] = 1

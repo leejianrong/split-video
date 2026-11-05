@@ -145,6 +145,7 @@ export const CLIP_DEFAULTS = {
   contrast: 1,
   saturation: 1,
   crop: null,
+  fit: 'default',
 } as const;
 
 export type ClipProperties = Partial<{
@@ -158,6 +159,7 @@ export type ClipProperties = Partial<{
   contrast: number;
   saturation: number;
   crop: Crop | null;
+  fit: string;
 }>;
 
 /** One `set_clip_properties` op per clip (docs/edit-ops.md); the engine applies the batch atomically. */

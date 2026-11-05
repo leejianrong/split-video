@@ -20,6 +20,7 @@ from dataclasses import replace
 
 from split_video.timeline import (
     CANVASES,
+    CLIP_FITS,
     TRACK_KINDS,
     TRANSITIONS,
     Clip,
@@ -44,7 +45,7 @@ class RuleViolation(TimelineError):
     `in_negative`, `out_past_end`, `too_short`, `crossfade_first`, `crossfade_duration`,
     `crossfade_room`, `start_negative`, `overlap`, `magnetic_start`, `free_index`, `index_range`,
     `move_on_free`, `crossfade_free_track`, `text_target`, `not_text_clip`, `last_video_track`,
-    `kind_mismatch`, `main_track_dest`, `crop_invalid`, `crop_not_applicable`, `track_locked`,
+    `kind_mismatch`, `main_track_dest`, `crop_invalid`, `crop_not_applicable`, `fit_not_applicable`, `track_locked`,
     `main_track_hidden`."""
 
     def __init__(self, reason: str, message: str) -> None:
@@ -373,10 +374,18 @@ def _crop_changes(track: Track, clip: Clip, crop: object) -> dict[str, float]:
     return {"crop_x": c["x"], "crop_y": c["y"], "crop_w": c["w"], "crop_h": c["h"]}
 
 
+def _fit_changes(track: Track, clip: Clip, fit: object) -> dict[str, str]:
+    if clip.kind == "text" or track.kind == "audio":
+        raise RuleViolation("fit_not_applicable", "only a picture clip has a canvas fit")
+    if fit not in CLIP_FITS:
+        raise TimelineError(f"fit must be one of {', '.join(CLIP_FITS)}, not {fit!r}")
+    return {"fit": str(fit)}
+
+
 def set_clip_properties(
     project: Project, clip_id: str, **properties: float | bool | dict[str, float] | None
 ) -> Project:
-    """Change a clip's gain/mute, overlay placement, colour adjustment or crop.
+    """Change a clip's gain/mute, overlay placement, colour adjustment, crop or canvas `fit` (one of `CLIP_FITS`).
 
     Only the names in `CLIP_PROPERTY_RANGES` plus `muted` and `crop` are accepted, and a
     value outside its range is an error rather than being clamped. `crop` is a dict
@@ -391,13 +400,15 @@ def set_clip_properties(
             changes[name] = bool(value)
         elif name == "crop":
             changes.update(_crop_changes(track, track.clips[i], value))
+        elif name == "fit":
+            changes.update(_fit_changes(track, track.clips[i], value))
         elif name in CLIP_PROPERTY_RANGES:
             low, high = CLIP_PROPERTY_RANGES[name]
             if isinstance(value, bool) or not low <= value <= high:
                 raise TimelineError(f"{name} must be between {low:g} and {high:g}")
             changes[name] = float(value)
         else:
-            valid = ", ".join(["muted", "crop", *CLIP_PROPERTY_RANGES])
+            valid = ", ".join(["muted", "crop", "fit", *CLIP_PROPERTY_RANGES])
             raise TimelineError(f"unknown clip property {name!r}; choose from {valid}")
     clips = list(track.clips)
     clips[i] = replace(clips[i], **changes)
