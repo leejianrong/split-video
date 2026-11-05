@@ -47,7 +47,7 @@
         <dt>Length</dt>
         <dd>{project.project ? formatLength(project.project.duration) : ''}</dd>
         <dt>Canvas</dt>
-        <dd>16:9</dd>
+        <dd>{ui.canvas}</dd>
       </dl>
       <Button variant="secondary" onclick={() => (ui.exportOpen = true)}>Export</Button>
     </Panel>

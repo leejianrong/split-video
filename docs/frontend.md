@@ -53,9 +53,14 @@ sent and the picture is kept as an object URL.
   ux-spec's 500 ms). A newer request aborts the one in flight with an `AbortController`, and an answer that is not the
   newest is dropped. The same project, time, width and revision is not asked twice.
 - **Width** is the frame's width on screen times the device pixel ratio (at most 2), rounded up to 64 px and capped at
-  1280; the server never goes above the export's width. The frame box takes the ratio from the answer's
-  `X-Preview-Width` and `X-Preview-Height`, and the stage letterboxes it. The top bar's canvas ratio does not drive it yet (no `preset` is sent), so the frame shows
-  the ratio the export would use today.
+  1280; the server never goes above the export's width.
+- **Canvas**: the top bar's ratio picker (16:9, 9:16, 1:1; `state/canvas.ts`, `ui.canvas`) is the project canvas. It is
+  a request parameter, not project data: it is not in the timeline or its revision, it is not saved, and it starts at 16:9
+  on each open. Each choice is an export preset (`youtube-1080p`, `vertical-1080`, `square-1080`) sent as `preset` with
+  every still and every chunk request, so the engine renders the output's shape (the chunk cache key already includes the
+  preset). The frame box takes its ratio from the canvas at once; the old still is dropped and the new one arrives
+  within the usual still delay. A canvas change drops every chunk like an edit (see below). `fit` is not sent yet (the
+  per-clip fit is SPL-122), and the Export dialog has its own preset.
 - **While it renders** the previous still stays with a small spinner (`role="status"`). A failure leaves the still and
   shows the catalogue's message and fix under it, inline, with no toast; editing carries on.
 - **Revision**: the project's revision is part of the request, so an edit (also one made by an agent, see live refresh)
@@ -96,7 +101,7 @@ elements, `state/videoSlot.ts` wraps one, `state/playbackApi.ts` talks to `POST 
   preview, overlays loading" label, and hands over to the composite at the playhead's time when the chunk is ready; the
   draft is paused before the composite plays, so sounds never double up. If the file cannot be played in the browser (mkv,
   HEVC, an API token, which a `<video src>` cannot send) the still stays with "Preparing preview" instead.
-- **Edits during playback**: a new project revision (an edit, or an agent's, via live refresh) drops every chunk, stops the
+- **Edits during playback**: a new project revision or canvas change (an edit, or an agent's, via live refresh) drops every chunk, stops the
   old sound at once, and rebuffers from the same time; playback carries on as a draft or the still and resumes on the
   edited composite when its chunk is ready. A paused preview just drops the video and shows the new still.
 - **Autoplay**: Play is always a user gesture; if the browser still rejects `play()` the store goes back to paused with

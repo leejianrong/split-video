@@ -6,22 +6,17 @@ interface Still {
   blob: Blob;
   /** The timeline second the picture is of (the output's frame grid, at most one frame before the playhead). */
   time: number;
-  /** Width over height of the output, from the server (the project's ratio). */
-  ratio: number;
 }
 
 async function fetchStill(key: StillKey, signal: AbortSignal): Promise<Still> {
   const { data, response } = await getVideoPreviewFrameApiV1ProjectPreviewFrameGet({
-    query: { path: key.path, time: key.time, width: key.width },
+    query: { path: key.path, time: key.time, width: key.width, preset: key.preset },
     parseAs: 'blob',
     signal,
   });
-  const w = Number(response.headers.get('X-Preview-Width'));
-  const h = Number(response.headers.get('X-Preview-Height'));
   return {
     blob: data as unknown as Blob,
     time: Number(response.headers.get('X-Preview-Time') ?? key.time),
-    ratio: w > 0 && h > 0 ? w / h : 16 / 9,
   };
 }
 
@@ -33,11 +28,11 @@ async function fetchStill(key: StillKey, signal: AbortSignal): Promise<Still> {
 export class PreviewStore {
   url = $state<string | null>(null);
   time = $state<number | null>(null);
-  ratio = $state(16 / 9);
   busy = $state(false);
   error = $state<ProjectError | null>(null);
 
   #path: string | null = null;
+  #preset: string | null = null;
   #scheduler: StillScheduler<Still>;
 
   constructor(fetcher: (key: StillKey, signal: AbortSignal) => Promise<Still> = fetchStill) {
@@ -45,7 +40,6 @@ export class PreviewStore {
       onStill: (still) => {
         this.#setUrl(URL.createObjectURL(still.blob));
         this.time = still.time;
-        this.ratio = still.ratio;
         this.error = null;
       },
       onError: (cause) => {
@@ -55,10 +49,11 @@ export class PreviewStore {
     });
   }
 
-  /** Ask for the still of `key` (debounced, see `StillScheduler`). A different project drops the old picture first. */
+  /** Ask for the still of `key` (debounced, see `StillScheduler`). A different project or canvas drops the old picture first. */
   request(key: StillKey): void {
-    if (this.#path !== key.path) {
+    if (this.#path !== key.path || this.#preset !== key.preset) {
       this.#path = key.path;
+      this.#preset = key.preset;
       this.clear();
     }
     this.#scheduler.request(key);

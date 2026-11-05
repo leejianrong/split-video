@@ -3,6 +3,8 @@ export interface StillKey {
   path: string;
   time: number;
   width: number;
+  /** The export preset the canvas stands for: it decides the frame's shape. */
+  preset: string;
   revision: number | null;
 }
 
@@ -21,6 +23,7 @@ const same = (a: StillKey | null, b: StillKey) =>
   a.path === b.path &&
   a.time === b.time &&
   a.width === b.width &&
+  a.preset === b.preset &&
   a.revision === b.revision;
 
 /**
