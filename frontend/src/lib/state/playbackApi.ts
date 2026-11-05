@@ -13,7 +13,11 @@ export interface Started {
 
 /** What playback asks of the server: the preview-range endpoints (SPL-70) and the job queue's cancel. */
 export interface ChunkApi {
-  start(path: string, range: { start: number; end: number }, signal: AbortSignal): Promise<Started>;
+  start(
+    path: string,
+    range: { start: number; end: number; preset: string },
+    signal: AbortSignal,
+  ): Promise<Started>;
   /** Resolves when the render is done; rejects when it failed or was cancelled. */
   finished(jobId: string, signal: AbortSignal): Promise<void>;
   cancel(jobId: string): Promise<unknown>;

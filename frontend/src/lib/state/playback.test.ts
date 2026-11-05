@@ -46,6 +46,7 @@ class FakeSlot implements VideoSlot {
 
 interface Req {
   range: { start: number; end: number };
+  preset: string;
   jobId: string;
   cached: boolean;
   signal: AbortSignal;
@@ -68,7 +69,8 @@ function setup(duration = 40, draft: DraftSource | null = null) {
       const cached = cachedRanges.has(range.start);
       const finished = new Promise<void>((resolve, reject) => {
         reqs.push({
-          range,
+          range: { start: range.start, end: range.end },
+          preset: range.preset,
           jobId,
           cached,
           signal,
@@ -116,7 +118,7 @@ function setup(duration = 40, draft: DraftSource | null = null) {
     },
   });
   store.attach(slots, draftSlot, () => draft);
-  store.sync({ path: 'gig.mp4', revision: 1, duration });
+  store.sync({ path: 'gig.mp4', revision: 1, preset: 'youtube-1080p', duration });
   const flush = () => vi.advanceTimersByTimeAsync(0);
   const frame = () => frames.forEach((cb) => cb());
   /** Finish the render of the request at `i` (as the server does) and let the browser fetch the blob. */
@@ -328,7 +330,7 @@ describe('PlaybackStore', () => {
     const slot = t.slots[t.store.activeSlot!];
     slot.time = 5;
     t.frame();
-    t.store.sync({ path: 'gig.mp4', revision: 2, duration: 40 });
+    t.store.sync({ path: 'gig.mp4', revision: 2, preset: 'youtube-1080p', duration: 40 });
     expect(slot.playing).toBe(false); // the old sound stops at once
     expect(t.store.state).toBe('buffering');
     expect(t.revoked).toEqual(expect.arrayContaining(['blob:k0', 'blob:k8']));
@@ -340,13 +342,24 @@ describe('PlaybackStore', () => {
     expect(t.slots[t.store.activeSlot!].time).toBe(5);
   });
 
+  it('a canvas change drops the chunks like an edit and asks for the new preset', async () => {
+    const t = setup();
+    t.store.play();
+    await t.flush();
+    await t.finish(0);
+    t.store.sync({ path: 'gig.mp4', revision: 1, preset: 'vertical-1080', duration: 40 });
+    expect(t.revoked).toContain('blob:k0');
+    await t.flush();
+    expect(t.reqs[t.reqs.length - 1]!.preset).toBe('vertical-1080');
+  });
+
   it('an edit while paused only drops the video for the still', async () => {
     const t = setup();
     t.store.play();
     await t.flush();
     await t.finish(0);
     t.store.pause();
-    t.store.sync({ path: 'gig.mp4', revision: 2, duration: 40 });
+    t.store.sync({ path: 'gig.mp4', revision: 2, preset: 'youtube-1080p', duration: 40 });
     expect(t.store.state).toBe('paused');
     expect(t.store.showing).toBe('still');
     expect(t.store.activeSlot).toBeNull();

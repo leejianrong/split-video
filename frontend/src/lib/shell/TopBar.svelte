@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { CANVASES } from '../state/canvas';
   import { formatLength } from '../format';
   import { hrefTo } from '../state/route';
   import { exports } from '../state/exports.svelte';
@@ -7,7 +8,6 @@
   import Button from '../ui/Button.svelte';
   import Icon from '../ui/icons/Icon.svelte';
   import IconButton from '../ui/IconButton.svelte';
-  import Tooltip from '../ui/Tooltip.svelte';
   import ServerStatus from './ServerStatus.svelte';
 
   // The top bar (docs/ux-spec.md#layout): logo, project name and length, save state, canvas ratio, server status,
@@ -35,11 +35,17 @@
   {/if}
 
   <div class="right">
-    <Tooltip label="Canvas ratio: 16:9 (changing it comes later)">
-      <Button size="sm" disabled aria-label="Canvas ratio: 16:9, fixed for now" data-testid="ratio">
-        16:9 <Icon name="chevronDown" size={14} />
-      </Button>
-    </Tooltip>
+    <select
+      class="ratio"
+      aria-label="Canvas ratio"
+      title="Canvas ratio: the output shape; the preview follows it"
+      data-testid="ratio"
+      bind:value={ui.canvas}
+    >
+      {#each CANVASES as c (c.id)}
+        <option value={c.id}>{c.id}</option>
+      {/each}
+    </select>
     <ServerStatus />
     <IconButton
       label="Keyboard shortcuts"
@@ -121,6 +127,16 @@
     font-size: var(--font-size-sm);
     font-variant-numeric: tabular-nums;
     text-align: center;
+  }
+
+  .ratio {
+    height: var(--control-height-sm, 28px);
+    padding: 0 var(--space-2);
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius-md);
+    background: var(--color-bg);
+    color: var(--color-text);
+    cursor: pointer;
   }
 
   .right {

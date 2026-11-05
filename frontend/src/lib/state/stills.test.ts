@@ -5,6 +5,7 @@ const key = (time: number, over: Partial<StillKey> = {}): StillKey => ({
   path: 'gig.mp4',
   time,
   width: 640,
+  preset: 'youtube-1080p',
   revision: 1,
   ...over,
 });

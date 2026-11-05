@@ -83,3 +83,61 @@ test('preview: a still shows at the playhead, follows scrubbing, and redraws whe
   expect((await size('[data-region=timeline]')).height).toBe(292);
   expect(errors).toEqual([]);
 });
+
+test('preview: the top bar canvas ratio changes the frame shape and the picture, still and chunk', async ({
+  page,
+  app,
+}) => {
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  const presets: string[] = [];
+  page.on('request', (r) => {
+    const m = /[?&]preset=([\w-]+)/.exec(r.url());
+    if (m && r.url().includes('/project/preview-frame')) presets.push(m[1]!);
+  });
+  const ranges: string[] = [];
+  page.on('request', (r) => {
+    if (r.method() === 'POST' && r.url().includes('/project/preview-range'))
+      ranges.push(r.postData() ?? '');
+  });
+
+  await openEditor(page, app);
+  const still = page.getByTestId('preview-still');
+  const frame = page.getByTestId('preview-frame');
+  await expect(still).toBeVisible();
+  const shape = async () => {
+    const box = (await frame.boundingBox())!;
+    return box.width / box.height;
+  };
+  const natural = () =>
+    still.evaluate(
+      (i) => (i as HTMLImageElement).naturalWidth / (i as HTMLImageElement).naturalHeight,
+    );
+  expect(await shape()).toBeCloseTo(16 / 9, 1);
+  const region = (await page.locator('[data-region=preview]').boundingBox())!;
+
+  for (const [ratio, want] of [
+    ['9:16', 9 / 16],
+    ['1:1', 1],
+    ['16:9', 16 / 9],
+  ] as const) {
+    await page.getByTestId('ratio').selectOption(ratio);
+    await expect.poll(shape).toBeCloseTo(want, 1);
+    // The new picture is the preset's shape too, and the frame stays inside the preview region.
+    await expect.poll(natural, { timeout: 20_000 }).toBeCloseTo(want, 1);
+    const box = (await frame.boundingBox())!;
+    expect(box.x).toBeGreaterThanOrEqual(region.x);
+    expect(box.y + box.height).toBeLessThanOrEqual(region.y + region.height + 0.5);
+  }
+  expect(presets).toEqual(
+    expect.arrayContaining(['vertical-1080', 'square-1080', 'youtube-1080p']),
+  );
+
+  // Playback asks for chunks in the chosen canvas.
+  await page.getByTestId('ratio').selectOption('9:16');
+  await page.getByTestId('play').click();
+  await expect.poll(() => ranges.length, { timeout: 20_000 }).toBeGreaterThan(0);
+  expect(JSON.parse(ranges[ranges.length - 1]!).preset).toBe('vertical-1080');
+  await page.getByTestId('play').click();
+  expect(errors).toEqual([]);
+});

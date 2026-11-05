@@ -149,6 +149,9 @@ it, and compares the preview's frame with the export's frame at the same time an
 title text. A case passes when the mean absolute difference per channel and the share of samples off by more than 24 are
 under its `Tolerance`, and, for moving footage, the frame is 3 times closer than the export's frame 0.2 s later.
 
+`test_the_canvas_preset_gives_the_export_frame` does the same for the canvas presets the top bar offers (vertical and
+square): the preview at the preset against the export at the preset's own size.
+
 Run them with `uv run pytest tests/unit/test_golden_frames.py -s` (about 20 s; the `-s` prints each measurement). A
 failure reads `mean difference 3.4 is over 2.5` or `1.8% of the samples differ by more than 24`: the preview and the
 export disagree about that feature at that time. Look at both frames before touching a limit.

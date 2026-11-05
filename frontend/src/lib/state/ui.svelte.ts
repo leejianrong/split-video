@@ -1,3 +1,4 @@
+import { type CanvasId } from './canvas';
 import {
   clampOne,
   clampSizes,
@@ -18,6 +19,8 @@ import {
 export class UiState {
   helpOpen = $state(false);
   exportOpen = $state(false);
+  /** The project canvas (output ratio). A request parameter of the preview, not project data, so it starts at 16:9 on every open. */
+  canvas = $state<CanvasId>('16:9');
   activeTab = $state<TabId>('media');
   /** The sizes the user chose. What is drawn is `sizes`, which also fits the window. */
   chosen = $state<Sizes>({ ...DEFAULT_SIZES });

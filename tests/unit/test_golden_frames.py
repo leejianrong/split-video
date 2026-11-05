@@ -107,6 +107,19 @@ def test_preview_matches_the_export(media, exports, capsys, case, at):
     assert not tol.failures(m), (m, tol.failures(m))
 
 
+@pytest.mark.parametrize("preset", ["vertical-1080", "square-1080"])
+@pytest.mark.parametrize("at", [0.25, 1.5])
+def test_the_canvas_preset_gives_the_export_frame(media, capsys, preset, at):
+    """SPL-124: the top bar's canvas is a preset; the preview at that preset is the export's frame, same size."""
+    project = overlay(media)
+    export(project, media, f"{preset}.mp4", preset=preset)
+    tol = Tolerance(mean=2.5, share=0.006, separation=3)
+    m = measure(project, media, f"{preset}.mp4", at, tol, preset=preset)
+    with capsys.disabled():
+        print(f"\n{preset} {m}")
+    assert not tol.failures(m), (m, tol.failures(m))
+
+
 # One change on the preview side only: (case, what changed, time to look at, the overrides of the case's builder).
 MUTATIONS = [
     ("overlay", "moved 5 px", 1.0, {"x": 0.76}),

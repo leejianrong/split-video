@@ -12,6 +12,7 @@ from dataclasses import dataclass
 import numpy as np
 from test_frames import decode
 
+from split_video import presets
 from split_video.preview import preview_frame
 from split_video.render import render
 
@@ -27,8 +28,12 @@ def make_source(path, lavfi):
     subprocess.run(cmd, capture_output=True, check=True, timeout=HARD_TIMEOUT)
 
 
-def export(project, media, name):
-    render(project, media, name, width=SIZE[0], height=SIZE[1])
+def export(project, media, name, preset=None):
+    """The export at the test size, or at the preset's own size when a canvas `preset` is given."""
+    if preset:
+        render(project, media, name, preset=preset)
+    else:
+        render(project, media, name, width=SIZE[0], height=SIZE[1])
 
 
 def export_frame(media, name, at):
@@ -69,11 +74,15 @@ class Measurement:
         return f"t={self.time:.3f} mean={self.mean:.2f} share={self.share:.4f} away={self.away:.2f}"
 
 
-def measure(project, media, name, at, tol: Tolerance) -> Measurement:
+def measure(project, media, name, at, tol: Tolerance, preset=None) -> Measurement:
     """Preview of `project` at `at` against frame `at` of the export `name` (made earlier by `export`, possibly from
     another project: that is how the mutation tests make the two disagree)."""
-    frame = preview_frame(project, media, at, width=SIZE[0], format="png", source="original")
-    assert (frame.width, frame.height) == SIZE
+    size = SIZE
+    if preset:
+        p = presets.get(preset)
+        size = (p.width, p.height)
+    frame = preview_frame(project, media, at, width=size[0], preset=preset, format="png", source="original")
+    assert (frame.width, frame.height) == size
     mine = decode(frame.data)[2].astype(int)
     steps = (0, 1) if tol.late_frame else (0,)
     candidates = [(np.abs(mine - export_frame(media, name, frame.time + k / FPS)), k) for k in steps]

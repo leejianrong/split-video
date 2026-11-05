@@ -93,7 +93,7 @@ const message = {
  * as a draft (no overlays) when the browser can, otherwise the still stays with "Preparing preview".
  *
  * While playing, the video is the single source of truth for the playhead; a user seek (`seeked`) takes over.
- * An edit (a new revision) drops every chunk and rebuffers at the same time: playback goes on, as a draft or the
+ * An edit (a new revision) or a canvas change drops every chunk and rebuffers at the same time: playback goes on, as a draft or the
  * still, until the edited chunk is ready.
  */
 export class PlaybackStore {
@@ -110,6 +110,7 @@ export class PlaybackStore {
 
   #path: string | null = null;
   #revision: number | null = null;
+  #preset: string | null = null;
   #duration = 0;
 
   #wanted = false;
@@ -149,14 +150,23 @@ export class PlaybackStore {
     this.#draftFor = draftFor;
   }
 
-  /** What is being played: a different path or revision drops every chunk. */
-  sync(input: { path: string | null; revision: number | null; duration: number }): void {
-    const changed = input.path !== this.#path || input.revision !== this.#revision;
+  /** What is being played: a different path, revision or canvas preset drops every chunk. */
+  sync(input: {
+    path: string | null;
+    revision: number | null;
+    preset: string;
+    duration: number;
+  }): void {
+    const changed =
+      input.path !== this.#path ||
+      input.revision !== this.#revision ||
+      input.preset !== this.#preset;
     this.#duration = input.duration;
     if (!changed) return;
     const projectChanged = input.path !== this.#path;
     this.#path = input.path;
     this.#revision = input.revision;
+    this.#preset = input.preset;
     this.#invalidate();
     if (input.path === null || input.duration <= 0 || projectChanged) {
       this.#halt();
@@ -291,7 +301,7 @@ export class PlaybackStore {
       await Promise.allSettled([...this.#cancels]);
       const started = await this.#deps.api.start(
         path,
-        { start: chunk.start, end: chunk.end },
+        { start: chunk.start, end: chunk.end, preset: this.#preset! },
         signal,
       );
       chunk.jobId = started.jobId;

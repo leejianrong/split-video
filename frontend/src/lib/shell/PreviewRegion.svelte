@@ -3,17 +3,21 @@
   import { formatClock } from '../format';
   import { playback } from '../state/playback.svelte';
   import { playhead } from '../state/playhead.svelte';
+  import { canvasOf } from '../state/canvas';
   import { preview } from '../state/preview.svelte';
   import { project } from '../state/project.svelte';
+  import { ui } from '../state/ui.svelte';
   import Button from '../ui/Button.svelte';
   import Icon from '../ui/icons/Icon.svelte';
   import IconButton from '../ui/IconButton.svelte';
   import PlaybackSurface from './PlaybackSurface.svelte';
 
-  // The preview region: a header with the time readout, the canvas frame in the project's ratio holding the still of
+  // The preview region: a header with the time readout, the canvas frame in the canvas ratio holding the still of
   // the timeline at the playhead (the still), the chunk videos that play over it (PlaybackSurface), and the transport.
   const total = $derived(project.project ? formatClock(project.project.duration) : '0:00:00');
   const hasClips = $derived(project.timeline?.tracks.some((t) => t.clips.length > 0) ?? false);
+
+  const canvas = $derived(canvasOf(ui.canvas));
 
   // Ask for a picture as wide as the frame is on screen, rounded up to 64 px so dragging a panel edge does not send a
   // request per pixel; the server never goes above the export's own width.
@@ -35,7 +39,13 @@
       return;
     }
     if (playback.showing !== 'still' && playback.state !== 'paused') return;
-    preview.request({ path, time: playhead.time, width: stillWidth, revision: project.revision });
+    preview.request({
+      path,
+      time: playhead.time,
+      width: stillWidth,
+      preset: canvas.preset,
+      revision: project.revision,
+    });
   });
   $effect(() => () => preview.clear());
 
@@ -55,6 +65,7 @@
     playback.sync({
       path: hasClips ? project.id : null,
       revision: project.revision,
+      preset: canvas.preset,
       duration: project.timeline?.duration ?? 0,
     });
   });
@@ -82,7 +93,7 @@
       data-testid="preview-frame"
       data-playback={playback.state}
       data-showing={playback.showing}
-      style:--ratio={preview.ratio}
+      style:--ratio={canvas.ratio}
       bind:clientWidth={frameWidth}
       onclick={() => hasClips && playback.toggle()}
     >
@@ -95,7 +106,7 @@
           draggable="false"
         />
       {:else}
-        <span class="ratio">16:9</span>
+        <span class="ratio">{ui.canvas}</span>
         <p>Your timeline shows here.</p>
       {/if}
       <PlaybackSurface />
@@ -156,7 +167,7 @@
     font-variant-numeric: tabular-nums;
   }
 
-  /* The frame is the largest 16:9 box that fits the stage; it is a container so cq units can size it. */
+  /* The frame is the largest box in the canvas ratio that fits the stage; it is a container so cq units can size it. */
   .stage {
     flex: 1;
     min-height: 0;
