@@ -11546,6 +11546,173 @@
         "summary": "Apply Plan"
       }
     },
+    "/api/v1/compose/projects/{name}/preview-frame": {
+      "get": {
+        "description": "The edited result at `time` seconds as a JPEG (default) or PNG, `width` pixels wide (default 640, never\nabove the export's; height follows the export's aspect ratio). Main track, overlays, titles, colour and\ncrop are drawn by the export's own filter graph; captions and sound are not. `preset` and `fit` are the\nexport's, so a vertical preset previews the vertical frame. `source=auto` reads proxies where they exist\n(a frame within 1/15 s of the time), `original` reads the files like the export.",
+        "operationId": "get_preview_frame_api_v1_compose_projects__name__preview_frame_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "time",
+            "required": true,
+            "schema": {
+              "title": "Time",
+              "type": "number"
+            }
+          },
+          {
+            "in": "query",
+            "name": "width",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Width"
+            }
+          },
+          {
+            "in": "query",
+            "name": "preset",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Preset"
+            }
+          },
+          {
+            "in": "query",
+            "name": "fit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Fit"
+            }
+          },
+          {
+            "in": "query",
+            "name": "format",
+            "required": false,
+            "schema": {
+              "default": "jpeg",
+              "title": "Format",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "quality",
+            "required": false,
+            "schema": {
+              "default": 85,
+              "title": "Quality",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "source",
+            "required": false,
+            "schema": {
+              "default": "auto",
+              "title": "Source",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "image/jpeg": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
+              "image/png": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "The encoded image."
+          },
+          "304": {
+            "description": "The timeline and request are those of the `If-None-Match` ETag."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedOut"
+                }
+              }
+            },
+            "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
+          }
+        },
+        "summary": "Get Preview Frame"
+      }
+    },
     "/api/v1/compose/projects/{name}/render": {
       "post": {
         "operationId": "start_render_api_v1_compose_projects__name__render_post",

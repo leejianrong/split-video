@@ -154,7 +154,14 @@ def _gain(clip: Clip) -> str:
 
 
 def _main_chain(
-    clips: list[Clip], first_input: int, infos: dict[str, MediaInfo], width: int, height: int, fps: int, fit: str
+    clips: list[Clip],
+    first_input: int,
+    infos: dict[str, MediaInfo],
+    width: int,
+    height: int,
+    fps: int,
+    fit: str,
+    audio: bool = True,
 ):
     """Filter parts joining the main track's clips; returns (parts, vlabel, alabel)."""
     parts: list[str] = []
@@ -166,6 +173,8 @@ def _main_chain(
             f"{_fit(cw, ch, width, height, clip.cropped, fit)}{_eq(clip)},"
             f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,setsar=1,format=yuv420p[v{n}]"
         )
+        if not audio:
+            continue
         if infos[clip.source].has_audio:
             parts.append(
                 f"[{i}:a]asetpts=PTS-STARTPTS,{_fmt_audio()},atrim=0:{clip.duration:.3f},volume={_gain(clip)}[a{n}]"
@@ -186,11 +195,13 @@ def _main_chain(
                 parts.append(f"[{vlabel}]settb=1/{fps}[vt{n}]")
                 vlabel, joined_by_cut = f"vt{n}", False
             parts.append(f"[{vlabel}][v{n}]xfade=transition=fade:duration={d:.3f}:offset={length - d:.3f}[{nv}]")
-            parts.append(f"[{alabel}][a{n}]acrossfade=d={d:.3f}[{na}]")
+            if audio:
+                parts.append(f"[{alabel}][a{n}]acrossfade=d={d:.3f}[{na}]")
             length += clip.duration - d
         else:
             parts.append(f"[{vlabel}][v{n}]concat=n=2:v=1:a=0[{nv}]")
-            parts.append(f"[{alabel}][a{n}]concat=n=2:v=0:a=1[{na}]")
+            if audio:
+                parts.append(f"[{alabel}][a{n}]concat=n=2:v=0:a=1[{na}]")
             joined_by_cut = True
             length += clip.duration
         vlabel, alabel = nv, na
@@ -206,22 +217,26 @@ def build_plan(
     fps: int = FPS,
     fit: str = "letterbox",
     captions_ass: tuple[str, str] | None = None,
+    audio: bool = True,
 ) -> Plan:
+    """The filter graph of the whole project. `audio=False` leaves the sound out (no audio inputs or labels), for
+    a picture-only render such as `preview.py`'s single frame."""
     main = _main_track(project)
     main_clips = list(main.clips) if main else []
     layers = _overlay_clips(project, main)  # picture clips and text, in stacking order
     overlays = [c for c in layers if c.kind == "media"]  # the ones that need an ffmpeg input
-    audio_clips = _audio_clips(project)
+    audio_clips = _audio_clips(project) if audio else []
     total = project.duration
     ordered = [*main_clips, *overlays, *audio_clips]
 
     parts: list[str] = []
     if main_clips:
-        chain, vmain, alabel = _main_chain(main_clips, 0, infos, width, height, fps, fit)
+        chain, vmain, alabel = _main_chain(main_clips, 0, infos, width, height, fps, fit, audio)
         parts += chain
     else:
         alabel = "asilent"
-        parts.append(f"anullsrc=r={AUDIO_RATE}:cl=stereo,atrim=0:{total:.3f},asetpts=PTS-STARTPTS[{alabel}]")
+        if audio:
+            parts.append(f"anullsrc=r={AUDIO_RATE}:cl=stereo,atrim=0:{total:.3f},asetpts=PTS-STARTPTS[{alabel}]")
 
     parts.append(f"color=c=black:s={width}x{height}:r={fps}:d={total:.3f},format=yuv420p[canvas]")
     vlabel = "canvas"
@@ -270,7 +285,7 @@ def build_plan(
 
     # Sound from everything that isn't the (already joined) main track.
     mix = [alabel]
-    for n, clip in enumerate([*overlays, *audio_clips]):
+    for n, clip in enumerate([*overlays, *audio_clips] if audio else []):
         if clip.muted or not infos[clip.source].has_audio:
             continue
         i = len(main_clips) + n
@@ -285,7 +300,7 @@ def build_plan(
         parts.append(f"{sources}amix=inputs={len(mix)}:normalize=0:duration=longest,alimiter=limit=0.95[amixed]")
         alabel = "amixed"
 
-    return Plan(ordered, ";".join(parts), vlabel, alabel, width, height, fps)
+    return Plan(ordered, ";".join(parts), vlabel, alabel if audio else "", width, height, fps)
 
 
 MIN_SIZE, MAX_SIZE = 64, 4096
@@ -323,6 +338,51 @@ def _clip_inputs(clips: list[Clip], paths: list[str]) -> list[str]:
     return args
 
 
+@dataclass(frozen=True)
+class Prepared:
+    """A project ready to plan: its clips resolved to current media ids, what each source is, the frame size and the
+    text font (None without text clips)."""
+
+    project: Project
+    infos: dict[str, MediaInfo]
+    width: int
+    height: int
+    font: str | None
+
+
+def prepare(project: Project, media: MediaStore, settings: presets.ExportSettings) -> Prepared:
+    """What `render` and `preview.preview_frame` both start from, so the two cannot disagree on sources, frame size
+    or visibility. `TimelineError` for a project with no picture; `SourceNotFoundError` for a clip that is gone."""
+    project = assets.resolve_project(media, project)  # every clip's `source` is now its file's current media id
+    project = timeline_ops.for_render(project)  # hidden tracks left out, muted tracks silent (the lane toggles)
+    video_clips = [c for t in project.tracks if t.kind == "video" for c in t.clips]
+    if not video_clips:
+        raise TimelineError("the timeline has no clips to render")
+
+    infos: dict[str, MediaInfo] = {}
+    for track in project.tracks:
+        for clip in track.clips:
+            if clip.kind == "text":
+                continue
+            if clip.source not in infos:
+                infos[clip.source] = media.probe(clip.source)
+            if track.kind == "video" and infos[clip.source].width is None:
+                raise TimelineError(f"{clip.source} has no video stream")
+            if track.kind == "audio" and not infos[clip.source].has_audio:
+                raise TimelineError(f"{clip.source} has no audio stream")
+
+    main = _main_track(project)
+    first = main.clips[0] if main else next((c for c in video_clips if c.kind == "media"), None)
+    if settings.size is not None:
+        width, height = settings.size
+    elif first is None:
+        width, height = DEFAULT_SIZE
+    else:
+        width, height = infos[first.source].width // 2 * 2, infos[first.source].height // 2 * 2
+    font = find_font() if any(c.kind == "text" for c in video_clips) else None
+    return Prepared(project, infos, width, height, font)
+
+
 def render(
     project: Project,
     media: MediaStore,
@@ -353,34 +413,10 @@ def render(
     Clips are found by asset id (relinked if their file moved); a clip that can't be found
     is a `SourceNotFoundError` naming the asset and its last known path."""
     settings = presets.resolve_export(preset, width, height, fit)
-    size = settings.size
-    project = assets.resolve_project(media, project)  # every clip's `source` is now its file's current media id
-    project = timeline_ops.for_render(project)  # hidden tracks left out, muted tracks silent (the lane toggles)
-    video_clips = [c for t in project.tracks if t.kind == "video" for c in t.clips]
-    if not video_clips:
-        raise TimelineError("the timeline has no clips to render")
-
-    infos: dict[str, MediaInfo] = {}
-    for track in project.tracks:
-        for clip in track.clips:
-            if clip.kind == "text":
-                continue
-            if clip.source not in infos:
-                infos[clip.source] = media.probe(clip.source)
-            if track.kind == "video" and infos[clip.source].width is None:
-                raise TimelineError(f"{clip.source} has no video stream")
-            if track.kind == "audio" and not infos[clip.source].has_audio:
-                raise TimelineError(f"{clip.source} has no audio stream")
-
-    main = _main_track(project)
-    first = main.clips[0] if main else next((c for c in video_clips if c.kind == "media"), None)
-    if size is not None:
-        width, height = size
-    elif first is None:
-        width, height = DEFAULT_SIZE
-    else:
-        width, height = infos[first.source].width // 2 * 2, infos[first.source].height // 2 * 2
-    font = find_font() if any(c.kind == "text" for c in video_clips) else None
+    prepared = prepare(project, media, settings)
+    project, infos, width, height, font = (
+        prepared.project, prepared.infos, prepared.width, prepared.height, prepared.font
+    )  # fmt: skip
     total = project.duration
 
     writing = False  # set once the output may exist, so a failure before that never deletes an older file

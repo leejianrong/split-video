@@ -15,7 +15,7 @@ the visual editor afterward. Tools: `list_videos`, `list_segments`,
 `trim_timeline_clip`, `move_timeline_clip`, `remove_timeline_clip`,
 `set_timeline_transition`, `add_timeline_track`, `remove_timeline_track`,
 `move_timeline_track`, `place_timeline_clip`, `set_timeline_clip`,
-`add_timeline_text`, `set_timeline_text`, `render_timeline` (with `preset`, `fit` and `captions`), `list_export_presets`, `list_caption_styles`.
+`add_timeline_text`, `set_timeline_text`, `preview_frame` (the edited result at one time, as an image; see [compose.md](compose.md)), `render_timeline` (with `preset`, `fit` and `captions`), `list_export_presets`, `list_caption_styles`.
 
 New to driving it? The [agent guide](../src/split_video/agent_guide/SKILL.md) is the order of calls that works (import,
 report, transcribe, pick moments, plan, render), with limits, costs and error recovery. The server serves it as the

@@ -16,6 +16,9 @@ revision changes, including edits made by the CLI or MCP server in another
 process (`curl -N localhost:8765/api/v1/events`). The polling endpoints keep
 working; the frame format is in the route's description in the schema.
 
+`GET /api/v1/compose/projects/{name}/preview-frame?time=` answers with an image of the edited result at that time,
+rendered by the export's own filter graph; see [Compose](compose.md).
+
 ## API token (agents and hosted use)
 
 By default the server is a local single-user tool and the API is open. Start

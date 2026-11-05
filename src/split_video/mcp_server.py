@@ -52,6 +52,7 @@ from split_video import (
     media_report,
     ocr,
     presets,
+    preview,
     project,
     proxy,
     render_queue,
@@ -663,6 +664,36 @@ def create_server(
             frame = await run(
                 frames.extract_frame, media, asset, time, width=width, height=height, format=format, source=source
             )
+        except frames.FrameError as exc:
+            raise ToolError(str(exc)) from None
+        info = {k: v for k, v in frame.info().items() if k != "bytes"}
+        return [Image(data=frame.data, format=frame.format), json.dumps(info)]
+
+    @server.tool(annotations=_READ_ONLY)
+    async def preview_frame(
+        name: str,
+        time: float,
+        width: int = preview.DEFAULT_WIDTH,
+        preset: str | None = None,
+        fit: str | None = None,
+        format: str = "jpeg",
+        source: str = "auto",
+    ) -> list[Image | str]:
+        """Look at the edited result of timeline project `name` at `time` seconds: returns the picture as an image plus
+        a short text block with `project`, `revision` (of the timeline it was rendered from), `time` (the frame shown,
+        on the output's frame grid), `width`, `height`, `source` and `duration`. It is the export's own render of one
+        instant: main track, overlays, titles, colour and crop, but no captions or sound. `width` (pixels, default 640,
+        at most 1280 here because the image is inlined, never above the export's) scales it; the height follows the
+        export's aspect ratio. `preset` and `fit` are the export's (see render_timeline), so a vertical preset previews
+        the vertical frame. `format` is "jpeg" (default) or "png". `source` "auto" reads proxies where there are any
+        (within 1/15 s of `time`), "original" reads the files like the export. Takes well under a second. A time past
+        the end of the timeline, or a timeline with no clips, is a tool error that says so."""
+        try:
+            project_ = await run(timeline_service.load_existing, store, name, media)
+            frame = await run(
+                preview.preview_frame, project_, media, time, name=name, width=min(width, 1280), preset=preset,
+                fit=fit, format=format, source=source,
+            )  # fmt: skip
         except frames.FrameError as exc:
             raise ToolError(str(exc)) from None
         info = {k: v for k, v in frame.info().items() if k != "bytes"}

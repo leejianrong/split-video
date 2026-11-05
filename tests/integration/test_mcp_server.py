@@ -61,6 +61,7 @@ async def test_exposes_the_documented_tools(root):
         "review_highlight",
         "make_short",
         "get_frame",
+        "preview_frame",
         "get_contact_sheet",
         "list_segments",
         "propose_splits",
