@@ -31,17 +31,16 @@ import re
 from collections.abc import Callable
 from contextlib import closing
 from dataclasses import dataclass, replace
-from datetime import datetime, timezone
 from typing import Any
 
 from split_video import assets, edit_ops, split_model, timeline_ops, timeline_service
 from split_video.editor import classify
 from split_video.editor.cache import ClassificationCache, SilenceCache
 from split_video.errors import ProjectError, RevisionConflictError  # noqa: F401  (re-exported)
-from split_video.ffmpeg import ProbeError, extract_segment, iter_pcm_chunks
-from split_video.jobs import CancelToken, JobCancelledError
+from split_video.ffmpeg import ProbeError, iter_pcm_chunks
+from split_video.jobs import CancelToken
 from split_video.media_store import MediaStore
-from split_video.naming import build_manifest, manifest_text, resolve_export_filename
+from split_video.naming import resolve_export_filename
 from split_video.segments import Segment, compute_segments
 from split_video.store import ProjectStore, SavedSegment, Versioned
 from split_video.timeline import Project
@@ -508,57 +507,6 @@ def plan_export(
                 f"{len(conflicts)} output file(s) already exist (pass overwrite to replace): {', '.join(conflicts)}"
             )
     return ExportPlan(source=source, segments=pairs, filenames=filenames, output_dir=output_dir)
-
-
-def run_export(
-    media: MediaStore,
-    plan: ExportPlan,
-    *,
-    precise: bool = False,
-    output_format: str | None = None,
-    write_manifest_file: bool = True,
-    parameters: dict[str, Any] | None = None,
-    on_file_start: Callable[[str], None] | None = None,
-    on_file_done: Callable[[str], None] | None = None,
-    cancel: CancelToken | None = None,
-) -> tuple[list[str], str | None]:
-    """Write the planned files (and `manifest.json`). Blocking; the editor
-    runs it as a job, the CLI and MCP server call it inline.
-    Returns the written media ids and the manifest's, if one was written.
-
-    With a `cancel` token (a job's `JobContext`), cancelling stops before the next file or
-    terminates the ffmpeg extracting the current one (its partial file is deleted) and raises
-    `JobCancelledError`. Files already finished stay, and no manifest is written."""
-    objs = [Segment(index=i + 1, start=a, end=b) for i, (a, b) in enumerate(plan.segments)]
-    written: list[str] = []
-    for seg, filename in zip(objs, plan.filenames):
-        out_id = media.join(plan.output_dir, filename)
-        if cancel is not None:
-            cancel.raise_if_cancelled()
-        if on_file_start:
-            on_file_start(filename)
-        try:
-            with media.local_path(plan.source) as source, media.write_local(out_id) as out_path:
-                extract_segment(source, seg.start, seg.end, out_path, precise, output_format, cancel=cancel)
-        except JobCancelledError:
-            media.delete(out_id)
-            raise
-        written.append(out_id)
-        if on_file_done:
-            on_file_done(out_id)
-
-    manifest_path = None
-    if write_manifest_file:
-        data = build_manifest(
-            source_name=media.name(plan.source),
-            segments=objs,
-            filenames=plan.filenames,
-            parameters=parameters if parameters is not None else {"precise": precise},
-            generated_at=datetime.now(timezone.utc),
-        )
-        manifest_path = media.join(plan.output_dir, "manifest.json")
-        media.write_bytes(manifest_path, manifest_text(data).encode())
-    return written, manifest_path
 
 
 # --- audio analysis ---------------------------------------------------------

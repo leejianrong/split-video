@@ -137,17 +137,11 @@ def cli_session(root: Path) -> dict:
         steps["segments_after"]["out"]["revision"],
     )
     run("label_for_export", "label", video, 1, "--export-name", "Part One")
-    run("export_only", "export", video, "--only", "2", "--format", "mp4", "--no-manifest")
-    run("export_default", "export", video, "--overwrite")
-    run("export_conflict", "export", video)
-    run("export_bad_only", "export", video, "--only", "9", "--overwrite")
     run("propose", "propose", video, "--min-song-length", 2)
     run("propose_apply", "propose", video, "--min-song-length", 2, "--apply")
     run("propose_stale", "propose", video, "--min-song-length", 2, "--apply", "--base-revision", 0)
     run("segments_final", "segments", video)
     steps["table_final"] = table_step(root, "segments", video)
-    # file lists only (the manifest has a timestamp)
-    steps["exported_files"] = {"files": sorted(p.name for p in (root / "gig_split").iterdir())}
     return steps
 
 
@@ -196,17 +190,12 @@ async def mcp_session(root: Path) -> dict:
             "fresh_base_revision_ok", "label_segment", video="gig.mp4", segment=1, label="kept", base_revision=revision
         )
         await run("label_for_export", "label_segment", video="gig.mp4", segment=1, export_name="Part One")
-        await run("export_only", "export", video="gig.mp4", only=[2], manifest=False)
-        await run("export_default", "export", video="gig.mp4", overwrite=True)
-        await run("export_conflict", "export", video="gig.mp4")
-        await run("export_bad_only", "export", video="gig.mp4", only=[9], overwrite=True)
         await run("propose_preview", "propose_splits", video="gig.mp4", min_song_length=2.0)
         await run("propose_apply", "propose_splits", video="gig.mp4", min_song_length=2.0, apply=True)
         await run("propose_stale", "propose_splits", video="gig.mp4", min_song_length=2.0, apply=True, base_revision=0)
         await run("list_final", "list_segments", video="gig.mp4")
         await run("missing_video", "list_segments", video="nope.mp4")
         await run("outside_root", "list_segments", video="../secret.mp4")
-    steps["exported_files"] = {"files": sorted(p.name for p in (root / "gig_split").iterdir())}
     return steps
 
 

@@ -10,8 +10,8 @@ Modes
 -----
 `segments` (a recording): each included segment of the video's main track as its own file in `<video>_split/`, named
 by its export name, else its label made safe for a filename (`Song 2.mp4`), else the numbered default.
-Without render options a file is a stream copy (`precise` re-encodes for frame accuracy), exactly as the split
-export writes it. With a preset, size, fit or captions each segment is rendered as a one-clip timeline (its clip's crop,
+Without render options a file is a stream copy (`precise` re-encodes for frame accuracy). With `manifest`, a `manifest.json` (source, parameters, one
+entry per file) is written beside them when the export is queued. With a preset, size, fit or captions each segment is rendered as a one-clip timeline (its clip's crop,
 gain and colour kept) to `.mp4`. When the recording's timeline has a canvas (`Project.canvas`) and no size or preset
 is given, the canvas's preset is used, so the segments are rendered at the canvas (SPL-136); preset `original`
 opts out and keeps the stream copy.
@@ -37,6 +37,7 @@ import re
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, replace
+from datetime import datetime, timezone
 from typing import Any
 
 from split_video import captions, project, timeline_service, transcribe
@@ -46,8 +47,10 @@ from split_video.identity import LOCAL_PRINCIPAL, Principal
 from split_video.job_work import RENDER_STEPS, render_work
 from split_video.jobs import RENDER, JobCancelledError, JobContext, JobQueue
 from split_video.media_store import MediaStore
+from split_video.naming import build_manifest, manifest_text
 from split_video.presets import resolve_export
 from split_video.render_queue import MAX_BATCH, _info_of, batch_status
+from split_video.segments import Segment
 from split_video.split_model import main_track_index
 from split_video.store import ProjectStore
 from split_video.timeline import Clip, OutputExistsError, Project, TimelineError, Track
@@ -221,6 +224,7 @@ def _segments_items(
     output_format: str | None,
     options: RenderOptions,
     original: bool,
+    manifest: bool,
 ) -> list[_Item]:
     segments = project.current_segments(store, media, video)
     project.select_for_export(segments, only)  # validates `only`
@@ -240,6 +244,15 @@ def _segments_items(
         overwrite=True,
     )
     folder = _directory(media, output_dir, plan.output_dir)
+    if manifest:
+        data = build_manifest(
+            media.name(video),
+            [Segment(index=i + 1, start=a, end=b) for i, (a, b) in enumerate(plan.segments)],
+            plan.filenames,
+            {"precise": precise},
+            datetime.now(timezone.utc),
+        )
+        media.write_bytes(media.join(folder, "manifest.json"), manifest_text(data).encode())
     index = main_track_index(timeline)
     clips = [c for c in timeline.tracks[index].clips if c.kind == "media"] if index is not None else []
     items: list[_Item] = []
@@ -374,6 +387,7 @@ def submit_export(
     overwrite: bool = False,
     precise: bool = False,
     output_format: str | None = None,
+    manifest: bool = False,
     options: RenderOptions | None = None,
     principal: Principal | None = None,
 ) -> dict[str, Any]:
@@ -401,7 +415,7 @@ def submit_export(
         if video is None:
             raise ExportError("mode segments needs video (the recording whose segments are written)")
         items = _segments_items(
-            store, media, video, only, output_dir, overwrite, precise, output_format, options, original
+            store, media, video, only, output_dir, overwrite, precise, output_format, options, original, manifest
         )
     elif mode == "timeline":
         items = _timeline_items(store, media, video, project_name, output, output_dir, overwrite, options, original)

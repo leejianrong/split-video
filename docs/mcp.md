@@ -9,7 +9,7 @@ classify the audio, and export — without a browser or a running editor. It
 reads and writes the same project file, so a human can open the result in
 the visual editor afterward. Tools: `list_videos`, `list_segments`,
 `propose_splits`, `split_by_silence`, `add_asset_to_video`, `add_split`, `move_split`, `remove_split`, `label_segment`,
-`analyze_audio`, `export`. The `compose` commands above have matching tools:
+`analyze_audio`, `export_project`. The `compose` commands above have matching tools:
 `list_timelines`, `scan_library`, `list_assets`, `prepare_asset`, `transcribe_asset`, `get_transcript`, `transcript_range`, `transcript_search`, `analyze_scenes`, `get_scenes`, `get_frame`, `get_contact_sheet`, `create_timeline`, `show_timeline`, `add_clip_to_timeline`
 (a path or an asset id),
 `trim_timeline_clip`, `move_timeline_clip`, `remove_timeline_clip`,
@@ -42,7 +42,7 @@ see [Revisions](revisions.md).
 ## Splits are a timeline project
 
 `list_segments`, `propose_splits`, `add_split`, `move_split`, `remove_split`,
-`label_segment` and `export` keep their arguments and results. The splits are
+and `label_segment` keep their arguments and results. The splits are
 stored as the main track of the video's timeline project
 (`<video>.split-video-timeline.json`), one clip per segment, so the same recording
 can also be edited with the timeline tools. A legacy

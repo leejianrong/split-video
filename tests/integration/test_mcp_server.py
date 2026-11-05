@@ -73,7 +73,6 @@ async def test_exposes_the_documented_tools(root):
         "remove_split",
         "label_segment",
         "analyze_audio",
-        "export",
         "list_timelines",
         "list_assets",
         "scan_library",
@@ -166,22 +165,6 @@ async def test_paths_outside_the_root_are_refused(root, video):
 async def test_list_videos_refuses_to_climb_out_of_the_root(root):
     async with Client(create_server(root)) as client:
         assert "outside" in await call_error(client, "list_videos", directory="..")
-
-
-async def test_export_writes_included_segments_and_only_overrides(root):
-    async with Client(create_server(root)) as client:
-        await call(client, "propose_splits", video="gig.mp4", min_song_length=2, apply=True)
-        await call(client, "label_segment", video="gig.mp4", segment=2, included=False, export_name="Middle")
-
-        exported = await call(client, "export", video="gig.mp4")
-        assert exported["files"] == ["gig_split/01 - gig.mp4", "gig_split/02 - gig.mp4"]
-        assert exported["manifest"] == "gig_split/manifest.json"
-        assert all((root / f).exists() for f in exported["files"])
-
-        assert "already exist" in await call_error(client, "export", video="gig.mp4")
-
-        only = await call(client, "export", video="gig.mp4", only=[2], overwrite=True)
-    assert only["files"] == ["gig_split/Middle.mp4"]
 
 
 async def test_mcp_edits_are_visible_to_the_cli(root):

@@ -187,10 +187,8 @@ def test_a_valid_token_works_for_project_and_compose_flows(three_songs_clip, mon
     assert client.get("/api/v1/media/source", params={"path": name}).status_code == 200
     created = client.post("/api/v1/compose/projects", json={"name": "demo"})
     assert created.status_code == 200
-    export = client.post(
-        "/api/v1/export", params={"path": name}, json={"segments": [{"start": 0, "end": 4}, {"start": 8, "end": 12}]}
-    ).json()
-    job = _wait(client, export["job_id"])
+    export = client.post("/api/v1/compose/export", json={"mode": "segments", "video": name, "only": [1]}).json()
+    job = _wait(client, export["jobs"][0]["job_id"])
     assert job["state"] == "done" and job["owner"] == "token"
     assert [j["id"] for j in client.get("/api/v1/jobs").json()["jobs"]] == [job["id"]]
 
@@ -245,8 +243,6 @@ def test_a_principal_cannot_see_or_cancel_anothers_jobs(tmp_path):
     assert client.get(f"/api/v1/jobs/{a_job}", headers=_as("tok-a")).status_code == 200
 
     assert client.post(f"/api/v1/jobs/{a_job}/cancel", headers=_as("tok-b")).status_code == 404
-    assert client.post(f"/api/v1/export/{a_job}/cancel", headers=_as("tok-b")).status_code == 404
-    assert client.get(f"/api/v1/export/{a_job}", headers=_as("tok-b")).status_code == 404
     assert not jobs.status(a_job).cancel_requested  # B's attempts did nothing
 
     cancelled = client.post(f"/api/v1/jobs/{a_job}/cancel", headers=_as("tok-a"))
@@ -258,7 +254,7 @@ def test_a_principal_cannot_see_or_cancel_anothers_jobs(tmp_path):
 def test_the_per_kind_status_routes_are_owner_scoped(tmp_path):
     jobs = InProcessJobQueue()
     client = TestClient(create_app(tmp_path, DEFAULTS, jobs=jobs, authenticator=TwoUsers()))
-    kinds = {"export": "/api/v1/export/", "analysis": "/api/v1/analyze/", "render": "/api/v1/compose/render/"}
+    kinds = {"analysis": "/api/v1/analyze/", "render": "/api/v1/compose/render/"}
     for kind, prefix in kinds.items():
         job_id = jobs.submit(kind, lambda ctx: None, owner=A.id)
         jobs.wait(job_id, 5)
@@ -271,9 +267,9 @@ def test_the_per_kind_status_routes_are_owner_scoped(tmp_path):
 def test_jobs_started_through_the_api_record_the_caller_as_owner(three_songs_clip):
     app = create_app(three_songs_clip.parent, DEFAULTS, authenticator=TwoUsers())
     client = TestClient(app)
-    body = {"segments": [{"start": 0, "end": 4}]}
-    started = client.post("/api/v1/export", params={"path": three_songs_clip.name}, json=body, headers=_as("tok-a"))
-    job_id = started.json()["job_id"]
+    body = {"mode": "segments", "video": three_songs_clip.name}
+    started = client.post("/api/v1/compose/export", json=body, headers=_as("tok-a"))
+    job_id = started.json()["jobs"][0]["job_id"]
     assert _wait_as(client, job_id, "tok-a")["owner"] == "alice"
     assert client.get(f"/api/v1/jobs/{job_id}", headers=_as("tok-b")).status_code == 404
 
@@ -429,13 +425,9 @@ def test_a_token_user_gets_events_for_a_real_export_and_shutdown_is_prompt(three
         threading.Thread(target=listen, daemon=True).start()
         time.sleep(0.5)
         with httpx.Client(base_url=server.base, headers=AUTH, timeout=10) as http:
-            started = http.post(
-                "/api/v1/export",
-                params={"path": three_songs_clip.name},
-                json={"segments": [{"start": 0, "end": 4}]},
-            )
+            started = http.post("/api/v1/compose/export", json={"mode": "segments", "video": three_songs_clip.name})
             assert started.status_code == 200
-            job_id = started.json()["job_id"]
+            job_id = started.json()["jobs"][0]["job_id"]
             deadline = time.time() + 20
             while time.time() < deadline and not any(
                 f["event"] == "job" and f["data"]["job"]["id"] == job_id and f["data"]["job"]["state"] == "done"

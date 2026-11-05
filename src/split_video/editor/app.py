@@ -38,7 +38,6 @@ from split_video.editor.errors import (
     ERROR_RESPONSE,
     ApiError,
     ApiErrorOut,
-    api_error,
     api_error_handler,
     validation_error_handler,
 )
@@ -70,9 +69,6 @@ from split_video.editor.schemas import (
     ClassificationResponse,
     DetectRequest,
     DetectResponse,
-    ExportRequest,
-    ExportStartResponse,
-    ExportStatusResponse,
     OpenRequest,
     ProjectSaveRequest,
     RethresholdRequest,
@@ -95,11 +91,10 @@ from split_video.editor.video_timeline import make_router as make_video_timeline
 from split_video.editor.waveform import make_router as make_waveform_router
 from split_video.errors import RevisionConflictError
 from split_video.identity import LOCAL_PRINCIPAL, Principal
-from split_video.job_work import analysis_summary, analysis_work, export_work
+from split_video.job_work import analysis_summary, analysis_work
 from split_video.jobs import (
     ANALYSIS,
     DEFAULT_MAX_WORKERS,
-    EXPORT,
     PREVIEW_RANGE,
     RENDER,
     InProcessJobQueue,
@@ -111,7 +106,6 @@ from split_video.jobs import (
 from split_video.local_media_store import LocalMediaStore
 from split_video.local_store import LocalProjectStore
 from split_video.media_store import MediaNotFoundError, MediaOutsideRootError, MediaStore
-from split_video.project import ExportConflictError, ProjectError, plan_export
 from split_video.segments import Segment, compute_segments
 from split_video.silence import SilenceInterval
 from split_video.store import ProjectStore, SavedSegment
@@ -524,64 +518,6 @@ def create_app(
             request.padding,
         )
         return SegmentsResponse(segments=_segments_out(_to_saved(computed)))
-
-    @api.post("/export", response_model=ExportStartResponse)
-    def export(
-        request: ExportRequest, project: _ProjectState = project_dependency, ctx: RequestContext = context_dependency
-    ) -> ExportStartResponse:
-        media = ctx.media
-        try:
-            plan = plan_export(
-                media,
-                project.source,
-                [(s.start, s.end, s.name) for s in request.segments],
-                output_format=request.output_format,
-                overwrite=request.overwrite,
-            )
-        except ExportConflictError as exc:
-            raise api_error(409, exc)
-        except ProjectError as exc:
-            raise api_error(422, exc)
-
-        work = export_work(
-            media,
-            plan,
-            precise=request.precise,
-            output_format=request.output_format,
-            write_manifest_file=request.manifest,
-            parameters={
-                "min_silence_duration": defaults.min_silence_duration,
-                "min_song_length": defaults.min_song_length,
-                "silence_padding": defaults.padding,
-                "precise": request.precise,
-            },
-        )
-        job_id = jobs.submit(
-            EXPORT, work, label=media.name(project.source), total=len(plan.segments), owner=ctx.principal.id
-        )
-        return ExportStartResponse(job_id=job_id)
-
-    def _export_status(job: JobInfo) -> ExportStatusResponse:
-        summary = job.result or {}
-        return ExportStatusResponse(
-            status=_legacy_status(job),
-            completed=int(job.completed),
-            total=int(job.total),
-            current_file=job.message,
-            output_dir=summary.get("output_dir"),
-            manifest_path=summary.get("manifest_path"),
-            files=list(summary.get("files", [])),
-            error=_legacy_error(job),
-        )
-
-    @api.get("/export/{job_id}", response_model=ExportStatusResponse)
-    def export_status(job_id: str, ctx: RequestContext = context_dependency) -> ExportStatusResponse:
-        return _export_status(job_of_kind(jobs, job_id, EXPORT, ctx.principal))
-
-    @api.post("/export/{job_id}/cancel", response_model=ExportStatusResponse)
-    def export_cancel(job_id: str, ctx: RequestContext = context_dependency) -> ExportStatusResponse:
-        """Stop an export (the same as `POST /jobs/{job_id}/cancel`): files already written stay, the one in progress is removed."""
-        return _export_status(cancel_job(jobs, job_id, EXPORT, ctx.principal))
 
     api.include_router(make_jobs_router(jobs))
     api.include_router(make_compose_router(provider, jobs))

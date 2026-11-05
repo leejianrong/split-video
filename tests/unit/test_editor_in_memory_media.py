@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 from fastapi.testclient import TestClient
 
-from split_video import project
+from split_video import export_modes
 from split_video.editor import cache as cache_module
 from split_video.editor.app import create_app
 from split_video.editor.schemas import StateParams
@@ -95,26 +95,25 @@ def test_media_source_serves_ranges_from_open_read(client):
     assert client.get("/api/v1/media/file", params={"path": "nope.mp4"}).status_code == 404
 
 
-def test_export_job_writes_to_the_media_store(client, media, monkeypatch):
-    monkeypatch.setattr(project, "extract_segment", lambda *a, **k: None)
-    started = client.post(
-        "/api/v1/export",
+def test_export_writes_to_the_media_store(client, media, monkeypatch):
+    monkeypatch.setattr(export_modes, "extract_segment", lambda *a, **k: None)
+    client.post(
+        "/api/v1/project",
         params={"path": "gig.mp4"},
-        json={"segments": [{"start": 0, "end": 30, "name": None}, {"start": 30, "end": 60, "name": "Encore"}]},
+        json={"segments": [{"start": 0, "end": 30}, {"start": 30, "end": 60, "export_name": "Encore"}]},
     )
+    body = {"mode": "segments", "video": "gig.mp4", "manifest": True}
+    started = client.post("/api/v1/compose/export", json=body)
     assert started.status_code == 200
-    job = started.json()["job_id"]
     for _ in range(50):
-        status = client.get(f"/api/v1/export/{job}").json()
-        if status["status"] != "running":
+        status = client.get(f"/api/v1/compose/render-queue/{started.json()['batch_id']}").json()
+        if status["finished"]:
             break
         time.sleep(0.05)
-    assert status["status"] == "done" and status["output_dir"] == "memory:gig_split"
+    assert status["counts"]["done"] == 2
     assert media.exists("gig_split/Encore.mp4") and media.exists("gig_split/manifest.json")
-    again = client.post(
-        "/api/v1/export", params={"path": "gig.mp4"}, json={"segments": [{"start": 0, "end": 30, "name": "Encore"}]}
-    )
-    assert again.status_code == 409
+    again = client.post("/api/v1/compose/export", json=body).json()
+    assert again["counts"]["failed"] >= 1
 
 
 def test_compose_runs_against_the_media_store(client):

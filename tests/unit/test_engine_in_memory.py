@@ -5,7 +5,6 @@ caches) in an `InMemoryMediaStore`; only the ffmpeg calls themselves are
 replaced with fakes.
 """
 
-import json
 import struct
 
 import numpy as np
@@ -71,32 +70,6 @@ def test_split_project_edits_through_the_stores(media):
     project.save_segments(store, "gig.mp4", merged)
     assert len(project.current_segments(store, media, "gig.mp4")) == 1
     assert project.load_saved(store, "other.mp4").value is None
-
-
-def test_export_plans_and_writes_through_the_media_store(media, monkeypatch):
-    written_by_ffmpeg = []
-
-    def fake_extract(source, start, end, out_path, precise, output_format=None, cancel=None):
-        written_by_ffmpeg.append((source.name, start, end, out_path.name))
-
-    monkeypatch.setattr(project, "extract_segment", fake_extract)
-    plan = project.plan_export(media, "gig.mp4", [(0, 40, None), (40, 100, "Encore")])
-    assert plan.output_dir == "gig_split" and plan.filenames == ["01 - gig.mp4", "Encore.mp4"]
-
-    started, done = [], []
-    files, manifest = project.run_export(
-        media, plan, parameters={"precise": False}, on_file_start=started.append, on_file_done=done.append
-    )
-    assert files == done == ["gig_split/01 - gig.mp4", "gig_split/Encore.mp4"]
-    assert started == plan.filenames and manifest == "gig_split/manifest.json"
-    assert written_by_ffmpeg == [("gig.mp4", 0, 40, "01 - gig.mp4"), ("gig.mp4", 40, 100, "Encore.mp4")]
-    assert all(media.exists(f) for f in files)  # committed to the store
-    data = json.loads(media.read(manifest))
-    assert data["source_file"] == "gig.mp4" and [s["file"] for s in data["segments"]] == plan.filenames
-
-    with pytest.raises(project.ExportConflictError):
-        project.plan_export(media, "gig.mp4", [(0, 40, None), (40, 100, "Encore")])
-    project.plan_export(media, "gig.mp4", [(0, 40, None), (40, 100, "Encore")], overwrite=True)
 
 
 def test_propose_segments_uses_the_silence_cache(media, monkeypatch):

@@ -94,10 +94,10 @@ export function createExportModal({ modalEl, overlayEl, openBtn }) {
     let jobId;
     try {
       const res = await api.startExport({
-        segments: segments.map((s) => ({ start: s.start, end: s.end, name: s.exportName || null })),
+        only: segments.map((s) => s.index),
         precise,
       });
-      jobId = res.job_id;
+      jobId = res.batch_id;
     } catch (err) {
       box.innerHTML = `<p class="error">Export failed: ${err.message}</p>`;
       overlayEl.classList.add("hidden");
@@ -117,20 +117,20 @@ export function createExportModal({ modalEl, overlayEl, openBtn }) {
         return;
       }
 
-      if (status.status === "running") {
-        const current = status.current_file ? `: ${status.current_file}` : "";
+      const { total, counts } = status;
+      if (!status.finished) {
+        const done = counts.done + counts.failed + counts.cancelled;
         box.innerHTML = `
-          <p>Extracting ${status.completed} / ${status.total}${current}</p>
-          <progress max="${status.total}" value="${status.completed}"></progress>
+          <p>Extracting ${done} / ${total}</p>
+          <progress max="${total}" value="${done}"></progress>
         `;
         await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
         continue;
       }
 
-      if (status.status === "done") {
-        const fileCount = status.files ? status.files.length : status.total;
+      if (counts.done === total) {
         box.innerHTML = `
-          <p>Done — wrote ${fileCount} file(s) to <code>${status.output_dir}</code></p>
+          <p>Done — wrote ${total} file(s)</p>
           <div class="modal-actions">
             <button class="btn btn-primary" id="export-close-btn">Close</button>
           </div>
@@ -142,8 +142,8 @@ export function createExportModal({ modalEl, overlayEl, openBtn }) {
         return;
       }
 
-      // status.status === "error"
-      box.innerHTML = `<p class="error">Export failed: ${status.error || "unknown error"}</p>`;
+      const failed = status.jobs.find((j) => j.error);
+      box.innerHTML = `<p class="error">Export failed: ${failed ? failed.error.message : "cancelled"}</p>`;
       overlayEl.classList.add("hidden");
       return;
     }

@@ -1,5 +1,6 @@
 """Export modes on the in-memory stores, with ffmpeg replaced by fakes (SPL-117)."""
 
+import json
 import threading
 import time
 from dataclasses import replace
@@ -114,6 +115,21 @@ def test_segments_write_the_included_segments_named_by_export_name_or_label(stor
     assert names[2] == "03 - gig.mp4"
     assert sorted(fakes.copies) == [(0.0, 10.0), (10.0, 20.0), (30.0, 40.0)]  # two at a time: any order
     assert media.exists("gig_split/" + names[1])
+
+
+def test_segments_manifest_lists_the_chosen_files_only_when_asked(store, media, jobs, fakes):
+    _wait(jobs, export_modes.submit_export(jobs, store, media, "segments", video="gig.mp4", only=[2, 4]))
+    assert not media.exists("gig_split/manifest.json")
+    batch = export_modes.submit_export(
+        jobs, store, media, "segments", video="gig.mp4", only=[2, 4], overwrite=True, manifest=True
+    )
+    _wait(jobs, batch)
+    data = json.loads(media.read("gig_split/manifest.json"))
+    assert data["source_file"] == "gig.mp4" and data["parameters"] == {"precise": False}
+    assert [(s["index"], s["file"], s["start"]) for s in data["segments"]] == [
+        (1, "the-song.mp4", 10.0),
+        (2, "02 - gig.mp4", 30.0),
+    ]
 
 
 def test_segments_labels_become_safe_distinct_file_names(media, jobs, fakes):

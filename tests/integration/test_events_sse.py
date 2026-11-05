@@ -263,18 +263,17 @@ def test_job_progress_arrives_in_order_over_sse(live):
 def test_a_real_export_streams_progress_then_done(live, three_songs_clip):
     server = live(root=three_songs_clip.parent)
     stream = server.stream()
-    segments = [{"start": i * 5.0, "end": i * 5.0 + 4.0} for i in range(3)]
     job_id = server.http.post(
-        "/api/v1/export", params={"path": three_songs_clip.name}, json={"segments": segments}
-    ).json()["job_id"]
+        "/api/v1/compose/export", json={"mode": "segments", "video": three_songs_clip.name}
+    ).json()["jobs"][0]["job_id"]
     frames = stream.until(
         lambda f: f["data"].get("type") == "state" and f["data"]["job"]["state"] == "done", 30, name="job"
     )
     events = [e for e in _jobs_of(frames) if e["job"]["id"] == job_id]
     types = [e["type"] for e in events]
     assert types[0] == "submitted" and types[-1] == "state"
-    assert any(e["type"] == "progress" and e["job"]["completed"] == 3 for e in events)
-    assert events[-1]["job"]["result"]["manifest_path"].endswith("manifest.json")
+    assert any(e["type"] == "progress" for e in events)
+    assert events[-1]["job"]["kind"] == "render" and events[-1]["job"]["result"]["output"]
 
 
 def test_progress_is_throttled_but_the_last_one_always_arrives(live):
@@ -681,10 +680,9 @@ def test_shutdown_ends_open_streams_promptly(live):
 def test_polling_endpoints_are_unchanged_while_streaming(live, three_songs_clip):
     server = live(root=three_songs_clip.parent)
     server.stream()
-    job_id = server.http.post(
-        "/api/v1/export", params={"path": three_songs_clip.name}, json={"segments": [{"start": 0.0, "end": 4.0}]}
-    ).json()["job_id"]
-    _wait_for(lambda: server.http.get(f"/api/v1/export/{job_id}").json()["status"] == "done", 30)
+    batch = server.http.post("/api/v1/compose/export", json={"mode": "segments", "video": three_songs_clip.name}).json()
+    job_id = batch["jobs"][0]["job_id"]
+    _wait_for(lambda: server.http.get(f"/api/v1/compose/render-queue/{batch['batch_id']}").json()["finished"], 30)
     assert server.http.get(f"/api/v1/jobs/{job_id}").json()["state"] == "done"
     assert server.http.get("/api/v1/state", params={"path": three_songs_clip.name}).status_code == 200
 

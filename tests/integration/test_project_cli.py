@@ -71,27 +71,6 @@ def test_bad_input_exits_nonzero_with_a_message(three_songs_clip):
     assert run("add-split", three_songs_clip, "--at", "nonsense").exit_code != 0
 
 
-def test_export_writes_included_segments_and_only_overrides(three_songs_clip):
-    run_json("propose", three_songs_clip, "--min-song-length", 2, "--apply")
-    run_json("label", three_songs_clip, 2, "--exclude", "--export-name", "Middle")
-
-    body = run_json("export", three_songs_clip)
-    names = sorted(p.rsplit("/", 1)[-1] for p in body["files"])
-    assert names == ["01 - three_songs.mp4", "02 - three_songs.mp4"]
-    assert body["manifest"].endswith("manifest.json")
-
-    # Re-running without --overwrite refuses to clobber.
-    assert run("export", three_songs_clip).exit_code == 1
-
-    only = run_json("export", three_songs_clip, "--only", 2, "--overwrite")
-    assert [p.rsplit("/", 1)[-1] for p in only["files"]] == ["Middle.mp4"]
-
-
-def test_export_rejects_a_malformed_or_unknown_only(three_songs_clip):
-    assert run("export", three_songs_clip, "--only", "a,b").exit_code != 0
-    assert run("export", three_songs_clip, "--only", 9).exit_code == 1
-
-
 def test_cli_edits_are_visible_to_the_editor_api(three_songs_clip):
     """The CLI and the browser editor share one sidecar file."""
     run_json("add-split", three_songs_clip, "--at", 8)

@@ -91,6 +91,8 @@ def _check_segments(ws):
     assert sorted(p.name for p in folder.glob("*.mp4")) == sorted(["Opener.mp4", "the-song.mp4"])
     for p in folder.glob("*.mp4"):
         assert probe_media(p).duration == pytest.approx(4.0, abs=0.5)
+    manifest = json.loads((folder / "manifest.json").read_text())
+    assert [m["file"] for m in manifest["segments"]] == ["Opener.mp4", "the-song.mp4"]
 
 
 def _check_shorts(ws):
@@ -126,7 +128,7 @@ HIGHLIGHTS = {"mode": "highlights", "timelines": ["short1", "short2", "orphan"]}
 
 def test_http_all_three_modes(ws):
     with TestClient(create_app(ws, DEFAULTS, render_concurrency=2)) as client:
-        started = client.post("/api/v1/compose/export", json={"mode": "segments", "video": "gig.mp4"})
+        started = client.post("/api/v1/compose/export", json={"mode": "segments", "video": "gig.mp4", "manifest": True})
         assert started.status_code == 200, started.text
         assert started.json()["mode"] == "segments" and started.json()["total"] == 2
         assert _poll(client, started.json()["batch_id"])["counts"]["done"] == 2
@@ -156,7 +158,7 @@ def test_http_all_three_modes(ws):
 
 def test_cli_modes_share_the_api_shape(ws):
     base = ["compose", "export", "--root", str(ws), "--json"]
-    seg = RUNNER.invoke(app, [*base, "segments", "--video", "gig.mp4"])
+    seg = RUNNER.invoke(app, [*base, "segments", "--video", "gig.mp4", "--manifest"])
     assert seg.exit_code == 0, seg.output
     status = json.loads(seg.output)
     assert status["mode"] == "segments" and status["counts"]["done"] == 2 and status["finished"] is True
@@ -188,7 +190,7 @@ async def test_mcp_modes(ws):
                 status = (await mcp.call_tool("render_queue_status", batch)).structured_content
             return started.structured_content["mode"], status
 
-        mode, status = await finish({"mode": "segments", "video": "gig.mp4"})
+        mode, status = await finish({"mode": "segments", "video": "gig.mp4", "manifest": True})
         assert mode == "segments" and status["counts"]["done"] == 2
         _check_segments(ws)
         mode, status = await finish({"mode": "highlights", "timelines": ["short1", "short2", "orphan"]})

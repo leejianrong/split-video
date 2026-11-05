@@ -300,6 +300,7 @@ class ExportRequest(RenderRequest):
     output_dir: str | None = None  # a folder in the root; default <video>_split for segments, else beside the video
     precise: bool = False  # segments without render options: re-encode for frame-accurate cuts
     output_format: str | None = None  # segments without render options: force a container/codec
+    manifest: bool = False  # segments: also write manifest.json beside the files
 
 
 class RenderQueueOut(BaseModel):
@@ -806,6 +807,7 @@ def make_router(provider: StoreProvider, jobs: JobQueue) -> APIRouter:
                     overwrite=request.overwrite,
                     precise=request.precise,
                     output_format=request.output_format,
+                    manifest=request.manifest,
                     options=options,
                     principal=ctx.principal,
                 )
