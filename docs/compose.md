@@ -59,7 +59,7 @@ encoder and lower quality, for quick review renders). All are mp4 with H.264/AAC
 (or `--json`) shows every setting. Precedence for the frame size is `--size` over `--preset` over the first clip's,
 and without a preset renders are as before. When a clip's aspect differs from the frame, `--fit letterbox` (default)
 scales it to fit and pads with black bars, `--fit crop` scales it to cover the frame and cuts the overflow, centered; a
-clip with its own `compose crop` region keeps that crop either way. The same options are `preset` and `fit` on
+clip with its own `compose crop` region keeps that crop either way. A clip can override the choice for itself with `compose set <project> <clip> --fit letterbox|crop|default` (also `fit` on `set_timeline_clip` and the `set_clip_properties` op). The same options are `preset` and `fit` on
 `POST /api/v1/compose/projects/{name}/render` (list: `GET /api/v1/presets`) and on the MCP tool `render_timeline`
 (list: `list_export_presets`). Presets are about how to export, so they are not part of an edit plan.
 
@@ -145,7 +145,7 @@ a cache hit takes under a millisecond in the engine.
 
 `tests/unit/test_golden_frames.py` (harness in `tests/unit/golden.py`) renders a small project per feature, exports
 it, and compares the preview's frame with the export's frame at the same time and size. Fixtures are made with ffmpeg
-`lavfi` at test time. Cases: overlay (position, scale, opacity), cross-fade (before, during, after), colour grade and
+`lavfi` at test time. Cases: overlay (position, scale, opacity), a clip with its own fit, a placed main-track clip, cross-fade (before, during, after), colour grade and
 title text. A case passes when the mean absolute difference per channel and the share of samples off by more than 24 are
 under its `Tolerance`, and, for moving footage, the frame is 3 times closer than the export's frame 0.2 s later.
 
@@ -213,7 +213,14 @@ made the file format version 3: a version 1 or 2 file migrates on load (no canva
 and no size uses the canvas's preset (`youtube-1080p`, `vertical-1080`, `square-1080`); a project that never chose one
 keeps the first clip's size. Switching keeps every clip. `show`, `GET /api/v1/compose/projects/{name}` and MCP
 `show_timeline` return `canvas: {ratio, preset, needs_reframe}`, where `needs_reframe` lists the main-track clips whose
-picture (after their crop) is not the canvas's shape, so the export letterboxes or crops them (per-clip fit is SPL-122).
+picture (after their crop) is not the canvas's shape and that have no `fit` of their own, so the export letterboxes or
+crops them as it is told to.
+
+**Per-clip fit and main-track placement (format version 4).** A media clip's optional `fit` (`letterbox` or `crop`;
+absent is `default`, the render's fit) is saved only when set. The main track now honours `x`, `y`, `scale` and
+`opacity` like an overlay does: the fitted picture is scaled by `scale`, centred on (`x`, `y`) and faded over black.
+These four were stored but ignored there, so the version 3 to 4 migration resets them to neutral on main-track media
+clips; nothing drawn before changes. A build that only knows version 3 ignores `fit` and writes version 3 back.
 
 Other commands: `list`, `assets`, `migrate`, `trim`, `move` (reorder the main track), `place`
 (move a clip in time or to another track), `remove`, `remove-track`,

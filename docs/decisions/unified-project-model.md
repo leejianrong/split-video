@@ -10,7 +10,7 @@ arguments, errors and output shapes; they now read and write a timeline project.
   (adds `label`, `color`, `included`, `export_name`), plus `revision` and `source_file`. Written only through
   `ProjectStore.save_split/update_split`. The file holds no export settings and no analysis references: export
   options are per call, and analysis lives in `.split-video-cache/` keyed by asset id, so there is nothing else to carry.
-- Timeline project: `<name>.split-video-timeline.json` (tracks, clips), format version 3 (3 adds the optional project `canvas`; older files migrate on load).
+- Timeline project: `<name>.split-video-timeline.json` (tracks, clips), format version 4 (3 adds the optional project `canvas`, 4 the optional clip `fit` and main-track placement; older files migrate on load).
 
 ## Data mapping
 

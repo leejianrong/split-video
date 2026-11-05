@@ -41,3 +41,24 @@ test('inspector: an out of range value is refused with a message and nothing is 
   );
   expect((await timeline(app)).revision).toBe(before);
 });
+
+test('inspector: a main-track clip takes its own fit and scale, and keeps them after a reload', async ({
+  page,
+  app,
+}) => {
+  await openEditor(page, app);
+  await page.getByTestId('clip').first().click();
+  await page.getByLabel('Canvas fit').selectOption('crop');
+  await expect
+    .poll(async () => (await timeline(app)).tracks[0]!.clips[0]!.fit, { timeout: 15_000 })
+    .toBe('crop');
+
+  await page.getByRole('slider', { name: 'Scale' }).fill('0.5');
+  await expect
+    .poll(async () => (await timeline(app)).tracks[0]!.clips[0]!.scale, { timeout: 15_000 })
+    .toBeCloseTo(0.5, 2);
+
+  await page.reload();
+  await page.getByTestId('clip').first().click();
+  await expect(page.getByLabel('Canvas fit')).toHaveValue('crop');
+});

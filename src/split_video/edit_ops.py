@@ -56,7 +56,7 @@ from split_video.edit_plan import (
 )
 from split_video.media_store import MediaStore
 from split_video.store import ProjectStore
-from split_video.timeline import TRACK_KINDS, Project, TimelineError
+from split_video.timeline import CLIP_FITS, TRACK_KINDS, Project, TimelineError
 
 SCHEMA_VERSION = 1
 SCHEMA_ID = "urn:split-video:edit-ops:1"
@@ -112,6 +112,13 @@ _PROPERTY_FIELDS = tuple(
         "crop",
         nullable=True,
         description=next(f for f in CLIP_FIELDS if f.name == "crop").description + " `null` removes the crop.",
+    ),
+    Field(
+        "fit",
+        "string",
+        "How the picture fills the frame when its shape differs: `letterbox` (bars), `crop` (cover, cut the overflow) "
+        "or `default` (the export's fit).",
+        enum=CLIP_FITS,
     ),
 )
 _TEXT_FIELDS = (
@@ -198,7 +205,7 @@ OPS: dict[str, OpSpec] = {
         ),
         _spec(
             "set_clip_properties",
-            "Change gain, mute, overlay placement, colour or crop of a clip (`timeline_service.set_clip_properties`).",
+            "Change gain, mute, placement, colour, crop or canvas fit of a clip (`timeline_service.set_clip_properties`).",
             _ref("clip"),
             *_PROPERTY_FIELDS,
             any_of=tuple(f.name for f in _PROPERTY_FIELDS),
@@ -580,6 +587,11 @@ _RULES: dict[str, tuple[str, str | None, str]] = {
         "plan.clip.field_not_applicable",
         "crop",
         "only media clips on video tracks have a picture to crop",
+    ),
+    "fit_not_applicable": (
+        "plan.clip.field_not_applicable",
+        "fit",
+        "only media clips on video tracks have a picture to fit",
     ),
     "not_text_clip": ("ops.clip.not_text", "clip", "only clips created by add_text_clip have text properties"),
     "last_video_track": ("ops.track.last_video", "track", "a project keeps at least one video track"),

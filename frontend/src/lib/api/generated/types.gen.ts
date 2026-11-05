@@ -584,6 +584,10 @@ export type ClipOut = {
      */
     end: number;
     /**
+     * Fit
+     */
+    fit?: string;
+    /**
      * Font Size
      */
     font_size: number;
@@ -2085,6 +2089,10 @@ export type PropertiesRequest = {
      */
     contrast?: number | null;
     crop?: CropBox | null;
+    /**
+     * Fit
+     */
+    fit?: string | null;
     /**
      * Gain
      */

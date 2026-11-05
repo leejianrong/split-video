@@ -446,21 +446,24 @@ def set_cmd(
     track: int | None = _Track,
     gain: float | None = typer.Option(None, "--gain", help="Volume multiplier, 0..4 (1 = unchanged)."),
     mute: bool | None = typer.Option(None, "--mute/--unmute", help="Silence the clip's audio."),
-    x: float | None = typer.Option(None, "--x", help="Overlay centre, 0..1 across the frame."),
-    y: float | None = typer.Option(None, "--y", help="Overlay centre, 0..1 down the frame."),
-    scale: float | None = typer.Option(None, "--scale", help="Overlay width as a fraction of the frame, 0.05..4."),
+    x: float | None = typer.Option(None, "--x", help="Centre, 0..1 across the frame."),
+    y: float | None = typer.Option(None, "--y", help="Centre, 0..1 down the frame."),
+    scale: float | None = typer.Option(
+        None, "--scale", help="Overlay width as a fraction of the frame (main track: of the fitted picture), 0.05..4."
+    ),
     opacity: float | None = typer.Option(None, "--opacity", help="0..1."),
     brightness: float | None = typer.Option(None, "--brightness", help="-1..1 (0 = unchanged)."),
     contrast: float | None = typer.Option(None, "--contrast", help="0..3 (1 = unchanged)."),
     saturation: float | None = typer.Option(None, "--saturation", help="0..3 (1 = unchanged, 0 = greyscale)."),
+    fit: str | None = typer.Option(None, "--fit", help="letterbox, crop, or default (the export's fit)."),
     base_revision: int | None = _BaseRevision,
     root: Path = _Root,
     as_json: bool = _Json,
 ) -> None:
-    """Set a clip's volume, overlay placement or colour adjustment."""
+    """Set a clip's volume, placement, colour adjustment or canvas fit."""
     values = {
         "gain": gain, "muted": mute, "x": x, "y": y, "scale": scale, "opacity": opacity,
-        "brightness": brightness, "contrast": contrast, "saturation": saturation,
+        "brightness": brightness, "contrast": contrast, "saturation": saturation, "fit": fit,
     }  # fmt: skip
     changes = {k: v for k, v in values.items() if v is not None}
     if not changes:

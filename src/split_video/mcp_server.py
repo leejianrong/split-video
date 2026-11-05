@@ -1434,15 +1434,18 @@ def create_server(
         brightness: float | None = None,
         contrast: float | None = None,
         saturation: float | None = None,
+        fit: str | None = None,
         base_revision: int | None = None,
     ) -> dict[str, Any]:
         """Set properties of clip number `clip` on `track` (default the main video track): volume
-        `gain` (0..4, 1 = unchanged) and `muted`; for overlay clips `x`/`y` (centre, 0..1 of the frame),
-        `scale` (width as a fraction of the frame, 0.05..4) and `opacity` (0..1); colour `brightness`
-        (-1..1), `contrast` and `saturation` (0..3, 1 = unchanged). Only the values you pass change. `base_revision` (optional): fail with revision_conflict instead of editing if the timeline has changed since that revision."""
+        `gain` (0..4, 1 = unchanged) and `muted`; `x`/`y` (centre, 0..1 of the frame), `scale` (an overlay's
+        width as a fraction of the frame, a main-track clip's size relative to its fitted picture; 0.05..4)
+        and `opacity` (0..1); colour `brightness`
+        (-1..1), `contrast` and `saturation` (0..3, 1 = unchanged); `fit` (`letterbox`, `crop` to fill, or
+        `default` for the export's fit). Only the values you pass change. `base_revision` (optional): fail with revision_conflict instead of editing if the timeline has changed since that revision."""
         values = {
             "gain": gain, "muted": muted, "x": x, "y": y, "scale": scale, "opacity": opacity,
-            "brightness": brightness, "contrast": contrast, "saturation": saturation,
+            "brightness": brightness, "contrast": contrast, "saturation": saturation, "fit": fit,
         }  # fmt: skip
         changes = {k: v for k, v in values.items() if v is not None}
         if not changes:

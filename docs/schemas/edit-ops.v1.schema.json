@@ -378,11 +378,16 @@
               "required": [
                 "crop"
               ]
+            },
+            {
+              "required": [
+                "fit"
+              ]
             }
           ]
         }
       ],
-      "description": "Change gain, mute, overlay placement, colour or crop of a clip (`timeline_service.set_clip_properties`).",
+      "description": "Change gain, mute, placement, colour, crop or canvas fit of a clip (`timeline_service.set_clip_properties`).",
       "properties": {
         "brightness": {
           "description": "Brightness adjustment (ffmpeg `eq`).",
@@ -431,6 +436,15 @@
             "object",
             "null"
           ]
+        },
+        "fit": {
+          "description": "How the picture fills the frame when its shape differs: `letterbox` (bars), `crop` (cover, cut the overflow) or `default` (the export's fit).",
+          "enum": [
+            "default",
+            "letterbox",
+            "crop"
+          ],
+          "type": "string"
         },
         "gain": {
           "description": "Volume multiplier.",

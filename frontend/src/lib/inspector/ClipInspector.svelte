@@ -41,7 +41,6 @@
   const allOverlay = $derived(
     entries.every((e) => e.track.kind === 'video' && !e.track.magnetic && e.clip.kind !== 'text'),
   );
-  const onMain = $derived(first.track.kind === 'video' && first.track.magnetic);
   const locked = $derived(entries.some((e) => e.track.locked));
 
   type TabId = 'video' | 'audio' | 'speed' | 'crop' | 'captions';
@@ -122,8 +121,14 @@
       clip.scale !== 1 ||
       clip.x !== 0.5 ||
       clip.y !== 0.5 ||
+      (clip.fit ?? 'default') !== 'default' ||
       crop !== null,
   );
+  const FIT_OPTIONS = [
+    { value: 'default', label: 'Export setting' },
+    { value: 'crop', label: 'Crop to fill' },
+    { value: 'letterbox', label: 'Letterbox' },
+  ];
   const POSITIONS = [
     { value: 'top', label: 'Top' },
     { value: 'middle', label: 'Middle' },
@@ -204,19 +209,14 @@
             {#if !many}
               <Select
                 label="Canvas fit"
-                value="letterbox"
-                disabled
-                options={[{ value: 'letterbox', label: 'Letterbox' }]}
+                value={clip.fit ?? 'default'}
+                disabled={locked}
+                options={FIT_OPTIONS}
+                onchange={(e) => void setProps({ fit: e.currentTarget.value }, 'Canvas fit')}
               />
               <p class="hint">
-                Arrives with a per-clip fit edit. The export's fit (Crop to fill or Letterbox)
-                applies to every clip for now.
-              </p>
-            {/if}
-            {#if onMain}
-              <p class="hint" data-testid="main-note">
-                Position, scale and opacity apply to clips on an overlay lane; clips on the main
-                track fill the frame. Use Crop to reframe this clip.
+                How a picture of another shape fills the frame. "Export setting" follows the Export
+                dialog; Crop to fill and Letterbox override it for this clip.
               </p>
             {/if}
             <ClipSlider
@@ -226,7 +226,7 @@
               max={4}
               step={0.05}
               format={percent}
-              disabled={locked || onMain}
+              disabled={locked}
               oncommit={(v) => void setProps({ scale: v }, 'Scale')}
             />
             <div class="row">
@@ -236,7 +236,7 @@
                 rule={cropRule('Position X')}
                 toDisplay={(v) => v * 100}
                 fromDisplay={(v) => v / 100}
-                disabled={locked || onMain}
+                disabled={locked}
                 oncommit={(v) => void setProps({ x: v }, 'Position')}
               />
               <NumberField
@@ -245,7 +245,7 @@
                 rule={cropRule('Position Y')}
                 toDisplay={(v) => v * 100}
                 fromDisplay={(v) => v / 100}
-                disabled={locked || onMain}
+                disabled={locked}
                 oncommit={(v) => void setProps({ y: v }, 'Position')}
               />
             </div>
@@ -256,7 +256,7 @@
               max={1}
               step={0.05}
               format={percent}
-              disabled={locked || onMain}
+              disabled={locked}
               oncommit={(v) => void setProps({ opacity: v }, 'Opacity')}
             />
             {#if !many}

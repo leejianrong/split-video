@@ -112,7 +112,7 @@ clip ranges of the [plan](edit-plan.md#clip).
 | `move_clip` | `clip`, `to_index` | Move a clip within its magnetic track. |
 | `remove_clip` | `clip` | Remove a clip (the file is untouched). |
 | `set_transition` | `clip`, `transition` (`cut`/`crossfade`), `duration` | Set how the clip joins the one before it. A request that cannot be honoured is an error, not clamped. |
-| `set_clip_properties` | `clip`, any of `gain`, `muted`, `x`, `y`, `scale`, `opacity`, `brightness`, `contrast`, `saturation`, `crop` (at least one) | Change volume, overlay placement, colour or crop. Only the fields you give change. `crop` is `{"x","y","w","h"}` (fractions of the source frame, see edit-plan.md) or `null` to remove it. |
+| `set_clip_properties` | `clip`, any of `gain`, `muted`, `x`, `y`, `scale`, `opacity`, `brightness`, `contrast`, `saturation`, `crop`, `fit` (at least one) | Change volume, placement, colour, crop or canvas fit. `x`, `y`, `scale` and `opacity` apply on the main track too (the fitted picture is scaled, moved and faded on black). `fit` is `letterbox`, `crop` (cover the frame, cut the overflow) or `default` (the render's own `fit`); a clip with its own fit is not in `canvas.needs_reframe`. Only the fields you give change. `crop` is `{"x","y","w","h"}` (fractions of the source frame, see edit-plan.md) or `null` to remove it. |
 | `add_text_clip` | `id`, `track` (required), `text`, `duration` (both required), `start`, `font_size`, `color`, `x`, `y` | Add a title to a non-magnetic video track. |
 | `set_text_properties` | `clip`, any of `text`, `font_size`, `color` (at least one) | Change a title. |
 | `add_track` | `id`, `kind` (`video`/`audio`, required), `magnetic` | Append an empty track on top of the stack (free unless `magnetic`). |

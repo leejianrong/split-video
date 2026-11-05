@@ -27,6 +27,7 @@ SOURCES = {
     "a": W + "geq=r='128+100*sin(2*PI*(X/W+T/3))':g='X*255/W':b='Y*255/H'",
     "b": W + "geq=r='Y*255/H':g='128+100*sin(2*PI*(Y/H+T/3))':b='255-X*255/W'",
     "bars": "smptebars=size=320x180:rate=30:duration=3",
+    "box": "smptebars=size=320x240:rate=30:duration=3",  # 4:3, so a 16:9 frame has to letterbox or crop it
     "flat": "color=c=0xC83C28:s=640x360:r=30:d=3",  # (200, 60, 40)
     "blue": "color=c=0x2850C8:s=320x180:r=30:d=3",  # (40, 80, 200)
     "black": "color=c=black:s=640x360:r=30:d=3",
@@ -76,6 +77,21 @@ def title(media, text="Golden 123", y=0.5, font_size=0.15):
     return p
 
 
+def own_fit(media, fit="crop"):
+    """SPL-122: a 4:3 clip with its own fit, after a 16:9 one that sets the frame (bars at the sides, or filled)."""
+    p = empty_project()
+    p, _ = _clip(media, p, p.tracks[0].id, "a", 1.0)
+    p, clip = _clip(media, p, p.tracks[0].id, "box", 2.0)
+    return ops.set_clip_properties(p, clip.id, fit=fit)
+
+
+def main_placed(media, x=0.35, y=0.4, scale=0.6, opacity=0.7):
+    """SPL-122: the main track's clip scaled, moved and faded on the black frame."""
+    p = empty_project()
+    p, clip = _clip(media, p, p.tracks[0].id, "a", 3.0)
+    return ops.set_clip_properties(p, clip.id, x=x, y=y, scale=scale, opacity=opacity)
+
+
 # Measured on ffmpeg 4.4 (docs/compose.md has the numbers): the limits sit between the worst good frame and the
 # smallest mutation below. The mean catches colour and opacity, the share of bad samples catches small moves and text.
 CASES = {
@@ -84,6 +100,8 @@ CASES = {
     "crossfade": (crossfade, [0.5, 1.5, 2.0, 2.5], Tolerance(mean=2.5, share=0.006, separation=3)),
     "grade": (grade, [0.0, 1.5, 2.9], Tolerance(mean=2.5, share=0.006, separation=3)),
     "title": (title, [0.2, 1.0, 2.4], Tolerance(mean=2.0, share=0.0015)),
+    "own_fit": (own_fit, [0.5, 1.5, 2.5], Tolerance(mean=2.5, share=0.006)),  # static bars: no separation
+    "main_placed": (main_placed, [0.25, 1.0, 2.5], Tolerance(mean=2.5, share=0.006, separation=3)),
 }
 POINTS = [(name, at) for name, (_, times, _) in CASES.items() for at in times]
 
@@ -134,6 +152,10 @@ MUTATIONS = [
     ("grade", "contrast 1.4 to 1.3", 1.5, {"contrast": 1.3}),
     ("grade", "saturation 0.6 to 0.7", 1.5, {"saturation": 0.7}),
     ("grade", "brightness 0.1 to 0.13", 1.5, {"brightness": 0.13}),
+    ("own_fit", "crop to letterbox", 2.0, {"fit": "letterbox"}),
+    ("main_placed", "moved 17 px", 1.0, {"x": 0.385}),
+    ("main_placed", "opacity 0.7 to 0.55", 1.0, {"opacity": 0.55}),
+    ("main_placed", "scale 0.6 to 0.65", 1.0, {"scale": 0.65}),
     ("title", "other text", 1.0, {"text": "Golden 124"}),
     ("title", "moved 6 px", 1.0, {"y": 0.52}),
     ("title", "font 0.15 to 0.16", 1.0, {"font_size": 0.16}),
@@ -168,7 +190,16 @@ def test_pinned_colours_do_not_drift_in_either_renderer(media):
     graded, clip = _clip(media, graded, graded.tracks[0].id, "flat", 3.0)
     graded = ops.set_clip_properties(graded, clip.id, contrast=1.3, saturation=0.5)
     # (project, where, the colour there): the main clip alone, the overlay half over it, and a graded clip
-    pins = [(p, (0.05, 0.05), (200, 60, 40)), (p, (0.5, 0.5), (120, 70, 120)), (graded, (0.5, 0.5), GRADED)]
+    placed = empty_project()
+    placed, clip = _clip(media, placed, placed.tracks[0].id, "flat", 3.0)
+    placed = ops.set_clip_properties(placed, clip.id, scale=0.5, opacity=0.5)  # SPL-122: half size, half faded
+    pins = [
+        (p, (0.05, 0.05), (200, 60, 40)),
+        (p, (0.5, 0.5), (120, 70, 120)),
+        (graded, (0.5, 0.5), GRADED),
+        (placed, (0.5, 0.5), (100, 30, 20)),
+        (placed, (0.05, 0.05), (0, 0, 0)),
+    ]
     for i, (project, (fx, fy), want) in enumerate(pins):
         export(project, media, f"pin{i}.mp4")
         shown = decode(preview_frame(project, media, 1.0, width=SIZE[0], format="png", source="original").data)[2]
@@ -254,3 +285,17 @@ def test_an_export_without_a_preset_follows_the_project_canvas(media, capsys):
     assert not tol.failures(m), (m, tol.failures(m))
     shown = preview_frame(project, media, 1.0, format="png", source="original")  # no preset: the canvas's
     assert shown.width < shown.height
+
+
+def test_a_clip_with_its_own_fit_renders_differently_from_the_export_default(media):
+    """SPL-122: the export's fit is letterbox here; one clip asking for crop fills the frame instead of leaving bars."""
+    default, own = own_fit(media, "default"), own_fit(media, "crop")
+    export(default, media, "fit-default.mp4")
+    export(own, media, "fit-own.mp4")
+    bars = export_frame(media, "fit-default.mp4", 2.0)
+    filled = export_frame(media, "fit-own.mp4", 2.0)
+    assert bars[135, 10].max() < 8 and filled[135, 10].max() > 40  # the left bar is black v picture
+    assert np.abs(bars - filled).mean() > 10
+    explicit = own_fit(media, "letterbox")  # an own fit of letterbox equals the default one
+    export(explicit, media, "fit-explicit.mp4")
+    assert np.abs(export_frame(media, "fit-explicit.mp4", 2.0) - bars).mean() < 2

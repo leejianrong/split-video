@@ -489,14 +489,14 @@ def render_result(name: str, filename: str, project: Project, used: dict[str, An
 def canvas_view(project: Project, rows: dict[str, Any]) -> dict[str, Any]:
     """The project's canvas as every surface shows it: `ratio` (16:9 until one is chosen), the export `preset` it
     stands for, and `needs_reframe`, the ids of main-track media clips whose picture (their crop, if any) is not the
-    canvas's shape, so they are letterboxed or cropped by the export's fit. Clips with an unknown source are left out.
+    canvas's shape, so they are letterboxed or cropped by the export's fit (a clip with its own fit is not listed). Clips with an unknown source are left out.
     `rows` maps a clip id to its located asset (or None)."""
     ratio = project.canvas_ratio
     num, den = (int(n) for n in ratio.split(":"))
     main = next((t for t in project.tracks if t.kind == "video"), None)
     flagged = []
     for c in main.clips if main else ():
-        row = rows.get(c.id) if c.kind == "media" else None
+        row = rows.get(c.id) if c.kind == "media" and c.fit == "default" else None  # an own fit settles it
         if row is None or not row.asset.width or not row.asset.height:
             continue
         shape = (row.asset.width * c.crop_w) / (row.asset.height * c.crop_h)
@@ -555,6 +555,7 @@ def describe(media: MediaStore, name: str, project: Project, *, read_only: bool 
                         "contrast": c.contrast,
                         "saturation": c.saturation,
                         "crop": timeline.shown_crop(c.crop),
+                        "fit": c.fit,
                     }
                     for i, c in enumerate(t.clips)
                 ],
