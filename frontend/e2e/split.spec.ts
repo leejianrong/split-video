@@ -83,6 +83,7 @@ test('S with nothing selected cuts the topmost clip; off a clip it says so and c
   expect(trackOf(after, 'song').clips).toHaveLength(1);
   expect(clips(after)).toHaveLength(clips(before).length + 1);
 
+  await expect(page.locator('[data-clip-id][aria-selected=true]').first()).toBeVisible();
   await page.keyboard.press('Escape');
   await playheadAt(page, 0); // the start of the recording: the edge of the main clip, off every other clip
   await page.keyboard.press('s');
