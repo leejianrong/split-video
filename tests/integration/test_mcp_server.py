@@ -66,6 +66,8 @@ async def test_exposes_the_documented_tools(root):
         "get_contact_sheet",
         "list_segments",
         "propose_splits",
+        "split_by_silence",
+        "add_asset_to_video",
         "add_split",
         "move_split",
         "remove_split",

@@ -331,6 +331,55 @@ def create_server(
             revision = await run(project.current_revision, store, source)
         return result(source, segments, revision, applied=apply)
 
+    @server.tool(annotations=_REPLACES_PROJECT)
+    async def split_by_silence(
+        video: str,
+        silence_threshold: float = -35.0,
+        min_silence_duration: float = 2.0,
+        min_song_length: float = 30.0,
+        padding: float = 0.15,
+        label_prefix: str | None = None,
+        base_revision: int | None = None,
+    ) -> dict[str, Any]:
+        """Split `video` at its silent gaps and SAVE the pieces as its segments, REPLACING any saved splits, labels
+        and exclusions (propose_splits with apply=true, but with the result `POST /assets/{id}/split` gives: `{video,
+        segments (count), revision, labels}`). Runs to completion before answering; the HTTP route queues it as a job.
+        `base_revision` (optional): fail with revision_conflict if the project changed since."""
+        source = resolve(video)
+        return await run(
+            project.split_by_silence,
+            store,
+            media,
+            source,
+            silence_threshold=silence_threshold,
+            min_silence_duration=min_silence_duration,
+            min_song_length=min_song_length,
+            padding=padding,
+            label_prefix=label_prefix,
+            base_revision=base_revision,
+        )
+
+    @server.tool(annotations=_EDITS_PROJECT)
+    async def add_asset_to_video(
+        video: str, asset: str, position: int | None = None, base_revision: int | None = None
+    ) -> dict[str, Any]:
+        """Add the library asset `asset` (an id from list_assets) as a clip on `video`'s own main video track, the
+        timeline the editor shows (`POST /project/clips`). `position` (from 1) inserts it there, default the end.
+        An audio-only asset is refused (media.audio_only). `base_revision` (optional, from show_timeline with the same
+        `video`): fail with revision_conflict instead of editing if the timeline changed since. Returns the timeline
+        like show_timeline."""
+        source = resolve(video)
+        saved = await run(
+            project.add_asset_clip,
+            store,
+            media,
+            source,
+            asset,
+            index=None if position is None else position - 1,
+            base_revision=base_revision,
+        )
+        return timeline_result(source, saved)
+
     @server.tool(annotations=_EDITS_PROJECT)
     async def add_split(video: str, at: float, base_revision: int | None = None) -> dict[str, Any]:
         """Cut the segment containing time `at` (seconds) in two. Both halves keep the label, color and
