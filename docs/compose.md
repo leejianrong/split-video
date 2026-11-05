@@ -19,7 +19,8 @@ so renaming or moving a video does not break a project. In the editor, the
 - Select a clip to set its volume and mute, position, size and opacity (for
   overlays), brightness/contrast/saturation, or a title's words, size and
   colour.
-- Play previews the main track; **Render** writes an mp4 next to your
+- Play shows the whole composite (overlays, titles and all audio) in the editor's preview, rendered a few seconds
+  ahead of the playhead in preview chunks; **Render** writes an mp4 next to your
   sources with everything mixed in (overlays, titles and all audio).
 
 The same project can be built from the command line. Every command takes
@@ -124,6 +125,10 @@ mp4 is, `display_path` of the media id), `mime`, `start`, `end`, `duration`, `wi
 `original` or `mixed`), `bytes` and `cached`. MCP (`preview_range`) returns this reference and never the video bytes. A
 recording's own timeline is `POST /api/v1/project/preview-range?path=` and `GET /api/v1/project/preview-range/{key}?path=`,
 `compose preview-range --video` and MCP `video`.
+
+The editor plays by chaining chunks on a fixed grid: 8 s ranges starting at multiples of 8 s, so replays and seeks ask for
+ranges that are already cached, and it keeps the one playing and two ahead (3 of the 8 cached chunks; the other 5 are the
+ones just played, so a short rewind is a cache hit). See [the frontend docs](frontend.md#playback).
 
 The cache lives in the video's `.split-video-cache/` sidecar (for a named project, next to its `<name>.timeline` anchor),
 never under `~/.cache`. The key hashes the project revision, the range and the options, so any edit gives new keys: the

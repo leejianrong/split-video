@@ -219,7 +219,11 @@ lands.
 - **Play**: Space or K toggles; clicking the picture toggles. Preview audio is
   the mixed timeline audio.
 - While a preview is being prepared (proxy), the preview shows "Preparing
-  preview 72%" and editing stays enabled.
+  preview 72%" and editing stays enabled. As built (SPL-72) playback shows
+  "Preparing preview" without a percentage while a chunk renders, or plays the
+  main track as a "Draft preview, overlays loading" until the composite is ready;
+  playback chunks are 480p, not the 720p proxy quality above. See
+  [Playback](frontend.md#playback).
 
 ## Inspector
 

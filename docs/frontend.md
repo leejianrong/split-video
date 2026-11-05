@@ -62,8 +62,48 @@ sent and the picture is kept as an object URL.
   asks for a new still. The route's `ETag` hashes revision and request and its `Cache-Control` is `no-cache`, so the
   browser revalidates and an unchanged frame is a bodiless 304.
 - The previous object URL is revoked when it is replaced and when the editor is left. An empty timeline shows "Your
-  timeline shows here." and requests nothing. Play, Fit, safe zones and captions are later cards; the transport stays
-  disabled.
+  timeline shows here." and requests nothing. Fit, safe zones and captions are later cards. While a video is on screen
+  (playing, or paused on its last frame) no stills are requested; the still takes over once it has arrived for the paused
+  playhead.
+
+## Playback
+
+Play shows the full composite, overlays and all audio, by chaining the server's preview chunks
+([`compose.md`](compose.md#preview-a-range-as-a-video)) before a real-time compositor exists. The logic is
+`state/playback.svelte.ts` (`PlaybackStore`), written like `StillScheduler` so it is tested without a browser
+(`playback.test.ts`: fake slots, fake API, fake timers). `shell/PlaybackSurface.svelte` holds the three `<video>`
+elements, `state/videoSlot.ts` wraps one, `state/playbackApi.ts` talks to `POST /api/v1/project/preview-range`,
+`GET .../preview-range/{key}` (fetched as a blob through the client, so the token is sent) and the job queue's cancel.
+
+- **Grid and lookahead**: chunks are 8 s ranges at multiples of 8 s (`CHUNK_SECONDS`), the one under the playhead and
+  `LOOKAHEAD` = 2 ahead. 8 s renders in about 1.5 s on a typical project (about 5x real time), so a cold start or a seek to
+  an uncached place is ready in under 2 s, and the next chunk is ready long before it is needed; the server keys chunks by
+  exact range, so the fixed grid is what makes replays and seeks cache hits. Three chunks in use leaves 5 of the server's
+  8 cached chunks (`KEEP`, unchanged) for the ones just played. The last chunk is cut at the timeline's end.
+- **One render at a time**: the server has one preview worker, so the store starts the current chunk first and the next
+  only when no request is rendering. Chunks outside the window are dropped and their jobs cancelled (`POST
+  /jobs/{id}/cancel`, real: ffmpeg stops); a pause, a seek away and an edit all cancel what is in flight.
+- **Double buffer**: the chunk playing is in one `<video>`, the next is loaded and paused at its first frame in the other.
+  A 16 ms ticker watches the playing element; 0.1 s before its end the next one starts, the old one stays on screen and
+  loaded for 0.3 s (a hidden element draws no frames) and is then cleared and its blob revoked, so no element or object URL
+  is left per chunk. Underrun (the next chunk not ready) holds the still with "Preparing preview" and rebuffers.
+- **The playhead**: while playing, the video's `currentTime` is the single source of truth (`playhead.advance`, which does
+  not notify). A user seek (`playhead.seek`: ruler, Home/End) takes over: inside what is in memory it is a seek in the
+  video; elsewhere the still shows at once (SPL-71) and the chunk of the new place is requested first. Play at the very end
+  starts from 0; playback stops at the end.
+- **Draft while a chunk renders**: when the chunk under the playhead is not ready, the main track's own file plays from
+  `GET /api/v1/media/asset/{id}` in a third `<video>` (no overlays, only the main track's sound) under a small "Draft
+  preview, overlays loading" label, and hands over to the composite at the playhead's time when the chunk is ready; the
+  draft is paused before the composite plays, so sounds never double up. If the file cannot be played in the browser (mkv,
+  HEVC, an API token, which a `<video src>` cannot send) the still stays with "Preparing preview" instead.
+- **Edits during playback**: a new project revision (an edit, or an agent's, via live refresh) drops every chunk, stops the
+  old sound at once, and rebuffers from the same time; playback carries on as a draft or the still and resumes on the
+  edited composite when its chunk is ready. A paused preview just drops the video and shows the new still.
+- **Autoplay**: Play is always a user gesture; if the browser still rejects `play()` the store goes back to paused with
+  "The browser blocked playback. Press play to start the preview." A failed chunk pauses with "The preview could not be
+  prepared. Press play to try again."
+- **Controls**: the transport's Play/Pause (icon and `aria-pressed` toggle), Space or K, a click on the picture, Home/End
+  (playhead to start/end). Previous/next cut and J/L stay for later cards.
 
 ## First run
 
