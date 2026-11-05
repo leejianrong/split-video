@@ -1,7 +1,7 @@
 """Request authentication for the HTTP API: who is calling, and the optional bearer token.
 
 By default (no `SPLIT_VIDEO_TOKEN`) the server is in local mode: nothing is checked and every
-request is `LOCAL_PRINCIPAL`. With a token configured every request under `/api/` and `/media/`
+request is `LOCAL_PRINCIPAL`. With a token configured every request under `/api/`
 must carry `Authorization: Bearer <token>`, or it gets a 401. The check is an ASGI middleware over
 those two prefixes (`AuthMiddleware`), so a route added later cannot forget it. The static
 frontend, `/openapi.json` and the docs UI stay public.
@@ -30,7 +30,7 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 from split_video.identity import LOCAL_PRINCIPAL, Principal
 
 TOKEN_ENV = "SPLIT_VIDEO_TOKEN"
-PROTECTED_PREFIXES = ("/api/", "/media/")
+PROTECTED_PREFIXES = ("/api/",)
 UNAUTHORIZED_ERROR = "unauthorized"
 
 SECURITY_SCHEME = "bearerAuth"
@@ -126,11 +126,11 @@ def authenticator_from_env(env: Mapping[str, str] | None = None) -> Authenticato
 
 
 def is_protected(path: str) -> bool:
-    return path.startswith(PROTECTED_PREFIXES) or path in ("/api", "/media")
+    return path.startswith(PROTECTED_PREFIXES) or path == "/api"
 
 
 class AuthMiddleware:
-    """Authenticates every request under `/api/` and `/media/` before routing; 401 if it fails.
+    """Authenticates every request under `/api/` before routing; 401 if it fails.
 
     On success the principal is on `request.state.principal`."""
 

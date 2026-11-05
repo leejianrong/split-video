@@ -18,7 +18,6 @@ export default defineConfig({
     // SSE (/api/v1/events) streams through the proxy unbuffered; no response transformation is applied.
     proxy: {
       '/api': { target: backend, changeOrigin: false },
-      '/media': { target: backend, changeOrigin: false },
     },
   },
   test: {

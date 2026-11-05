@@ -256,9 +256,7 @@ def edit(
         console.print(f"Editor running at [bold]{url}[/bold] — press Ctrl+C to stop.")
     if authenticator.required:
         # Never the token itself.
-        console.print(
-            f"API token authentication is enabled ({TOKEN_ENV} is set): /api/ and /media/ need a bearer token."
-        )
+        console.print(f"API token authentication is enabled ({TOKEN_ENV} is set): /api/ needs a bearer token.")
     if not no_browser:
         threading.Timer(1.0, webbrowser.open, args=[url]).start()
 

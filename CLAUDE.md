@@ -22,7 +22,7 @@ New work goes through the seams, not around them:
 - **`ProjectStore` and `MediaStore`** (local and in-memory implementations) own every path and file; the engine never builds paths. Media locations are opaque ids. Slow work runs as a job on the job queue (real cancel via `run_cancellable`). Writes carry revisions (`If-Match` / `--base-revision` / MCP `base_revision`).
 - **The engine holds the rules; HTTP routes, CLI and MCP tools are thin adapters.** A capability that is "API, CLI and MCP" must exist on all three with the same output shape.
 - **A new engine or adapter module goes into the ENGINE / ADAPTERS / GUARDED lists in `tests/unit/test_store_boundary.py`** (it fails on paths built outside the stores).
-- **A new `/api/v1` route with no deprecated unversioned alias goes into `NO_LEGACY_ALIAS` in `tests/integration/test_api_versioning.py`.**
+- **Every route lives under `/api/v1`; there are no unversioned aliases (`tests/integration/test_api_versioning.py` fails on any other path).**
 - **After changing routes, schemas or error codes, regenerate the committed files: `make openapi schemas errors`, then `make api-client` (the TypeScript client in `frontend/`).** CI fails on drift.
 - Public formats (`*.split-video-project.json`, `*.split-video-timeline.json`, `.split-video-assets.json`) change only with a version bump and a migration.
 

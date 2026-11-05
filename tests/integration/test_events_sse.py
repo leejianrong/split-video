@@ -686,7 +686,7 @@ def test_polling_endpoints_are_unchanged_while_streaming(live, three_songs_clip)
     ).json()["job_id"]
     _wait_for(lambda: server.http.get(f"/api/v1/export/{job_id}").json()["status"] == "done", 30)
     assert server.http.get(f"/api/v1/jobs/{job_id}").json()["state"] == "done"
-    assert server.http.get("/api/state", params={"path": three_songs_clip.name}).status_code == 200
+    assert server.http.get("/api/v1/state", params={"path": three_songs_clip.name}).status_code == 200
 
 
 def test_the_events_route_is_documented_in_the_schema(tmp_path):
