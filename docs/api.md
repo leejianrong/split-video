@@ -17,7 +17,8 @@ process (`curl -N localhost:8765/api/v1/events`). The polling endpoints keep
 working; the frame format is in the route's description in the schema.
 
 `GET /api/v1/compose/projects/{name}/preview-frame?time=` answers with an image of the edited result at that time,
-rendered by the export's own filter graph; see [Compose](compose.md).
+rendered by the export's own filter graph; `GET /api/v1/project/preview-frame?path=` is the same for a recording's own
+timeline (what the editor opens). See [Compose](compose.md).
 
 ## API token (agents and hosted use)
 

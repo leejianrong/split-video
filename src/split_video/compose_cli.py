@@ -713,8 +713,11 @@ def render_cmd(
 
 
 def preview_frame_cmd(
-    name: str = _Name,
-    at: str = typer.Argument(..., metavar="TIME", help="Seconds, mm:ss or hh:mm:ss on the timeline."),
+    name: str | None = typer.Argument(None, help="Project name (no extension); with --video, the TIME instead."),
+    at: str | None = typer.Argument(None, metavar="TIME", help="Seconds, mm:ss or hh:mm:ss on the timeline."),
+    video: str | None = typer.Option(
+        None, "--video", help="Preview this recording's own timeline (the one the editor shows) instead of a project."
+    ),
     out: Path | None = typer.Option(
         None, "--out", "-o", help="Where to write the image (default: ./<name>-<time>s.jpg, or .png with --format png)."
     ),
@@ -730,21 +733,31 @@ def preview_frame_cmd(
 ) -> None:
     """Write the timeline's edited result at TIME to an image (overlays, titles, colour and crop as the export draws
     them; no captions or sound) and print what it is as JSON: project, revision, time, size, source and the `out` path."""
+    if video is not None and at is None:
+        name, at = None, name  # `preview-frame --video v.mp4 TIME`: the one argument is the time
+    if at is None or (name is None) == (video is None):
+        raise typer.BadParameter("give NAME and TIME, or --video and TIME")
     seconds = _time(at)
     root = root.resolve()
     store = LocalProjectStore(root)
     media = LocalMediaStore(root)
     try:
-        project = timeline_service.load_existing(store, name, media)
+        if video is not None:
+            name = media.resolve_user_path(video)
+            if not media.is_file(name):
+                raise SourceNotFoundError(f"video not found: {video}")
+            project = split_project.video_timeline_with_revision(store, media, name)
+        else:
+            project = timeline_service.load_existing(store, name or "", media)
         if fmt is None:
             fmt = "png" if out is not None and out.suffix.lower() == ".png" else "jpeg"
         frame = preview.preview_frame(
             project, media, seconds, name=name, width=width, preset=preset, fit=fit, format=fmt, quality=quality,
             source=source,
         )  # fmt: skip
-    except _EXPECTED_ERRORS as exc:
+    except (*_EXPECTED_ERRORS, MediaOutsideRootError) as exc:
         raise _fail(exc)
-    out = out or Path(f"{name}-{seconds:g}s.{'png' if frame.format == 'png' else 'jpg'}")
+    out = out or Path(f"{Path(name or '').stem}-{seconds:g}s.{'png' if frame.format == 'png' else 'jpg'}")
     out.write_bytes(frame.data)
     typer.echo(json.dumps({**frame.info(), "out": str(out)}, indent=2))
 

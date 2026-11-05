@@ -671,15 +671,17 @@ def create_server(
 
     @server.tool(annotations=_READ_ONLY)
     async def preview_frame(
-        name: str,
         time: float,
+        name: str | None = None,
+        video: str | None = None,
         width: int = preview.DEFAULT_WIDTH,
         preset: str | None = None,
         fit: str | None = None,
         format: str = "jpeg",
         source: str = "auto",
     ) -> list[Image | str]:
-        """Look at the edited result of timeline project `name` at `time` seconds: returns the picture as an image plus
+        """Look at the edited result of timeline project `name` (or, with `video`, that recording's own timeline, the
+        one the editor shows) at `time` seconds: returns the picture as an image plus
         a short text block with `project`, `revision` (of the timeline it was rendered from), `time` (the frame shown,
         on the output's frame grid), `width`, `height`, `source` and `duration`. It is the export's own render of one
         instant: main track, overlays, titles, colour and crop, but no captions or sound. `width` (pixels, default 640,
@@ -688,8 +690,14 @@ def create_server(
         the vertical frame. `format` is "jpeg" (default) or "png". `source` "auto" reads proxies where there are any
         (within 1/15 s of `time`), "original" reads the files like the export. Takes well under a second. A time past
         the end of the timeline, or a timeline with no clips, is a tool error that says so."""
+        if (name is None) == (video is None):
+            raise ToolError("give exactly one of name (a timeline project) and video (a recording)")
         try:
-            project_ = await run(timeline_service.load_existing, store, name, media)
+            if name is not None:
+                project_ = await run(timeline_service.load_existing, store, name, media)
+            else:
+                name = resolve(video or "")
+                project_ = await run(project.video_timeline_with_revision, store, media, name)
             frame = await run(
                 preview.preview_frame, project_, media, time, name=name, width=min(width, 1280), preset=preset,
                 fit=fit, format=format, source=source,

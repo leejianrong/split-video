@@ -103,6 +103,11 @@ def video_timeline(store: ProjectStore, media: MediaStore, project_id: str) -> P
     return _unified(store, media, project_id, stored, current_segments(store, media, project_id))
 
 
+def video_timeline_with_revision(store: ProjectStore, media: MediaStore, project_id: str) -> Project:
+    """`video_timeline` stamped with the revision writes are based on (what `show` and the editor report)."""
+    return replace(video_timeline(store, media, project_id), revision=current_revision(store, project_id))
+
+
 def _editable(store: ProjectStore, media: MediaStore, project_id: str, stored: Project | None) -> Project:
     """What `video_timeline` shows for `stored` (inside an update, where `stored` was just read)."""
     if stored is not None and not split_model.holds_only_recording(stored):
