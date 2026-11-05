@@ -477,9 +477,12 @@ def _run_ffmpeg(
     cancel: CancelToken | None = None,
     preset: presets.ExportPreset | None = None,
     stall_timeout: float | None = None,
+    seek: float = 0.0,
 ) -> None:
     """Run the render. A cancelled job stops it; so does ffmpeg's `-progress` output standing still for
-    `stall_timeout` seconds (default `ffmpeg.stall_seconds()`), which raises `ExtractError`."""
+    `stall_timeout` seconds (default `ffmpeg.stall_seconds()`), which raises `ExtractError`. `seek` drops that many
+    seconds from the start of the result (`preview_range.py` renders a window and cuts its lead-in off), and `total`
+    is the length written after it."""
     cmd = [
         _require_binary("ffmpeg"),
         "-nostdin",
@@ -494,6 +497,7 @@ def _run_ffmpeg(
         f"[{plan.video_label}]",
         "-map",
         f"[{plan.audio_label}]",
+        *(["-ss", f"{seek:.3f}"] if seek > 0 else []),
         "-t",
         f"{total:.3f}",
         *_encode_args(preset),

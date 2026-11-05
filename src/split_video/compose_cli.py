@@ -27,7 +27,16 @@ from rich.console import Console
 from rich.markup import escape
 from rich.table import Table
 
-from split_video import assets, cli_errors, export_modes, frames, preview, render_queue, timeline_service
+from split_video import (
+    assets,
+    cli_errors,
+    export_modes,
+    frames,
+    preview,
+    preview_range,
+    render_queue,
+    timeline_service,
+)
 from split_video import captions as captions_module
 from split_video import project as split_project
 from split_video.captions import CaptionError
@@ -762,6 +771,56 @@ def preview_frame_cmd(
     typer.echo(json.dumps({**frame.info(), "out": str(out)}, indent=2))
 
 
+def preview_range_cmd(
+    name: str | None = typer.Argument(None, help="Project name (no extension); with --video, the START instead."),
+    start: str | None = typer.Argument(None, metavar="START", help="Seconds, mm:ss or hh:mm:ss on the timeline."),
+    end: str | None = typer.Argument(None, metavar="END", help="The same, at most 30 s after START."),
+    video: str | None = typer.Option(
+        None, "--video", help="Preview this recording's own timeline (the one the editor shows) instead of a project."
+    ),
+    height: int | None = typer.Option(
+        None,
+        "--height",
+        min=2,
+        max=preview_range.MAX_HEIGHT,
+        help="Pixels high (default 480, never above the export's).",
+    ),
+    preset: str | None = typer.Option(None, "--preset", help="Export preset: sets the aspect ratio and frame rate."),
+    fit: str | None = typer.Option(None, "--fit", help="letterbox (default) or crop, as in `render`."),
+    source: str = typer.Option("auto", "--source", help="auto (proxies where there are any) or original."),
+    root: Path = _Root,
+) -> None:
+    """Render a low-resolution mp4 of the timeline from START to END (at most 30 s; audio mixed, no captions) and print
+    what it is as JSON: project, revision, key, media, path (where the mp4 is), start, end, duration, size, source,
+    bytes and `cached`. The chunk is kept in the video's `.split-video-cache/` folder, keyed by the timeline's revision:
+    the same range again, before an edit, answers at once with `cached: true`."""
+    if video is not None and end is None:
+        name, start, end = None, name, start  # `preview-range --video v.mp4 START END`
+    if start is None or end is None or (name is None) == (video is None):
+        raise typer.BadParameter("give NAME START END, or --video START END")
+    seconds = (_time(start), _time(end))
+    root = root.resolve()
+    store = LocalProjectStore(root)
+    media = LocalMediaStore(root)
+    try:
+        if video is not None:
+            name = media.resolve_user_path(video)
+            if not media.is_file(name):
+                raise SourceNotFoundError(f"video not found: {video}")
+            project = split_project.video_timeline_with_revision(store, media, name)
+            anchor = name
+        else:
+            project = timeline_service.load_existing(store, name or "", media)
+            anchor = preview_range.anchor_of_project(name or "")
+        plan = preview_range.plan_range(
+            project, media, anchor, *seconds, name=name or "", height=height, preset=preset, fit=fit, source=source
+        )
+        result = preview_range.render_range(media, plan)
+    except (*_EXPECTED_ERRORS, MediaOutsideRootError) as exc:
+        raise _fail(exc)
+    typer.echo(json.dumps(result, indent=2))
+
+
 def render_queue_cmd(
     spec: typer.FileText = typer.Argument(
         ...,
@@ -962,6 +1021,7 @@ def register(app: typer.Typer) -> None:
         ("migrate", migrate_cmd),
         ("render", render_cmd),
         ("preview-frame", preview_frame_cmd),
+        ("preview-range", preview_range_cmd),
         ("render-queue", render_queue_cmd),
         ("export", export_cmd),
     ):

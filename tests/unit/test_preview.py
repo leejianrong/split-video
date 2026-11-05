@@ -10,7 +10,7 @@ import numpy as np
 import pytest
 from test_frames import decode
 
-from split_video import assets, frames, proxy
+from split_video import assets, frames, preview_range, proxy
 from split_video import timeline_ops as ops
 from split_video.local_media_store import LocalMediaStore
 from split_video.preview import preview_frame, window
@@ -87,6 +87,25 @@ def test_window_keeps_only_what_is_on_screen_at_the_time(project):
 
     cut, w0 = window(project, 2.4)  # in the cross-fade: both main clips, from where the fade starts
     assert w0 == 2.0 and [c.start for c in cut.tracks[0].clips] == [0.0, 0.0]
+
+
+def test_range_window_keeps_everything_that_overlaps_it(project):
+    cut, w0 = window(project, 2.5, 3.2)  # starts in the cross-fade, ends inside the overlay and the title
+    assert w0 == 2.0 and [len(t.clips) for t in cut.tracks] == [2, 1, 1]
+    cut, w0 = window(project, 3.6, 4.5)  # the overlay and the title are over by then; the second clip is cut whole
+    assert w0 == 3.6 and [len(t.clips) for t in cut.tracks] == [1, 0, 0]
+    assert [(c.in_point, c.start) for c in cut.tracks[0].clips] == [(1.6, 0.0)]
+
+
+def test_a_range_chunk_of_the_typical_project_renders_and_cuts_to_the_range(workspace, project):
+    plan = preview_range.plan_range(project, workspace, "typical.timeline", 1.5, 3.5, height=90, source="original")
+    result = preview_range.render_range(workspace, plan)  # main track, cross-fade, overlay and title, from 1.5 s
+    assert (result["start"], result["end"], result["width"], result["height"]) == (1.5, 3.5, 160, 90)
+    out = subprocess.run(
+        ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", result["path"]],
+        capture_output=True, text=True, check=True, timeout=30,
+    ).stdout  # fmt: skip
+    assert float(out) == pytest.approx(2.0, abs=0.1)
 
 
 def test_time_is_the_frame_the_export_has(workspace, project):

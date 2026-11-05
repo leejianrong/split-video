@@ -101,6 +101,12 @@ _register(
     "A range ends at or before the point where it starts.",
     "Make the end later than the start (start < end, both in seconds) and send the range again.",
 )
+_register(
+    "preview.range_too_long",
+    "A preview range is longer than the 30 s a chunk may cover.",
+    "Use a range of at most {max} s (`end` - `start`), then ask for the next consecutive range, starting at the previous end.",
+    status=400,
+)
 
 # --- split projects: segments and splits --------------------------------------------------------------------------
 

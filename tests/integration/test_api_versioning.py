@@ -54,6 +54,10 @@ NO_LEGACY_ALIAS = {
     "/api/v1/compose/projects/{name}/ops",
     "/api/v1/compose/projects/{name}/plan",
     "/api/v1/compose/projects/{name}/preview-frame",
+    "/api/v1/compose/projects/{name}/preview-range",
+    "/api/v1/compose/projects/{name}/preview-range/{key}",
+    "/api/v1/project/preview-range",
+    "/api/v1/project/preview-range/{key}",
     "/api/v1/schemas/edit-ops",
     "/api/v1/schemas/edit-plan",
 }

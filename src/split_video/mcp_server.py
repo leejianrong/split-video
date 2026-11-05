@@ -65,6 +65,7 @@ from split_video import (
     transcript_search,
 )
 from split_video import captions as captions_module
+from split_video import preview_range as preview_range_module
 from split_video.editor.cache import ClassificationCache
 from split_video.error_catalogue import ErrorInfo, argument_error, error_dict
 from split_video.jobs import (
@@ -706,6 +707,47 @@ def create_server(
             raise ToolError(str(exc)) from None
         info = {k: v for k, v in frame.info().items() if k != "bytes"}
         return [Image(data=frame.data, format=frame.format), json.dumps(info)]
+
+    @server.tool(annotations=_EDITS_PROJECT)
+    async def preview_range(
+        start: float,
+        end: float,
+        name: str | None = None,
+        video: str | None = None,
+        height: int = preview_range_module.DEFAULT_HEIGHT,
+        preset: str | None = None,
+        fit: str | None = None,
+        source: str = "auto",
+    ) -> dict[str, Any]:
+        """Render a low-resolution mp4 of timeline project `name` (or, with `video`, that recording's own timeline) from
+        `start` to `end` seconds, to watch transitions and pacing: all tracks drawn by the export's own filter graph
+        and all audio mixed (no captions). At most 30 s (longer is error `preview.range_too_long`: ask for consecutive
+        ranges); an `end` past the timeline's end is cut to it. `height` is pixels (default 480, at most 720, never
+        above the export's), the width follows the export's aspect ratio; `preset` and `fit` are the export's.
+        `source` "auto" reads proxies where there are any, "original" the files. Returns a reference, never the video:
+        `{project, revision, key, media, path, mime, start, end, duration, width, height, fps, source, bytes, cached}`;
+        `path` is where the mp4 is (in the video's `.split-video-cache/` folder). The chunk is cached by the timeline's
+        revision: the same range again before an edit returns at once with `cached` true, an edit makes a new one.
+        Takes a few seconds."""
+        if (name is None) == (video is None):
+            raise ToolError("give exactly one of name (a timeline project) and video (a recording)")
+
+        def work() -> dict[str, Any]:
+            if name is not None:
+                project_ = timeline_service.load_existing(store, name, media)
+                anchor, label = preview_range_module.anchor_of_project(name), name
+            else:
+                label = anchor = resolve(video or "")
+                project_ = project.video_timeline_with_revision(store, media, anchor)
+            plan = preview_range_module.plan_range(
+                project_, media, anchor, start, end, name=label, height=height, preset=preset, fit=fit, source=source
+            )
+            return preview_range_module.render_range(media, plan)
+
+        try:
+            return await run(work)
+        except frames.FrameError as exc:
+            raise ToolError(str(exc)) from None
 
     @server.tool(annotations=_READ_ONLY)
     async def get_contact_sheet(

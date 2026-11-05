@@ -18,7 +18,9 @@ working; the frame format is in the route's description in the schema.
 
 `GET /api/v1/compose/projects/{name}/preview-frame?time=` answers with an image of the edited result at that time,
 rendered by the export's own filter graph; `GET /api/v1/project/preview-frame?path=` is the same for a recording's own
-timeline (what the editor opens). See [Compose](compose.md).
+timeline (what the editor opens). `POST /api/v1/compose/projects/{name}/preview-range` (and `POST /api/v1/project/preview-range?path=`)
+queues a `preview_range` job that renders up to 30 s of the timeline as a low-resolution mp4, cached by project revision;
+`GET .../preview-range/{key}` serves it with Range support. See [Compose](compose.md).
 
 ## API token (agents and hosted use)
 
