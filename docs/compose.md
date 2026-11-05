@@ -90,10 +90,32 @@ reads a clip's proxy when it has one (right to within 1/15 s), `original` reads 
 reads a proxy. A time past the end is `time.out_of_range`.
 
 How close it is to the export: with `source=original` and the same size, the frame equals the export's frame at that
-time up to the H.264 encoding of the export (`tests/unit/test_preview.py` allows a mean difference of 4 of 255 per
-channel and checks the frame is at least 3 times closer than the export's frame 0.2 s later). One known difference:
+time up to the H.264 encoding of the export, which the golden-frame tests below pin down. One known difference:
 after a cross-fade, ffmpeg's `xfade` can show the incoming clip one frame late in the export (ffmpeg 4.4 does), while the
-preview shows it on time.
+preview shows it on time (SPL-123).
+
+### Golden-frame tests
+
+`tests/unit/test_golden_frames.py` (harness in `tests/unit/golden.py`) renders a small project per feature, exports
+it, and compares the preview's frame with the export's frame at the same time and size. Fixtures are made with ffmpeg
+`lavfi` at test time. Cases: overlay (position, scale, opacity), cross-fade (before, during, after), colour grade and
+title text. A case passes when the mean absolute difference per channel and the share of samples off by more than 24 are
+under its `Tolerance`, and, for moving footage, the frame is 3 times closer than the export's frame 0.2 s later.
+
+Run them with `uv run pytest tests/unit/test_golden_frames.py -s` (about 20 s; the `-s` prints each measurement). A
+failure reads `mean difference 3.4 is over 2.5` or `1.8% of the samples differ by more than 24`: the preview and the
+export disagree about that feature at that time. Look at both frames before touching a limit.
+
+The `test_a_changed_renderer_is_reported` cases change one thing on the preview side only (an overlay moved 5 px,
+opacity 0.7 to 0.55, contrast 1.4 to 1.3, other text, a shorter fade) and require a failure. On ffmpeg 4.4 an
+unchanged frame measures a mean of 0.9 to 1.8 (shares up to 0.07%), the smallest of those changes 3.4 or a share of
+1.8%, so each limit sits between the two. To add a case, write a builder in the test module, list its times and
+tolerance in `CASES` and add a mutation to `MUTATIONS`.
+
+What this does not catch: preview and export both call `render.build_plan`, so a change there moves both frames and the
+comparison still passes. `test_pinned_colours_do_not_drift_in_either_renderer` covers that for colour, opacity blending
+and grading with flat sources and fixed pixel values; text and placement are guarded only by the comparison. Captions and
+audio are not drawn by the preview and not compared.
 
 **Several renders at once** (the highlight reel plus shorts) run as a background queue with limited concurrency:
 `split-video compose render-queue batch.json`, `POST /api/v1/compose/render-queue`, MCP `queue_renders`; see

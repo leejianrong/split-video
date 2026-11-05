@@ -1,0 +1,159 @@
+"""Golden frames (SPL-74): the preview and the export must show the same picture.
+
+One small project per feature (overlay, cross-fade, colour grade, text) is exported once; the preview's frame at
+several times is compared with the export's by `golden.measure` under that case's tolerance. The mutation tests
+change one thing on the preview side and demand the harness reports it, which shows each tolerance is tight enough
+to catch a real divergence. Both renderers share `render.build_plan`, so a change there moves them together: the
+pinned-colour tests compare against absolute values to catch that. See "Golden-frame tests" in docs/compose.md.
+"""
+
+import pytest
+from golden import SIZE, Tolerance, export, export_frame, make_source, measure
+from test_frames import decode
+
+from split_video import assets
+from split_video import timeline_ops as ops
+from split_video.local_media_store import LocalMediaStore
+from split_video.preview import preview_frame
+from split_video.timeline import empty_project
+
+GRADED = (136, 70, 56)  # (200, 60, 40) at contrast 1.3, saturation 0.5
+W = "color=s=640x360:r=30:d=3,"
+SOURCES = {
+    "a": W + "geq=r='128+100*sin(2*PI*(X/W+T/3))':g='X*255/W':b='Y*255/H'",
+    "b": W + "geq=r='Y*255/H':g='128+100*sin(2*PI*(Y/H+T/3))':b='255-X*255/W'",
+    "bars": "smptebars=size=320x180:rate=30:duration=3",
+    "flat": "color=c=0xC83C28:s=640x360:r=30:d=3",  # (200, 60, 40)
+    "blue": "color=c=0x2850C8:s=320x180:r=30:d=3",  # (40, 80, 200)
+}
+
+
+@pytest.fixture(scope="module")
+def media(tmp_path_factory):
+    root = tmp_path_factory.mktemp("golden")
+    for name, lavfi in SOURCES.items():
+        make_source(root / f"{name}.mp4", lavfi)
+    return LocalMediaStore(root.resolve())
+
+
+def _clip(media, p, track, name, duration, **kw):
+    a = assets.register_path(media, f"{name}.mp4")
+    return ops.add_clip(p, track, f"{name}.mp4", 3.0, out_point=duration, asset=a.id, **kw)
+
+
+def overlay(media, x=0.75, y=0.3, scale=0.35, opacity=0.7):
+    p = empty_project()
+    p, _ = _clip(media, p, p.tracks[0].id, "a", 3.0)
+    p, over = ops.add_track(p, "video")
+    p, pip = _clip(media, p, over.id, "bars", 2.0, start=0.5)
+    return ops.set_clip_properties(p, pip.id, x=x, y=y, scale=scale, opacity=opacity)
+
+
+def crossfade(media, duration=1.0):
+    p = empty_project()
+    main = p.tracks[0].id
+    p, _ = _clip(media, p, main, "a", 2.0)
+    p, second = _clip(media, p, main, "b", 2.0)
+    return ops.set_transition(p, second.id, "crossfade", duration)  # 3 s: the fade is from 1.0 to 2.0
+
+
+def grade(media, contrast=1.4, saturation=0.6, brightness=0.1):
+    p = empty_project()
+    p, clip = _clip(media, p, p.tracks[0].id, "a", 3.0)
+    return ops.set_clip_properties(p, clip.id, contrast=contrast, saturation=saturation, brightness=brightness)
+
+
+def title(media, text="Golden 123", y=0.5, font_size=0.15):
+    p = empty_project()
+    p, _ = _clip(media, p, p.tracks[0].id, "a", 3.0)
+    p, track = ops.add_track(p, "video")
+    p, _ = ops.add_text_clip(p, track.id, text, 2.0, start=0.5, font_size=font_size, y=y)
+    return p
+
+
+# Measured on ffmpeg 4.4 (docs/compose.md has the numbers): the limits sit between the worst good frame and the
+# smallest mutation below. The mean catches colour and opacity, the share of bad samples catches small moves and text.
+CASES = {
+    "overlay": (overlay, [0.25, 1.0, 2.0], Tolerance(mean=2.5, share=0.006, separation=3)),
+    # 0.5 is before the fade, 1.5 in it, 2.5 after it. After a fade ffmpeg 4.4's xfade can show the incoming clip
+    # one frame late while the preview shows it on time: SPL-123 tracks the fix, `late_frame` allows it meanwhile.
+    "crossfade": (crossfade, [0.5, 1.5, 2.5], Tolerance(mean=2.5, share=0.006, separation=3, late_frame=True)),
+    "grade": (grade, [0.0, 1.5, 2.9], Tolerance(mean=2.5, share=0.006, separation=3)),
+    "title": (title, [0.2, 1.0, 2.4], Tolerance(mean=2.0, share=0.0015)),
+}
+POINTS = [(name, at) for name, (_, times, _) in CASES.items() for at in times]
+
+
+@pytest.fixture(scope="module")
+def exports(media):
+    """Each case's export, rendered once (by name)."""
+    done = {}
+
+    def get(name):
+        if name not in done:
+            export(CASES[name][0](media), media, f"{name}.mp4")
+            done[name] = f"{name}.mp4"
+        return done[name]
+
+    return get
+
+
+@pytest.mark.parametrize(("case", "at"), POINTS)
+def test_preview_matches_the_export(media, exports, capsys, case, at):
+    build, _, tol = CASES[case]
+    m = measure(build(media), media, exports(case), at, tol)
+    with capsys.disabled():
+        print(f"\n{case} {m}")
+    assert not tol.failures(m), (m, tol.failures(m))
+
+
+# One change on the preview side only: (case, what changed, time to look at, the overrides of the case's builder).
+MUTATIONS = [
+    ("overlay", "moved 5 px", 1.0, {"x": 0.76}),
+    ("overlay", "moved 24 px", 1.0, {"x": 0.8}),
+    ("overlay", "opacity 0.7 to 0.55", 1.0, {"opacity": 0.55}),
+    ("overlay", "scale 0.35 to 0.4", 1.0, {"scale": 0.4}),
+    ("crossfade", "fade 1 s to 0.6 s", 1.5, {"duration": 0.6}),
+    ("grade", "contrast 1.4 to 1.3", 1.5, {"contrast": 1.3}),
+    ("grade", "saturation 0.6 to 0.7", 1.5, {"saturation": 0.7}),
+    ("grade", "brightness 0.1 to 0.13", 1.5, {"brightness": 0.13}),
+    ("title", "other text", 1.0, {"text": "Golden 124"}),
+    ("title", "moved 6 px", 1.0, {"y": 0.52}),
+    ("title", "font 0.15 to 0.16", 1.0, {"font_size": 0.16}),
+]
+
+
+@pytest.mark.parametrize(("case", "what", "at", "override"), MUTATIONS, ids=[f"{c}-{w}" for c, w, _, _ in MUTATIONS])
+def test_a_changed_renderer_is_reported(media, exports, capsys, case, what, at, override):
+    build, _, tol = CASES[case]
+    m = measure(build(media, **override), media, exports(case), at, tol)
+    with capsys.disabled():
+        print(f"\nmutation {case}: {what}: {m}")
+    assert tol.failures(m), f"{case} {what} stayed inside the tolerance: {m}"
+
+
+def _pixel(img, fx, fy):
+    return tuple(int(v) for v in img[int(fy * SIZE[1]), int(fx * SIZE[0])])
+
+
+def _close(got, want, slack=4):
+    return all(abs(g - w) <= slack for g, w in zip(got, want, strict=True))
+
+
+def test_pinned_colours_do_not_drift_in_either_renderer(media):
+    """Flat sources: a change in `build_plan` moves preview and export together, so the colours are pinned."""
+    p = empty_project()
+    p, _ = _clip(media, p, p.tracks[0].id, "flat", 3.0)
+    p, over = ops.add_track(p, "video")
+    p, blue = _clip(media, p, over.id, "blue", 3.0)
+    p = ops.set_clip_properties(p, blue.id, x=0.5, y=0.5, scale=0.5, opacity=0.5)
+    graded = empty_project()
+    graded, clip = _clip(media, graded, graded.tracks[0].id, "flat", 3.0)
+    graded = ops.set_clip_properties(graded, clip.id, contrast=1.3, saturation=0.5)
+    # (project, where, the colour there): the main clip alone, the overlay half over it, and a graded clip
+    pins = [(p, (0.05, 0.05), (200, 60, 40)), (p, (0.5, 0.5), (120, 70, 120)), (graded, (0.5, 0.5), GRADED)]
+    for i, (project, (fx, fy), want) in enumerate(pins):
+        export(project, media, f"pin{i}.mp4")
+        shown = decode(preview_frame(project, media, 1.0, width=SIZE[0], format="png", source="original").data)[2]
+        assert _close(_pixel(shown, fx, fy), want), ("preview", i, _pixel(shown, fx, fy), want)
+        assert _close(_pixel(export_frame(media, f"pin{i}.mp4", 1.0), fx, fy), want), ("export", i)
