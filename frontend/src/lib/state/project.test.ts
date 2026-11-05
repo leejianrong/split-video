@@ -4,12 +4,16 @@ const open = vi.fn();
 const timeline = vi.fn();
 const addClip = vi.fn();
 const applyOps = vi.fn();
+const undo = vi.fn();
+const redo = vi.fn();
 vi.mock('../api/generated/sdk.gen', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api/generated/sdk.gen')>()),
   openFileApiV1OpenPost: (...args: unknown[]) => open(...args),
   getVideoTimelineApiV1ProjectTimelineGet: (...args: unknown[]) => timeline(...args),
   addAssetClipApiV1ProjectClipsPost: (...args: unknown[]) => addClip(...args),
   applyVideoOpsApiV1ProjectOpsPost: (...args: unknown[]) => applyOps(...args),
+  undoVideoApiV1ProjectUndoPost: (...args: unknown[]) => undo(...args),
+  redoVideoApiV1ProjectRedoPost: (...args: unknown[]) => redo(...args),
 }));
 
 import { ApiError } from '../api/client';
@@ -45,6 +49,8 @@ beforeEach(() => {
   timeline.mockReset();
   addClip.mockReset();
   applyOps.mockReset();
+  undo.mockReset();
+  redo.mockReset();
   timeline.mockResolvedValue(timelineOf(3));
 });
 
@@ -204,6 +210,61 @@ describe('ProjectStore', () => {
       expect(store.editError?.fix).toMatch(/Fix:/);
       expect(store.revision).toBe(6);
       expect(store.timeline?.tracks[0]?.clips).toHaveLength(2);
+    });
+
+    it('undoes and redoes with If-Match and shows the history the engine reports', async () => {
+      const store = await openStore();
+      expect(store.history).toBeNull();
+      const withHistory = (revision: number, history: object) => {
+        const t = timelineOf(revision);
+        return { data: { ...t.data, history } };
+      };
+      undo.mockResolvedValue(
+        withHistory(4, {
+          can_undo: false,
+          can_redo: true,
+          undo_label: null,
+          redo_label: 'Split clip',
+        }),
+      );
+      expect(await store.step('undo')).toBe(true);
+      expect(undo.mock.calls[0]?.[0]).toMatchObject({
+        query: { path: 'gig.mp4' },
+        headers: { 'If-Match': '"3"' },
+      });
+      expect(store.revision).toBe(4);
+      expect(store.history).toMatchObject({
+        can_undo: false,
+        can_redo: true,
+        redo_label: 'Split clip',
+      });
+
+      redo.mockResolvedValue(
+        withHistory(5, {
+          can_undo: true,
+          can_redo: false,
+          undo_label: 'Split clip',
+          redo_label: null,
+        }),
+      );
+      expect(await store.step('redo')).toBe(true);
+      expect(redo.mock.calls[0]?.[0].headers['If-Match']).toBe('"4"');
+      expect(store.history?.can_undo).toBe(true);
+    });
+
+    it('reports an empty history as an edit error and keeps the project', async () => {
+      const store = await openStore();
+      undo.mockRejectedValue(
+        new ApiError({
+          code: 'history.empty',
+          message: 'nothing to undo',
+          fix: 'Edit first.',
+          status: 422,
+        }),
+      );
+      expect(await store.step('undo')).toBe(false);
+      expect(store.editError).toMatchObject({ code: 'history.empty' });
+      expect(store.revision).toBe(3);
     });
 
     it('keeps the catalogue fix when the server refuses the edit', async () => {

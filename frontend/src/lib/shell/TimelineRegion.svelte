@@ -14,8 +14,8 @@
   import IconButton from '../ui/IconButton.svelte';
   import Slider from '../ui/Slider.svelte';
 
-  // The timeline region: the toolbar (ux-spec #timeline) and the timeline itself (lib/timeline). The editing tools
-  // that need history or the preview (undo, redo, split, delete) are placeholders until their cards.
+  // The timeline region: the toolbar (ux-spec #timeline) and the timeline itself (lib/timeline). The delete tool
+  // is a placeholder until its card.
   const zoomValue = $derived(
     zoomToSlider(timelineView.pxPerSecond, timelineView.duration, timelineView.width),
   );
@@ -50,14 +50,41 @@
     clipSelection.ids = right.map((c) => c.id);
     announce(`Split at ${time.toFixed(1)} seconds`);
   }
+
+  /** Undo or redo; what the engine's history says the step reverts is announced. */
+  async function step(direction: 'undo' | 'redo'): Promise<void> {
+    const label = direction === 'undo' ? project.history?.undo_label : project.history?.redo_label;
+    if (!(direction === 'undo' ? project.history?.can_undo : project.history?.can_redo)) return;
+    if (!(await project.step(direction))) {
+      reportEditError();
+      return;
+    }
+    announce(`${direction === 'undo' ? 'Undid' : 'Redid'} ${label ?? 'the last edit'}`);
+  }
+  $effect(() => registerAction('history.undo', () => void step('undo')));
+  $effect(() => registerAction('history.redo', () => void step('redo')));
   $effect(() => registerAction('timeline.split', () => void splitAtPlayhead()));
   $effect(() => registerAction('timeline.splitAlias', () => void splitAtPlayhead()));
 </script>
 
 <section class="timeline" data-region="timeline" aria-label="Timeline">
   <div class="toolbar" role="toolbar" aria-label="Timeline tools">
-    <IconButton label="Undo" icon="undo" action="history.undo" size="sm" disabled />
-    <IconButton label="Redo" icon="redo" action="history.redo" size="sm" disabled />
+    <IconButton
+      label="Undo"
+      icon="undo"
+      action="history.undo"
+      size="sm"
+      disabled={!project.history?.can_undo}
+      onclick={() => step('undo')}
+    />
+    <IconButton
+      label="Redo"
+      icon="redo"
+      action="history.redo"
+      size="sm"
+      disabled={!project.history?.can_redo}
+      onclick={() => step('redo')}
+    />
     <IconButton
       label="Split at the playhead"
       icon="scissors"

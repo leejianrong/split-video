@@ -46,6 +46,7 @@ split-video compose render mix                                     # writes mix-
 split-video compose crop mix 1 --aspect 9:16 --center-x 0.3       # vertical crop of a 16:9 clip (or --x --y --w --h)
 split-video compose render mix --size 1080x1920 --overwrite       # a 9:16 short; the crop then fills the frame
 split-video compose set-canvas mix 9:16                            # the project's output ratio: 16:9, 9:16 or 1:1
+split-video compose undo mix                                       # and `redo`: step through the edit history (a new revision)
 split-video presets                                                # named export destinations
 split-video compose render mix --preset vertical-1080 --overwrite  # 1080x1920, 30 fps, tuned encoder
 split-video compose render mix --preset youtube-1080p --fit crop --overwrite  # cover the frame instead of black bars

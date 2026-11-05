@@ -20,6 +20,7 @@ from typing import Any
 from split_video import assets, captions, timeline, timeline_ops
 from split_video import store as store_module
 from split_video.ffmpeg import ProbeError
+from split_video.history import HistoryState
 from split_video.jobs import CancelToken
 from split_video.media_store import MediaError, MediaOutsideRootError, MediaStore
 from split_video.presets import resolve_export
@@ -96,7 +97,7 @@ def load_existing(
 def migrate_project(store: ProjectStore, media: MediaStore, name: str, *, base_revision: int | None = None) -> Project:
     """Link `name`'s clips to assets and save the project now, rewriting an older file in
     the current version. A clip whose file is missing keeps its `source` and stays unlinked."""
-    return store.update_timeline(name, lambda p: assets.link_project(media, p), base_revision)
+    return store.update_timeline(name, lambda p: assets.link_project(media, p), base_revision, "Update project")
 
 
 def create_project(store: ProjectStore, name: str) -> Project:
@@ -111,8 +112,10 @@ def edit(
     media: MediaStore | None = None,
     *,
     base_revision: int | None = None,
+    label: str = "Edit",
 ) -> Project:
-    """Load `name`, apply `change`, save and return the result (stamped with its new revision).
+    """Load `name`, apply `change`, save and return the result (stamped with its new revision). `label` names the
+    undo entry the save records (`history.py`).
 
     The load-modify-save runs under the store's write lock (across processes for the local store), so
     concurrent edits never lose each other. With `base_revision` the edit only applies if the project
@@ -123,7 +126,7 @@ def edit(
     def apply(project: Project) -> Project:
         return change(project if media is None else assets.link_project(media, project))
 
-    return store.update_timeline(name, apply, base_revision)
+    return store.update_timeline(name, apply, base_revision, label)
 
 
 # --- operations -------------------------------------------------------------
@@ -197,7 +200,7 @@ def add_clip(
         )
         return new
 
-    return edit(store, name, change, media, base_revision=base_revision)
+    return edit(store, name, change, media, base_revision=base_revision, label="Add clip")
 
 
 def trim_clip(
@@ -222,7 +225,7 @@ def trim_clip(
             raise TimelineError("the clip's source file is missing or unreadable")
         return timeline_ops.trim_clip(project, clip_id, duration, in_point=in_point, out_point=out_point)
 
-    return edit(store, name, change, media, base_revision=base_revision)
+    return edit(store, name, change, media, base_revision=base_revision, label="Trim clip")
 
 
 def add_text_clip(
@@ -240,7 +243,7 @@ def add_text_clip(
         new, _ = timeline_ops.add_text_clip(project, track_id, text, duration, **options)
         return new
 
-    return edit(store, name, change, media, base_revision=base_revision)
+    return edit(store, name, change, media, base_revision=base_revision, label="Add text")
 
 
 def set_clip_properties(
@@ -254,7 +257,7 @@ def set_clip_properties(
 ) -> Project:
     return edit(
         store, name, lambda p: timeline_ops.set_clip_properties(p, clip_id, **properties), media,
-        base_revision=base_revision,
+        base_revision=base_revision, label="Change clip",
     )  # fmt: skip
 
 
@@ -298,7 +301,7 @@ def set_clip_crop(
             )
         return timeline_ops.set_clip_properties(project, clip_id, crop=region)
 
-    return edit(store, name, change, media, base_revision=base_revision)
+    return edit(store, name, change, media, base_revision=base_revision, label="Crop clip")
 
 
 def set_text_properties(
@@ -312,7 +315,7 @@ def set_text_properties(
 ) -> Project:
     return edit(
         store, name, lambda p: timeline_ops.set_text_properties(p, clip_id, **properties), media,
-        base_revision=base_revision,
+        base_revision=base_revision, label="Edit text",
     )  # fmt: skip
 
 
@@ -323,7 +326,7 @@ def add_track(
         new, _ = timeline_ops.add_track(project, kind)
         return new
 
-    return edit(store, name, change, media, base_revision=base_revision)
+    return edit(store, name, change, media, base_revision=base_revision, label="Add track")
 
 
 def move_track(
@@ -336,7 +339,12 @@ def move_track(
     base_revision: int | None = None,
 ) -> Project:
     return edit(
-        store, name, lambda p: timeline_ops.move_track(p, track_id, to_index), media, base_revision=base_revision
+        store,
+        name,
+        lambda p: timeline_ops.move_track(p, track_id, to_index),
+        media,
+        base_revision=base_revision,
+        label="Move track",
     )
 
 
@@ -354,7 +362,7 @@ def set_track_flags(
     """Lock, hide or mute a track (the lane header toggles); a flag left as None is unchanged."""
     return edit(
         store, name, lambda p: timeline_ops.set_track_flags(p, track_id, locked=locked, hidden=hidden, muted=muted),
-        media, base_revision=base_revision,
+        media, base_revision=base_revision, label="Change track",
     )  # fmt: skip
 
 
@@ -362,13 +370,22 @@ def set_canvas(
     store: ProjectStore, name: str, ratio: str, media: MediaStore | None = None, *, base_revision: int | None = None
 ) -> Project:
     """Set the project's output ratio (`timeline_ops.set_canvas`); clips are kept."""
-    return edit(store, name, lambda p: timeline_ops.set_canvas(p, ratio), media, base_revision=base_revision)
+    return edit(
+        store, name, lambda p: timeline_ops.set_canvas(p, ratio), media, base_revision=base_revision, label="Set canvas"
+    )
 
 
 def remove_track(
     store: ProjectStore, name: str, track_id: str, media: MediaStore | None = None, *, base_revision: int | None = None
 ) -> Project:
-    return edit(store, name, lambda p: timeline_ops.remove_track(p, track_id), media, base_revision=base_revision)
+    return edit(
+        store,
+        name,
+        lambda p: timeline_ops.remove_track(p, track_id),
+        media,
+        base_revision=base_revision,
+        label="Remove track",
+    )
 
 
 def place_clip(
@@ -383,7 +400,7 @@ def place_clip(
 ) -> Project:
     return edit(
         store, name, lambda p: timeline_ops.place_clip(p, clip_id, start=start, track_id=track_id), media,
-        base_revision=base_revision,
+        base_revision=base_revision, label="Move clip",
     )  # fmt: skip
 
 
@@ -396,13 +413,27 @@ def move_clip(
     *,
     base_revision: int | None = None,
 ) -> Project:
-    return edit(store, name, lambda p: timeline_ops.move_clip(p, clip_id, to_index), media, base_revision=base_revision)
+    return edit(
+        store,
+        name,
+        lambda p: timeline_ops.move_clip(p, clip_id, to_index),
+        media,
+        base_revision=base_revision,
+        label="Reorder clip",
+    )
 
 
 def remove_clip(
     store: ProjectStore, name: str, clip_id: str, media: MediaStore | None = None, *, base_revision: int | None = None
 ) -> Project:
-    return edit(store, name, lambda p: timeline_ops.remove_clip(p, clip_id), media, base_revision=base_revision)
+    return edit(
+        store,
+        name,
+        lambda p: timeline_ops.remove_clip(p, clip_id),
+        media,
+        base_revision=base_revision,
+        label="Remove clip",
+    )
 
 
 def split_clip(
@@ -415,7 +446,14 @@ def split_clip(
     base_revision: int | None = None,
 ) -> Project:
     """Cut a clip in two at `at` timeline seconds (`timeline_ops.split_clip`): one edit, one revision."""
-    return edit(store, name, lambda p: timeline_ops.split_clip(p, clip_id, at)[0], media, base_revision=base_revision)
+    return edit(
+        store,
+        name,
+        lambda p: timeline_ops.split_clip(p, clip_id, at)[0],
+        media,
+        base_revision=base_revision,
+        label="Split clip",
+    )
 
 
 def set_transition(
@@ -430,7 +468,7 @@ def set_transition(
 ) -> Project:
     return edit(
         store, name, lambda p: timeline_ops.set_transition(p, clip_id, transition, duration), media,
-        base_revision=base_revision,
+        base_revision=base_revision, label="Set transition",
     )  # fmt: skip
 
 
@@ -518,14 +556,19 @@ def canvas_view(project: Project, rows: dict[str, Any]) -> dict[str, Any]:
     return {"ratio": ratio, "preset": timeline.CANVASES[ratio], "needs_reframe": flagged}
 
 
-def describe(media: MediaStore, name: str, project: Project, *, read_only: bool = False) -> dict[str, Any]:
+def describe(
+    media: MediaStore, name: str, project: Project, *, read_only: bool = False, history: HistoryState | None = None
+) -> dict[str, Any]:
     """JSON-friendly view of a project, with clips numbered from 1 per track.
 
     Each media clip shows its `asset` id and its file's current path as `source` (found by
     asset id, so a renamed file shows where it is now); an unresolvable clip shows its hint.
 
     With `read_only` the asset table is only read (`assets.peek`): no file is relocated, hashed or registered,
-    so the table is never written; the path shown is the recorded one. Dry runs use it."""
+    so the table is never written; the path shown is the recorded one. Dry runs use it.
+
+    With `history` (`store.history_state(...)`) the view also carries `history`: `can_undo`, `can_redo` and the labels
+    of the next undo and redo."""
     find = assets.peek if read_only else assets.lookup
     with assets.open_book(media) as book:
         rows = {c.id: find(book, c.asset, c.source) for t in project.tracks for c in t.clips if c.kind == "media"}
@@ -534,6 +577,7 @@ def describe(media: MediaStore, name: str, project: Project, *, read_only: bool 
         "revision": project.revision,
         "duration": timeline.ms(project.duration),
         "canvas": canvas_view(project, rows),
+        **({} if history is None else {"history": history.to_dict()}),
         "tracks": [
             {
                 "index": n + 1,

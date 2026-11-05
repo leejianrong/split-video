@@ -36,6 +36,7 @@ from split_video.editor.media_response import media_response
 from split_video.editor.revisions import WRITE_RESPONSES, base_revision
 from split_video.errors import RevisionConflictError
 from split_video.ffmpeg import ProbeError
+from split_video.history import HistoryState, Step
 from split_video.job_work import RENDER_STEPS, render_work
 from split_video.jobs import RENDER, JobInfo, JobQueue, UnknownJobError
 from split_video.media_store import MediaError, MediaOutsideRootError, MediaStore
@@ -110,12 +111,20 @@ class CanvasOut(BaseModel):
     needs_reframe: list[str]  # ids of main-track clips whose picture is not this shape (fit or crop them)
 
 
+class HistoryOut(BaseModel):
+    can_undo: bool
+    can_redo: bool
+    undo_label: str | None = None  # what the next undo reverts ("Split clip")
+    redo_label: str | None = None
+
+
 class ProjectOut(BaseModel):
     name: str
     # The project file's revision; send it back as the `If-Match` header on writes (see editor/revisions.py).
     revision: int = 0
     duration: float
     canvas: CanvasOut
+    history: HistoryOut | None = None  # undo and redo (docs/revisions.md); null where it does not apply
     tracks: list[TrackOut]
 
 
@@ -369,7 +378,7 @@ def clip_out(c: Clip, row: assets.Located | None) -> ClipOut:
     )
 
 
-def project_out(media: MediaStore, name: str, project: Project) -> ProjectOut:
+def project_out(media: MediaStore, name: str, project: Project, history: HistoryState | None = None) -> ProjectOut:
     # One table load for the whole project; each clip's file is found by asset id.
     with assets.open_book(media) as book:
         rows = {
@@ -380,6 +389,7 @@ def project_out(media: MediaStore, name: str, project: Project) -> ProjectOut:
         revision=project.revision,
         duration=timeline_module.ms(project.duration),
         canvas=CanvasOut(**timeline_service.canvas_view(project, rows)),
+        history=None if history is None else HistoryOut(**history.to_dict()),
         tracks=[
             TrackOut(
                 id=t.id,
@@ -425,7 +435,8 @@ def make_router(provider: StoreProvider, jobs: JobQueue) -> APIRouter:
 
     def respond(ctx: RequestContext, name: str, action: Callable[[], Project]) -> ProjectOut:
         try:
-            return project_out(ctx.media, name, action())
+            project = action()
+            return project_out(ctx.media, name, project, ctx.store.history_state("timeline", name))
         except RevisionConflictError:
             raise  # the app's handler answers it: 409 with the current revision
         except TimelineError as exc:
@@ -712,6 +723,20 @@ def make_router(provider: StoreProvider, jobs: JobQueue) -> APIRouter:
                 ctx.store, name, clip_id, request.transition, request.duration, ctx.media, base_revision=base
             ),
         )
+
+    def step(name: str, direction: Step, base: int | None, ctx: RequestContext) -> ProjectOut:
+        return respond(ctx, name, lambda: ctx.store.step_history("timeline", name, direction, base))
+
+    @router.post("/compose/projects/{name}/undo", response_model=ProjectOut, responses=WRITE_RESPONSES)
+    def undo(name: str, base: int | None = Depends(base_revision), ctx: RequestContext = ctx_dep) -> ProjectOut:
+        """Undo the latest edit (any writer's) by saving the state before it as a new revision. 422 `history.empty`
+        when there is nothing to undo; `history` on the project says in advance."""
+        return step(name, "undo", base, ctx)
+
+    @router.post("/compose/projects/{name}/redo", response_model=ProjectOut, responses=WRITE_RESPONSES)
+    def redo(name: str, base: int | None = Depends(base_revision), ctx: RequestContext = ctx_dep) -> ProjectOut:
+        """Redo the edit the last undo reverted, as a new revision. 422 `history.empty` when there is none."""
+        return step(name, "redo", base, ctx)
 
     @router.post("/compose/projects/{name}/render", response_model=RenderStartOut)
     def start_render(name: str, request: RenderRequest, ctx: RequestContext = ctx_dep) -> RenderStartOut:

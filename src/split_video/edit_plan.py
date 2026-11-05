@@ -1140,7 +1140,7 @@ def apply_plan(
         store_module.check_base_revision("timeline project", name, current, expected)
         revision = current + 1
     else:
-        revision = store.save_timeline(name, project, expected)
+        revision = store.save_timeline(name, project, expected, "Apply plan")
     result: dict[str, Any] = {
         "project": name,
         "revision": revision,

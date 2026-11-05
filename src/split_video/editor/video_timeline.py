@@ -1,4 +1,5 @@
-"""HTTP routes for a recording's own timeline: `GET /project/timeline`, `POST /project/clips` and `POST /project/ops`.
+"""HTTP routes for a recording's own timeline: `GET /project/timeline`, `POST /project/clips`, `POST /project/ops`
+and `POST /project/undo` / `redo`.
 
 The editor opens a video (`POST /open`, project id = its path) and its project is the video's own timeline
 (ADR 0003). The compose routes address timelines by a plain name, which cannot name a video in a folder, so these two
@@ -27,6 +28,7 @@ from split_video.editor.ops import OPS_RESPONSES, OpsResultOut, invalid_response
 from split_video.editor.revisions import WRITE_RESPONSES, base_revision
 from split_video.errors import ProjectError, RevisionConflictError
 from split_video.ffmpeg import ProbeError
+from split_video.history import Step
 from split_video.media_store import MediaError, MediaOutsideRootError
 from split_video.store_provider import StoreProvider
 from split_video.timeline import AssetNotFoundError, SourceNotFoundError, TimelineError
@@ -59,7 +61,9 @@ def make_router(provider: StoreProvider) -> APIRouter:
         try:
             timeline = project.video_timeline(ctx.store, ctx.media, source)
             revision = project.current_revision(ctx.store, source)
-            return project_out(ctx.media, path, replace(timeline, revision=revision))
+            return project_out(
+                ctx.media, path, replace(timeline, revision=revision), ctx.store.history_state("split", source)
+            )
         except (TimelineError, MediaError, ProbeError, ProjectError) as exc:
             raise api_error(422, exc) from None
 
@@ -77,7 +81,7 @@ def make_router(provider: StoreProvider) -> APIRouter:
             saved = project.add_asset_clip(
                 ctx.store, ctx.media, source, request.asset, index=request.index, base_revision=base
             )
-            return project_out(ctx.media, path, saved)
+            return project_out(ctx.media, path, saved, ctx.store.history_state("split", source))
         except RevisionConflictError:
             raise  # the app's handler answers it: 409 with the current revision
         except (AssetNotFoundError, SourceNotFoundError) as exc:
@@ -118,5 +122,34 @@ def make_router(provider: StoreProvider) -> APIRouter:
             raise  # the app's handler answers it: 409 with the current revision
         except (TimelineError, MediaError, ProbeError, ProjectError) as exc:
             raise api_error(422, exc) from None
+
+    def step(path: str, direction: Step, base: int | None, ctx: RequestContext) -> ProjectOut:
+        source = source_of(ctx, path)
+        try:
+            saved = ctx.store.step_history("split", source, direction, base)
+            return project_out(ctx.media, path, saved, ctx.store.history_state("split", source))
+        except RevisionConflictError:
+            raise  # the app's handler answers it: 409 with the current revision
+        except (TimelineError, MediaError, ProbeError, ProjectError) as exc:
+            raise api_error(422, exc) from None
+
+    @router.post("/project/undo", response_model=ProjectOut, responses=WRITE_RESPONSES)
+    def undo_video(
+        path: str = Query(..., description=PATH_DESCRIPTION),
+        base: int | None = Depends(base_revision),
+        ctx: RequestContext = ctx_dep,
+    ):
+        """Undo the latest edit of the video's timeline by saving the state before it as a new revision (see
+        `POST /compose/projects/{name}/undo`). 422 `history.empty` when there is nothing to undo."""
+        return step(path, "undo", base, ctx)
+
+    @router.post("/project/redo", response_model=ProjectOut, responses=WRITE_RESPONSES)
+    def redo_video(
+        path: str = Query(..., description=PATH_DESCRIPTION),
+        base: int | None = Depends(base_revision),
+        ctx: RequestContext = ctx_dep,
+    ):
+        """Redo the edit the last undo reverted, as a new revision. 422 `history.empty` when there is none."""
+        return step(path, "redo", base, ctx)
 
     return router

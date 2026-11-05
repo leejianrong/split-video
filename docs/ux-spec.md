@@ -322,9 +322,9 @@ main track, then music) on an unlocked lane. It is one `split_clip` edit (one re
 right-hand halves become the selection. A playhead outside every clip, or within 0.1 s of an edge, changes nothing and
 says so. Both halves keep the label and every property; a crossfade stays with the left half.
 
-**Undo and redo.** Unlimited within a session, shared by UI and agent edits.
-History is session-only: it is not saved in the project file and is gone after a
-reload (persisting it would be a format change, later).
+**Undo and redo.** Shared by UI and agent edits (one linear history per project, in the
+engine; see [revisions.md](revisions.md#undo-and-redo)). The last 100 edits are kept in a
+sidecar next to the project, so they survive a reload. Undo is a new revision.
 
 **Agent edits.** Appear live; changed segments flash briefly and an entry
 "Agent: removed 3 gaps" appears in the undo list.
@@ -503,8 +503,8 @@ wireframes. The sections above already reflect them.
    ripple-deletes the selection.
 3. **Safe zone.** One set of margins for 9:16 (10% top and bottom, 6% at each
    side, as captions use), shown by a toggle. No per-platform variants yet.
-4. **Undo and redo** are session-only. History is not persisted; persisting it
-   would be a format change, later.
+4. **Undo and redo** are the engine's history, kept in a sidecar next to the project
+   (the last 100 edits, surviving a reload). The project file format is unchanged.
 5. **Aspect ratio in two places.** The project canvas ratio (top bar) is the
    output ratio. A clip's reframe and crop in the inspector control how that
    clip is cropped to fit the canvas. They do not override each other.
