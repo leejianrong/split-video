@@ -45,6 +45,7 @@ split-video compose show mix
 split-video compose render mix                                     # writes mix-render.mp4
 split-video compose crop mix 1 --aspect 9:16 --center-x 0.3       # vertical crop of a 16:9 clip (or --x --y --w --h)
 split-video compose render mix --size 1080x1920 --overwrite       # a 9:16 short; the crop then fills the frame
+split-video compose set-canvas mix 9:16                            # the project's output ratio: 16:9, 9:16 or 1:1
 split-video presets                                                # named export destinations
 split-video compose render mix --preset vertical-1080 --overwrite  # 1080x1920, 30 fps, tuned encoder
 split-video compose render mix --preset youtube-1080p --fit crop --overwrite  # cover the frame instead of black bars
@@ -208,8 +209,8 @@ file is missing stays in the project and is linked once the file is back.
 video track and a muted track are left out of the render (a muted track is silent), the main video track cannot be hidden.
 They are saved on the track as optional `locked`, `hidden`, `muted` (written only when on), so the file version stays 2.
 
-**Canvas.** The project's output ratio (16:9, 9:16 or 1:1, the editor's top bar) is set with `apply-ops` and `set_canvas`
-(`ratio`), carries revisions like any edit and is saved as an optional `canvas` (written only once chosen). Adding it
+**Canvas.** The project's output ratio (16:9, 9:16 or 1:1, the editor's top bar) is set with `compose set-canvas <project> <ratio>`
+(`--base-revision`; any other ratio is refused as `timeline.invalid`), `apply-ops` and `set_canvas` (`ratio`), carries revisions like any edit and is saved as an optional `canvas` (written only once chosen). Adding it
 made the file format version 3: a version 1 or 2 file migrates on load (no canvas, shown as 16:9) and is written back as
 3, on the next edit or `compose migrate`. A render, `preview-frame` or `preview-range` that names no `--preset`
 and no size uses the canvas's preset (`youtube-1080p`, `vertical-1080`, `square-1080`); a project that never chose one

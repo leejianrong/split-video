@@ -485,6 +485,26 @@ def set_cmd(
     _show(media, name, project, as_json)
 
 
+def set_canvas_cmd(
+    name: str = _Name,
+    ratio: str = typer.Argument(..., help="Output ratio: 16:9, 9:16 or 1:1."),
+    base_revision: int | None = _BaseRevision,
+    root: Path = _Root,
+    as_json: bool = _Json,
+) -> None:
+    """Set the project's output ratio (its canvas); the clips are kept and `show` lists those that no longer fit."""
+    root = root.resolve()
+    store = LocalProjectStore(root)
+    media = LocalMediaStore(root)
+    try:
+        project = timeline_service.set_canvas(store, name, ratio, media=media, base_revision=base_revision)
+    except _EXPECTED_ERRORS as exc:
+        raise _fail(exc, as_json)
+    _show(media, name, project, as_json)
+    if not as_json:
+        console.print(f"Canvas {project.canvas_ratio} (export preset {project.canvas_preset}).")
+
+
 def crop_cmd(
     name: str = _Name,
     clip: int = _Clip,
@@ -1023,6 +1043,7 @@ def register(app: typer.Typer) -> None:
         ("move-track", move_track_cmd),
         ("place", place_cmd),
         ("set", set_cmd),
+        ("set-canvas", set_canvas_cmd),
         ("crop", crop_cmd),
         ("add-text", add_text_cmd),
         ("set-text", set_text_cmd),
