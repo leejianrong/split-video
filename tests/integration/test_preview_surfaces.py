@@ -142,3 +142,38 @@ async def test_mcp_returns_an_image_block_and_the_same_info(workspace):
         assert late.is_error and "6 s long" in late.content[0].text
         missing = await client.call_tool("preview_frame", {"name": "nope", "time": 1})
         assert missing.is_error
+
+
+def test_api_cli_and_mcp_preview_the_videos_own_timeline(workspace, tmp_path):
+    """The editor's project is a recording's own timeline, addressed by path (not a named project)."""
+    client = TestClient(create_app(workspace, DEFAULTS))
+    r = client.get("/api/v1/project/preview-frame", params={"path": "red.mp4", "time": 1, "width": 320})
+    assert r.status_code == 200 and dominant(r.content) == "red" and decode(r.content)[:2] == (320, 180)
+    assert r.headers["x-preview-revision"] == "0"
+    cached = client.get(
+        "/api/v1/project/preview-frame",
+        params={"path": "red.mp4", "time": 1, "width": 320},
+        headers={"If-None-Match": r.headers["etag"]},
+    )
+    assert cached.status_code == 304
+    assert client.get("/api/v1/project/preview-frame", params={"path": "nope.mp4", "time": 1}).status_code == 404
+    assert client.get("/api/v1/project/preview-frame", params={"path": "../x.mp4", "time": 1}).status_code == 400
+
+    out = tmp_path / "video.jpg"
+    cli = runner.invoke(
+        app, ["compose", "preview-frame", "--video", "red.mp4", "1", "--root", str(workspace), "--out", str(out)]
+    )
+    assert cli.exit_code == 0, cli.output
+    assert json.loads(cli.stdout)["revision"] == 0 and dominant(out.read_bytes()) == "red"
+    assert runner.invoke(app, ["compose", "preview-frame", "1", "--root", str(workspace)]).exit_code == 2
+
+
+@pytest.mark.anyio
+async def test_mcp_previews_the_videos_own_timeline(workspace):
+    async with Client(create_server(workspace)) as client:
+        result = await client.call_tool("preview_frame", {"video": "red.mp4", "time": 1, "width": 320})
+        assert not result.is_error, result.content
+        image = next(c for c in result.content if c.type == "image")
+        assert dominant(base64.b64decode(image.data)) == "red"
+        both = await client.call_tool("preview_frame", {"name": "show", "video": "red.mp4", "time": 1})
+        assert both.is_error

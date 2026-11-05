@@ -15,6 +15,7 @@ surfaces, not the browser.)
 | `inspector.spec.ts` | Change a clip's volume (saved, survives a reload); an out-of-range value is refused and nothing is saved |
 | `export.spec.ts` | Render the timeline to a tiny 720p file from the export dialog and check it with `ffprobe`; an existing file fails with a fix |
 | `live-refresh.spec.ts` | An outside CLI edit (`apply-ops`) appears in the open editor without a reload; removing the selected clip clears the selection |
+| `preview.spec.ts` | The preview shows a still at the playhead, follows ruler clicks with few requests, and redraws (same time, new picture) when an outside edit adds a picture-in-picture and a title |
 | `a11y.spec.ts` | axe checks of the first-run page, the library, the shell on every tab, the inspector and the export dialog |
 
 Not covered: visual regression (no screenshot comparison), and the old pages at `/` and `/compose.html`.

@@ -7950,6 +7950,78 @@ export type ApplyVideoOpsApiV1ProjectOpsPostResponses = {
 
 export type ApplyVideoOpsApiV1ProjectOpsPostResponse = ApplyVideoOpsApiV1ProjectOpsPostResponses[keyof ApplyVideoOpsApiV1ProjectOpsPostResponses];
 
+export type GetVideoPreviewFrameApiV1ProjectPreviewFrameGetData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * Time
+         */
+        time: number;
+        /**
+         * Path
+         *
+         * The video's path relative to the browse root (the project id the editor opens).
+         */
+        path: string;
+        /**
+         * Width
+         */
+        width?: number | null;
+        /**
+         * Preset
+         */
+        preset?: string | null;
+        /**
+         * Fit
+         */
+        fit?: string | null;
+        /**
+         * Format
+         */
+        format?: string;
+        /**
+         * Quality
+         */
+        quality?: number;
+        /**
+         * Source
+         */
+        source?: string;
+    };
+    url: '/api/v1/project/preview-frame';
+};
+
+export type GetVideoPreviewFrameApiV1ProjectPreviewFrameGetErrors = {
+    /**
+     * No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN).
+     */
+    401: UnauthorizedOut;
+    /**
+     * The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next.
+     */
+    404: ApiErrorOut;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+    /**
+     * The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next.
+     */
+    501: ApiErrorOut;
+};
+
+export type GetVideoPreviewFrameApiV1ProjectPreviewFrameGetError = GetVideoPreviewFrameApiV1ProjectPreviewFrameGetErrors[keyof GetVideoPreviewFrameApiV1ProjectPreviewFrameGetErrors];
+
+export type GetVideoPreviewFrameApiV1ProjectPreviewFrameGetResponses = {
+    /**
+     * The encoded image.
+     */
+    200: Blob | File;
+};
+
+export type GetVideoPreviewFrameApiV1ProjectPreviewFrameGetResponse = GetVideoPreviewFrameApiV1ProjectPreviewFrameGetResponses[keyof GetVideoPreviewFrameApiV1ProjectPreviewFrameGetResponses];
+
 export type GetVideoTimelineApiV1ProjectTimelineGetData = {
     body?: never;
     path?: never;

@@ -24,6 +24,7 @@ NO_LEGACY_ALIAS = {
     "/api/v1/assets/upload",
     "/api/v1/assets/{asset_id}/split",
     "/api/v1/project/timeline",
+    "/api/v1/project/preview-frame",
     "/api/v1/project/clips",
     "/api/v1/project/ops",
     "/api/v1/project/highlights",

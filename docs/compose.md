@@ -70,8 +70,13 @@ and is synchronous, not a job. Captions and sound are not drawn.
 ```bash
 split-video compose preview-frame mix 12.5 --width 640 --out look.jpg     # prints JSON: project, revision, time, size, source, out
 split-video compose preview-frame mix 1:02 --preset vertical-1080 --width 270 --format png
+split-video compose preview-frame --video talk.mp4 12.5     # a recording's own timeline, the one the editor shows
 curl -o look.jpg "localhost:8765/api/v1/compose/projects/mix/preview-frame?time=12.5&width=640"
 ```
+
+A recording's own timeline (the project the editor has open) is addressed by the video's path instead of a name:
+`GET /api/v1/project/preview-frame?path=talk.mp4&time=12.5`, `compose preview-frame --video talk.mp4 12.5` and the MCP
+tool `preview_frame` with `video` (give `name` or `video`, not both). The answer is the same.
 
 The same options (`time`, `width`, `preset`, `fit`, `format`, `quality`, `source`) are on
 `GET /api/v1/compose/projects/{name}/preview-frame` and the MCP tool `preview_frame`, which all say the same thing about

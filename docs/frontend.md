@@ -40,6 +40,31 @@ contents, preview, the inspector's controls are described [below](#the-inspector
 first, then the inspector, so the preview keeps 480 px. Sizes and the selected tab persist in `localStorage` under
 `split-video.layout.v1` (try/catch; the layout works without it) and never go in the project.
 
+## Preview
+
+`shell/PreviewRegion.svelte` shows the composite of the timeline at the playhead: the server's own render with the
+export's filter graph (overlays, titles, colour, crop; no captions or sound yet), so it matches the export. The still
+comes from `GET /api/v1/project/preview-frame?path=&time=&width=` (the recording's own timeline; the named-project
+route is `/compose/projects/{name}/preview-frame`), fetched through the generated client as a blob so the API token is
+sent and the picture is kept as an object URL.
+
+- **Scheduling** (`state/stills.ts`, `StillScheduler`): the request goes out 150 ms after the playhead stops moving (a
+  drag moves it every frame, so it sends one request; a frame renders in well under 300 ms, which keeps a still inside the
+  ux-spec's 500 ms). A newer request aborts the one in flight with an `AbortController`, and an answer that is not the
+  newest is dropped. The same project, time, width and revision is not asked twice.
+- **Width** is the frame's width on screen times the device pixel ratio (at most 2), rounded up to 64 px and capped at
+  1280; the server never goes above the export's width. The frame box takes the ratio from the answer's
+  `X-Preview-Width` and `X-Preview-Height`, and the stage letterboxes it. The top bar's canvas ratio does not drive it yet (no `preset` is sent), so the frame shows
+  the ratio the export would use today.
+- **While it renders** the previous still stays with a small spinner (`role="status"`). A failure leaves the still and
+  shows the catalogue's message and fix under it, inline, with no toast; editing carries on.
+- **Revision**: the project's revision is part of the request, so an edit (also one made by an agent, see live refresh)
+  asks for a new still. The route's `ETag` hashes revision and request and its `Cache-Control` is `no-cache`, so the
+  browser revalidates and an unchanged frame is a bodiless 304.
+- The previous object URL is revoked when it is replaced and when the editor is left. An empty timeline shows "Your
+  timeline shows here." and requests nothing. Play, Fit, safe zones and captions are later cards; the transport stays
+  disabled.
+
 ## First run
 
 `lib/firstrun/StartView.svelte` (`#/`) is [ux-spec.md#first-run](ux-spec.md#first-run). State is in
@@ -276,8 +301,8 @@ there are none. Actions:
 start (message, `Fix:`, Retry), the suggestions could not be read (message, `Fix:`, Try again), none found ("No highlight
 stood out in this recording" with a fix) and every card dismissed.
 
-**Known limits.** The preview does not draw frames yet, so a card "previews" through the playhead and the range on the
-timeline. A card's title is the engine's `title_hint` (the first on-screen text or spoken line), else "Highlight N".
+**Known limits.** The preview shows a still at the playhead, not a playing clip, so a card "previews" through the
+playhead and the range on the timeline. A card's title is the engine's `title_hint` (the first on-screen text or spoken line), else "Highlight N".
 Captions are not clips: the `shorts` captions are burned in at [export](#export).
 
 ## Export
@@ -334,7 +359,7 @@ applied" (the same path as every edit); a refused edit (a locked lane, an overla
 | Lanes | `timeline/lanes.ts` | Tracks to rows: overlay and text tracks (latest on top), Main · Video, Main · Audio, then audio tracks ("Music"); a lane exists only with content, except the two main ones. |
 | Edits | `timeline/edits.ts`, `drag.svelte.ts` | Pointer maths to ops: `trim_clip` (clamped to the source, the shortest clip and, on a free track, the neighbours), `move_clip` (main track: the index among the clips by their middles), `place_clip` (free tracks: time and lane of its kind), `add_clip` for a dropped card. One commit on release; Escape cancels. |
 | View | `state/timelineView.svelte.ts` | Zoom and scroll; starts fitted; Ctrl+wheel zooms around the pointer, `+` `-` around the playhead, Shift+Z fits, Shift+wheel scrolls. |
-| Playhead | `state/playhead.svelte.ts` | Click or drag the ruler or the red head; the preview readout follows. The preview does not play yet. |
+| Playhead | `state/playhead.svelte.ts` | Click or drag the ruler or the red head; the preview readout and still follow. The preview does not play yet. |
 | Selection | `state/clipSelection.svelte.ts` | Click, Shift- or Ctrl-click adds, Escape clears; the inspector header names it ("Selected: Song 2, 4 min 12 s"). |
 | Filmstrip | `timeline/thumbs.ts`, `state/thumbs.svelte.ts` | Frames from `GET /assets/{id}/frame` for the visible part of each clip only, on a time grid shared across zoom levels, 4 requests at a time, never the same URL twice; a tile that has not arrived is not drawn. |
 | Waveform | `timeline/waveform.ts`, `state/waveforms.svelte.ts` | From `GET /assets/{id}/waveform` (the server decodes once, as a `waveform` job; "Preparing the waveform..." until then). The finer of the two stored curves is drawn as columns for the visible part. |
@@ -392,8 +417,7 @@ Things to know:
   value stays in the box with a `Fix:` hint and nothing is sent (the engine still checks every range). A slider
   commits when the value has settled for 350 ms, so holding an arrow key writes one revision.
 - **Locked lanes** disable the controls with a note.
-- Keyframes, undo steps per drag and the preview of the result are not here yet; there is no preview, so "shows in
-  the preview" is checked through the engine's timeline state instead.
+- Keyframes, undo steps per drag and playback of the result are not here yet.
 
 ## Caching
 
