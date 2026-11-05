@@ -475,43 +475,6 @@ def create_server(
         summary = await run(work)
         return {"video": source, **summary}
 
-    @server.tool(annotations=ToolAnnotations(read_only_hint=False, destructive_hint=True, open_world_hint=False))
-    async def export(
-        video: str,
-        only: list[int] | None = None,
-        output_format: str | None = None,
-        precise: bool = False,
-        overwrite: bool = False,
-        manifest: bool = True,
-    ) -> dict[str, Any]:
-        """Write the segments as separate files into '<video name>_split/' next to the video. By default
-        writes the segments marked included; `only` (segment numbers) writes exactly those instead.
-        precise=true re-encodes for frame-accurate cuts (slow); the default is a fast stream copy that can
-        land a second or two off a keyframe. Refuses to replace existing files unless overwrite=true."""
-        source = resolve(video)
-
-        def work() -> tuple[project.ExportPlan, list[str], str | None]:
-            chosen = project.select_for_export(current_segments(source), only)
-            plan = project.plan_export(
-                media,
-                source,
-                [(s.start, s.end, s.export_name) for s in chosen],
-                output_format=output_format,
-                overwrite=overwrite,
-            )
-            written, manifest_path = project.run_export(
-                media, plan, precise=precise, output_format=output_format, write_manifest_file=manifest
-            )
-            return plan, written, manifest_path
-
-        plan, written, manifest_path = await run(work)
-        return {
-            "video": source,
-            "output_dir": plan.output_dir,
-            "files": written,
-            "manifest": manifest_path,
-        }
-
     # --- timeline (multi-clip) projects ---------------------------------------
 
     def timeline_result(name: str, project_: timeline.Project, **extra: Any) -> dict[str, Any]:
@@ -1653,6 +1616,7 @@ def create_server(
         overwrite: bool = False,
         precise: bool = False,
         output_format: str | None = None,
+        manifest: bool = False,
         width: int | None = None,
         height: int | None = None,
         preset: str | None = None,
@@ -1666,7 +1630,7 @@ def create_server(
     ) -> dict[str, Any]:
         """One export operation with three modes; it returns at once and the files are written in the background
         on the render queue (a few at a time). mode `segments`: each included segment of `video` as its own file in
-        '<video name>_split/' (`only` = segment numbers instead; a stream copy unless you pass a preset, size, fit or
+        '<video name>_split/' (`only` = segment numbers instead, overriding the included flags; `manifest` also writes manifest.json; a stream copy unless you pass a preset, size, fit or
         captions, or the recording's timeline has a canvas, then each is rendered at the canvas's preset; preset 'original'
         keeps the stream copy and, for mode `timeline`, skips the canvas). mode `timeline`: the whole timeline as one `<name>.mp4`, named after the
         timeline `project` (or `video`'s own timeline). mode `highlights`: each timeline in `timelines` (the highlights
@@ -1704,6 +1668,7 @@ def create_server(
                 overwrite=overwrite,
                 precise=precise,
                 output_format=output_format,
+                manifest=manifest,
                 options=options,
             )
         )

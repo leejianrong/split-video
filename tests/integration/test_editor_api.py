@@ -1,5 +1,4 @@
 import time
-from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -21,34 +20,6 @@ def _q(source):
     """Query params identifying the project (the file name, relative to the
     browse root, which is the clip's directory in these tests)."""
     return {"path": source.name}
-
-
-def _detect_segments(client, source, duration, **overrides):
-    """Runs the same silence-detect + compute-segments pair the editor's
-    onboarding step (see #14/#19's follow-up) calls on demand — nothing
-    happens automatically on open any more (see #16: it used to, and that's
-    exactly what blocked the server on a long recording)."""
-    params = {
-        "silence_threshold": DEFAULTS.silence_threshold,
-        "min_silence_duration": DEFAULTS.min_silence_duration,
-        "min_song_length": DEFAULTS.min_song_length,
-        "padding": DEFAULTS.padding,
-        **overrides,
-    }
-    silences = client.post(
-        "/api/v1/detect", params=_q(source), json={"silence_threshold": params["silence_threshold"]}
-    ).json()["silences"]
-    response = client.post(
-        "/api/v1/segments",
-        json={
-            "silences": silences,
-            "duration": duration,
-            "min_silence_duration": params["min_silence_duration"],
-            "min_song_length": params["min_song_length"],
-            "padding": params["padding"],
-        },
-    )
-    return response.json()["segments"]
 
 
 def test_state_returns_no_segments_until_something_proposes_them(three_songs_clip):
@@ -245,38 +216,6 @@ def test_segments_endpoint_is_pure_and_never_touches_ffmpeg(three_songs_clip, mo
     assert len(response.json()["segments"]) == 3
 
 
-def test_export_writes_files_and_manifest(three_songs_clip):
-    client = _client(three_songs_clip)
-    duration = client.get("/api/v1/state", params=_q(three_songs_clip)).json()["duration"]
-    segments = _detect_segments(client, three_songs_clip, duration)
-
-    response = client.post(
-        "/api/v1/export",
-        params=_q(three_songs_clip),
-        json={"segments": [{"start": s["start"], "end": s["end"]} for s in segments]},
-    )
-    assert response.status_code == 200
-    job_id = response.json()["job_id"]
-
-    status = _poll_until_done(client, job_id)
-    assert status["status"] == "done"
-    assert status["completed"] == status["total"] == 3
-    assert status["manifest_path"] is not None
-
-    output_dir = three_songs_clip.with_name("three_songs_split")
-    assert len(list(output_dir.glob("*.mp4"))) == 3
-
-
-def test_export_rejects_overlapping_segments(three_songs_clip):
-    client = _client(three_songs_clip)
-    response = client.post(
-        "/api/v1/export",
-        params=_q(three_songs_clip),
-        json={"segments": [{"start": 0.0, "end": 10.0}, {"start": 5.0, "end": 15.0}]},
-    )
-    assert response.status_code == 422
-
-
 def test_media_source_supports_range_requests(three_songs_clip):
     client = _client(three_songs_clip)
     response = client.get("/api/v1/media/source", params=_q(three_songs_clip), headers={"Range": "bytes=0-99"})
@@ -392,47 +331,6 @@ def test_saved_labels_and_colors_are_resumed(three_songs_clip):
         for s in state["segments"]
     ]
     assert got == segments
-
-
-def test_export_uses_custom_names_when_given(three_songs_clip):
-    client = _client(three_songs_clip)
-    response = client.post(
-        "/api/v1/export",
-        params=_q(three_songs_clip),
-        json={
-            "segments": [
-                {"start": 0.0, "end": 6.0, "name": "intro"},
-                {"start": 6.0, "end": 13.0, "name": None},
-                {"start": 13.0, "end": 21.0, "name": "outro"},
-            ]
-        },
-    )
-    assert response.status_code == 200
-    status = _poll_until_done(client, response.json()["job_id"])
-    assert status["status"] == "done"
-
-    output_dir = three_songs_clip.with_name("three_songs_split")
-    names = {Path(f).name for f in status["files"]}
-    assert "intro.mp4" in names
-    assert "outro.mp4" in names
-    assert any(f.startswith("02 - ") for f in names)  # the unnamed middle segment keeps default numbering
-    assert len(list(output_dir.glob("*.mp4"))) == 3
-
-
-def test_export_rejects_duplicate_resolved_names(three_songs_clip):
-    client = _client(three_songs_clip)
-    response = client.post(
-        "/api/v1/export",
-        params=_q(three_songs_clip),
-        json={
-            "segments": [
-                {"start": 0.0, "end": 6.0, "name": "same"},
-                {"start": 6.0, "end": 13.0, "name": "same"},
-                {"start": 13.0, "end": 21.0, "name": None},
-            ]
-        },
-    )
-    assert response.status_code == 422
 
 
 def test_static_assets_are_never_cached(three_songs_clip):

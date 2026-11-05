@@ -1,18 +1,15 @@
-"""Export, analysis and render run as jobs on the queue: polling shapes, the generic /jobs
+"""Analysis and render run as jobs on the queue: polling shapes, the generic /jobs
 routes, and cancellation through HTTP (with a real ffmpeg for render)."""
 
 import subprocess
-import sys
 import time
 
 import pytest
 from fastapi.testclient import TestClient
 
-from split_video import project as project_module
 from split_video.editor import classify as classify_module
 from split_video.editor.app import create_app
 from split_video.editor.schemas import StateParams
-from split_video.ffmpeg import run_cancellable
 from split_video.jobs import InProcessJobQueue
 
 DEFAULTS = StateParams(silence_threshold=-35.0, min_silence_duration=2.0, min_song_length=2.0, padding=0.15)
@@ -30,106 +27,6 @@ def _wait(client, job_id, until=("done", "error", "cancelled"), timeout=30.0):
             return job
         time.sleep(0.02)
     raise AssertionError(f"job {job_id} stayed {job['state']}")
-
-
-def _segments(three_songs_clip, n=3):
-    return [{"start": i * 5.0, "end": i * 5.0 + 4.0} for i in range(n)]
-
-
-# --- export -------------------------------------------------------------------------------------
-
-
-def test_export_job_is_queryable_by_id_after_it_finishes(three_songs_clip):
-    client = TestClient(create_app(three_songs_clip.parent, DEFAULTS))
-    job_id = client.post(
-        "/api/v1/export", params=_q(three_songs_clip), json={"segments": _segments(three_songs_clip)}
-    ).json()["job_id"]
-    job = _wait(client, job_id)
-    assert job["state"] == "done" and job["kind"] == "export" and job["label"] == three_songs_clip.name
-    assert job["completed"] == job["total"] == 3 and job["fraction"] == 1.0
-    assert len(job["result"]["files"]) == 3 and job["result"]["manifest_path"].endswith("manifest.json")
-    assert job["created_at"] <= job["started_at"] <= job["finished_at"]
-
-    legacy = client.get(f"/api/v1/export/{job_id}").json()
-    assert set(legacy) == {
-        "status",
-        "completed",
-        "total",
-        "current_file",
-        "output_dir",
-        "manifest_path",
-        "files",
-        "error",
-    }
-    assert legacy["status"] == "done" and legacy["files"] == job["result"]["files"] and legacy["error"] is None
-
-    listed = client.get("/api/v1/jobs", params={"kind": "export"}).json()["jobs"]
-    assert [j["id"] for j in listed] == [job_id]
-    assert client.get("/api/v1/jobs", params={"state": "error"}).json() == {"jobs": []}
-
-
-def test_job_ids_are_only_valid_on_their_own_kinds_endpoints(three_songs_clip):
-    client = TestClient(create_app(three_songs_clip.parent, DEFAULTS))
-    job_id = client.post(
-        "/api/v1/export", params=_q(three_songs_clip), json={"segments": _segments(three_songs_clip, 1)}
-    ).json()["job_id"]
-    _wait(client, job_id)
-    assert client.get(f"/api/v1/analyze/{job_id}").status_code == 404
-    assert client.get(f"/api/v1/compose/render/{job_id}").status_code == 404
-    assert client.post(f"/api/v1/compose/render/{job_id}/cancel").status_code == 404
-    assert client.get("/api/v1/jobs/nope").status_code == 404
-    assert client.post("/api/v1/jobs/nope/cancel").status_code == 404
-    assert client.get(f"/api/v1/export/{job_id}").status_code == 200
-
-
-def test_cancelling_a_finished_job_returns_its_final_state(three_songs_clip):
-    client = TestClient(create_app(three_songs_clip.parent, DEFAULTS))
-    job_id = client.post(
-        "/api/v1/export", params=_q(three_songs_clip), json={"segments": _segments(three_songs_clip, 1)}
-    ).json()["job_id"]
-    _wait(client, job_id)
-    again = client.post(f"/api/v1/jobs/{job_id}/cancel").json()
-    assert again["state"] == "done" and again["cancel_requested"] is False
-
-
-def test_export_error_is_reported_in_the_polling_shape(three_songs_clip, monkeypatch):
-    def broken(*args, **kwargs):
-        raise OSError("disk full")
-
-    monkeypatch.setattr(project_module, "extract_segment", broken)
-    client = TestClient(create_app(three_songs_clip.parent, DEFAULTS))
-    job_id = client.post(
-        "/api/v1/export", params=_q(three_songs_clip), json={"segments": _segments(three_songs_clip, 1)}
-    ).json()["job_id"]
-    job = _wait(client, job_id)
-    legacy = client.get(f"/api/v1/export/{job_id}").json()
-    assert job["state"] == "error" and legacy["status"] == "error" and legacy["error"] == "disk full"
-    assert legacy["output_dir"] is None and legacy["files"] == []
-
-
-def test_cancelling_an_export_keeps_finished_files_and_removes_the_partial_one(three_songs_clip, monkeypatch):
-    calls = []
-
-    def fake_extract(source, start, end, out_path, precise, output_format=None, cancel=None):
-        calls.append(out_path.name)
-        out_path.write_bytes(b"x")
-        if len(calls) == 2:
-            run_cancellable([sys.executable, "-c", "import time; time.sleep(60)"], cancel)
-
-    monkeypatch.setattr(project_module, "extract_segment", fake_extract)
-    client = TestClient(create_app(three_songs_clip.parent, DEFAULTS))
-    job_id = client.post(
-        "/api/v1/export", params=_q(three_songs_clip), json={"segments": _segments(three_songs_clip)}
-    ).json()["job_id"]
-    while len(calls) < 2:
-        time.sleep(0.01)
-    time.sleep(0.2)  # the second file's sleeper is up
-    response = client.post(f"/api/v1/export/{job_id}/cancel").json()
-    assert response["status"] == "cancelled" and response["error"] == "cancelled"
-    out = three_songs_clip.with_name("three_songs_split")
-    assert sorted(p.name for p in out.iterdir()) == [calls[0]]  # no 2nd file, no 3rd, no manifest
-    assert len(calls) == 2
-    assert client.get(f"/api/v1/jobs/{job_id}").json()["result"]["files"] == [str(out / calls[0])]
 
 
 # --- analysis -----------------------------------------------------------------------------------

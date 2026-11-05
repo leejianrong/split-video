@@ -128,12 +128,6 @@ class SegmentsResponse(BaseModel):
     segments: list[SegmentOut]
 
 
-class ExportSegmentIn(BaseModel):
-    start: float
-    end: float
-    name: str | None = None  # custom output basename (no extension); falls back to default numbering if unset
-
-
 class ProjectSegmentIn(BaseModel):
     start: float
     end: float
@@ -147,34 +141,11 @@ class ProjectSaveRequest(BaseModel):
     segments: list[ProjectSegmentIn]
 
 
-class ExportRequest(BaseModel):
-    segments: list[ExportSegmentIn]
-    precise: bool = False
-    output_format: str | None = None
-    overwrite: bool = False
-    manifest: bool = True
-
-
-class ExportStartResponse(BaseModel):
-    job_id: str
-
-
-class ExportStatusResponse(BaseModel):
-    status: str
-    completed: int
-    total: int
-    current_file: str | None = None
-    output_dir: str | None = None
-    manifest_path: str | None = None
-    files: list[str] | None = None
-    error: str | None = None
-
-
 class JobOut(BaseModel):
     """One job, whatever its kind (see `split_video.jobs.JobInfo`)."""
 
     id: str
-    kind: str  # export | analysis | render | library_scan | proxy | transcription | scene_analysis | ocr | split | waveform
+    kind: str  # analysis | render | library_scan | proxy | transcription | scene_analysis | ocr | split | waveform
     state: str  # queued | running | done | error | cancelled
     label: str | None = None
     completed: float

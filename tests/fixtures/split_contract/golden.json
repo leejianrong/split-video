@@ -82,45 +82,6 @@
    "exit": 1,
    "out": "Error: 7.52s is too close to the existing split at 7.5s\nFix: Choose a time at least a second away from every existing split, or move the existing one with `move_split`; `list_segments` shows where they are.\n{\n  \"code\": \"segments.too_close\",\n  \"message\": \"7.52s is too close to the existing split at 7.5s\",\n  \"fix\": \"Choose a time at least a second away from every existing split, or move the existing one with `move_split`; `list_segments` shows where they are.\"\n}\n"
   },
-  "export_bad_only": {
-   "exit": 1,
-   "out": "Error: segment 9 doesn't exist: there are 2 segment(s)\nFix: Use a number from 1 up to the count `list_segments` (CLI `split-video segments VIDEO`) reports; split N is the cut between segments N and N+1.\n{\n  \"code\": \"segments.not_found\",\n  \"message\": \"segment 9 doesn't exist: there are 2 segment(s)\",\n  \"fix\": \"Use a number from 1 up to the count `list_segments` (CLI `split-video segments VIDEO`) reports; split N is the cut between segments N and N+1.\"\n}\n"
-  },
-  "export_conflict": {
-   "exit": 1,
-   "out": "Error: 2 output file(s) already exist (pass overwrite to replace): Part One.mp4, 02 - gig.mp4\nFix: Pass overwrite=true (CLI `--overwrite`) to replace it, or choose another `output` name.\n{\n  \"code\": \"render.output_exists\",\n  \"message\": \"2 output file(s) already exist (pass overwrite to replace): Part One.mp4, 02 - gig.mp4\",\n  \"fix\": \"Pass overwrite=true (CLI `--overwrite`) to replace it, or choose another `output` name.\"\n}\n"
-  },
-  "export_default": {
-   "exit": 0,
-   "out": {
-    "files": [
-     "<ROOT>/gig_split/Part One.mp4",
-     "<ROOT>/gig_split/02 - gig.mp4"
-    ],
-    "manifest": "<ROOT>/gig_split/manifest.json",
-    "output_dir": "<ROOT>/gig_split",
-    "source": "<ROOT>/gig.mp4"
-   }
-  },
-  "export_only": {
-   "exit": 0,
-   "out": {
-    "files": [
-     "<ROOT>/gig_split/01 - gig.mp4"
-    ],
-    "manifest": null,
-    "output_dir": "<ROOT>/gig_split",
-    "source": "<ROOT>/gig.mp4"
-   }
-  },
-  "exported_files": {
-   "files": [
-    "01 - gig.mp4",
-    "02 - gig.mp4",
-    "Part One.mp4",
-    "manifest.json"
-   ]
-  },
   "fresh_base_revision_ok": {
    "exit": 0,
    "out": {
@@ -702,49 +663,6 @@
   "add_split_too_close": {
    "exit": 1,
    "out": "Error: 7.52s is too close to the existing split at 7.5s\nFix: Choose a time at least a second away from every existing split, or move the existing one with `move_split`; `list_segments` shows where they are.\n{\n  \"code\": \"segments.too_close\",\n  \"message\": \"7.52s is too close to the existing split at 7.5s\",\n  \"fix\": \"Choose a time at least a second away from every existing split, or move the existing one with `move_split`; `list_segments` shows where they are.\"\n}\n"
-  },
-  "export_bad_only": {
-   "exit": 1,
-   "out": "Error: segment 9 doesn't exist: there are 4 segment(s)\nFix: Use a number from 1 up to the count `list_segments` (CLI `split-video segments VIDEO`) reports; split N is the cut between segments N and N+1.\n{\n  \"code\": \"segments.not_found\",\n  \"message\": \"segment 9 doesn't exist: there are 4 segment(s)\",\n  \"fix\": \"Use a number from 1 up to the count `list_segments` (CLI `split-video segments VIDEO`) reports; split N is the cut between segments N and N+1.\"\n}\n"
-  },
-  "export_conflict": {
-   "exit": 1,
-   "out": "Error: 4 output file(s) already exist (pass overwrite to replace): Part One.mp4, 02 - gig.mp4, 03 - gig.mp4, 04 - gig.mp4\nFix: Pass overwrite=true (CLI `--overwrite`) to replace it, or choose another `output` name.\n{\n  \"code\": \"render.output_exists\",\n  \"message\": \"4 output file(s) already exist (pass overwrite to replace): Part One.mp4, 02 - gig.mp4, 03 - gig.mp4, 04 - gig.mp4\",\n  \"fix\": \"Pass overwrite=true (CLI `--overwrite`) to replace it, or choose another `output` name.\"\n}\n"
-  },
-  "export_default": {
-   "exit": 0,
-   "out": {
-    "files": [
-     "<ROOT>/gig_split/Part One.mp4",
-     "<ROOT>/gig_split/02 - gig.mp4",
-     "<ROOT>/gig_split/03 - gig.mp4",
-     "<ROOT>/gig_split/04 - gig.mp4"
-    ],
-    "manifest": "<ROOT>/gig_split/manifest.json",
-    "output_dir": "<ROOT>/gig_split",
-    "source": "<ROOT>/gig.mp4"
-   }
-  },
-  "export_only": {
-   "exit": 0,
-   "out": {
-    "files": [
-     "<ROOT>/gig_split/01 - gig.mp4"
-    ],
-    "manifest": null,
-    "output_dir": "<ROOT>/gig_split",
-    "source": "<ROOT>/gig.mp4"
-   }
-  },
-  "exported_files": {
-   "files": [
-    "01 - gig.mp4",
-    "02 - gig.mp4",
-    "03 - gig.mp4",
-    "04 - gig.mp4",
-    "Part One.mp4",
-    "manifest.json"
-   ]
   },
   "fresh_base_revision_ok": {
    "exit": 0,
@@ -1468,45 +1386,6 @@
    "exit": 1,
    "out": "Error: 7.52s is too close to the existing split at 7.5s\nFix: Choose a time at least a second away from every existing split, or move the existing one with `move_split`; `list_segments` shows where they are.\n{\n  \"code\": \"segments.too_close\",\n  \"message\": \"7.52s is too close to the existing split at 7.5s\",\n  \"fix\": \"Choose a time at least a second away from every existing split, or move the existing one with `move_split`; `list_segments` shows where they are.\"\n}\n"
   },
-  "export_bad_only": {
-   "exit": 1,
-   "out": "Error: segment 9 doesn't exist: there are 2 segment(s)\nFix: Use a number from 1 up to the count `list_segments` (CLI `split-video segments VIDEO`) reports; split N is the cut between segments N and N+1.\n{\n  \"code\": \"segments.not_found\",\n  \"message\": \"segment 9 doesn't exist: there are 2 segment(s)\",\n  \"fix\": \"Use a number from 1 up to the count `list_segments` (CLI `split-video segments VIDEO`) reports; split N is the cut between segments N and N+1.\"\n}\n"
-  },
-  "export_conflict": {
-   "exit": 1,
-   "out": "Error: 2 output file(s) already exist (pass overwrite to replace): Part One.mp4, 02 - gig.mp4\nFix: Pass overwrite=true (CLI `--overwrite`) to replace it, or choose another `output` name.\n{\n  \"code\": \"render.output_exists\",\n  \"message\": \"2 output file(s) already exist (pass overwrite to replace): Part One.mp4, 02 - gig.mp4\",\n  \"fix\": \"Pass overwrite=true (CLI `--overwrite`) to replace it, or choose another `output` name.\"\n}\n"
-  },
-  "export_default": {
-   "exit": 0,
-   "out": {
-    "files": [
-     "<ROOT>/gig_split/Part One.mp4",
-     "<ROOT>/gig_split/02 - gig.mp4"
-    ],
-    "manifest": "<ROOT>/gig_split/manifest.json",
-    "output_dir": "<ROOT>/gig_split",
-    "source": "<ROOT>/gig.mp4"
-   }
-  },
-  "export_only": {
-   "exit": 0,
-   "out": {
-    "files": [
-     "<ROOT>/gig_split/01 - gig.mp4"
-    ],
-    "manifest": null,
-    "output_dir": "<ROOT>/gig_split",
-    "source": "<ROOT>/gig.mp4"
-   }
-  },
-  "exported_files": {
-   "files": [
-    "01 - gig.mp4",
-    "02 - gig.mp4",
-    "Part One.mp4",
-    "manifest.json"
-   ]
-  },
   "fresh_base_revision_ok": {
    "exit": 0,
    "out": {
@@ -2032,34 +1911,6 @@
   "add_split_too_close": {
    "exit": 1,
    "out": ""
-  },
-  "export_bad_only": {
-   "exit": 1,
-   "out": "Error: segment 9 doesn't exist: there are 3 segment(s)\nFix: Use a number from 1 up to the count `list_segments` (CLI `split-video segments VIDEO`) reports; split N is the cut between segments N and N+1.\n{\n  \"code\": \"segments.not_found\",\n  \"message\": \"segment 9 doesn't exist: there are 3 segment(s)\",\n  \"fix\": \"Use a number from 1 up to the count `list_segments` (CLI `split-video segments VIDEO`) reports; split N is the cut between segments N and N+1.\"\n}\n"
-  },
-  "export_conflict": {
-   "exit": 1,
-   "out": "Error: segments must not overlap\nFix: Make each segment start where the previous one ends (no overlap), or remove one with `remove_split`; `list_segments` (CLI `split-video segments VIDEO`) shows the current boundaries.\n{\n  \"code\": \"segments.overlap\",\n  \"message\": \"segments must not overlap\",\n  \"fix\": \"Make each segment start where the previous one ends (no overlap), or remove one with `remove_split`; `list_segments` (CLI `split-video segments VIDEO`) shows the current boundaries.\"\n}\n"
-  },
-  "export_default": {
-   "exit": 1,
-   "out": "Error: segments must not overlap\nFix: Make each segment start where the previous one ends (no overlap), or remove one with `remove_split`; `list_segments` (CLI `split-video segments VIDEO`) shows the current boundaries.\n{\n  \"code\": \"segments.overlap\",\n  \"message\": \"segments must not overlap\",\n  \"fix\": \"Make each segment start where the previous one ends (no overlap), or remove one with `remove_split`; `list_segments` (CLI `split-video segments VIDEO`) shows the current boundaries.\"\n}\n"
-  },
-  "export_only": {
-   "exit": 0,
-   "out": {
-    "files": [
-     "<ROOT>/gig_split/01 - gig.mp4"
-    ],
-    "manifest": null,
-    "output_dir": "<ROOT>/gig_split",
-    "source": "<ROOT>/gig.mp4"
-   }
-  },
-  "exported_files": {
-   "files": [
-    "01 - gig.mp4"
-   ]
   },
   "fresh_base_revision_ok": {
    "exit": 0,
@@ -2742,47 +2593,6 @@
   "add_split_too_close": {
    "exit": 1,
    "out": "Error: 7.52s is too close to the existing split at 7.5s\nFix: Choose a time at least a second away from every existing split, or move the existing one with `move_split`; `list_segments` shows where they are.\n{\n  \"code\": \"segments.too_close\",\n  \"message\": \"7.52s is too close to the existing split at 7.5s\",\n  \"fix\": \"Choose a time at least a second away from every existing split, or move the existing one with `move_split`; `list_segments` shows where they are.\"\n}\n"
-  },
-  "export_bad_only": {
-   "exit": 1,
-   "out": "Error: segment 9 doesn't exist: there are 4 segment(s)\nFix: Use a number from 1 up to the count `list_segments` (CLI `split-video segments VIDEO`) reports; split N is the cut between segments N and N+1.\n{\n  \"code\": \"segments.not_found\",\n  \"message\": \"segment 9 doesn't exist: there are 4 segment(s)\",\n  \"fix\": \"Use a number from 1 up to the count `list_segments` (CLI `split-video segments VIDEO`) reports; split N is the cut between segments N and N+1.\"\n}\n"
-  },
-  "export_conflict": {
-   "exit": 1,
-   "out": "Error: 3 output file(s) already exist (pass overwrite to replace): Part One.mp4, 02 - gig.mp4, 03 - gig.mp4\nFix: Pass overwrite=true (CLI `--overwrite`) to replace it, or choose another `output` name.\n{\n  \"code\": \"render.output_exists\",\n  \"message\": \"3 output file(s) already exist (pass overwrite to replace): Part One.mp4, 02 - gig.mp4, 03 - gig.mp4\",\n  \"fix\": \"Pass overwrite=true (CLI `--overwrite`) to replace it, or choose another `output` name.\"\n}\n"
-  },
-  "export_default": {
-   "exit": 0,
-   "out": {
-    "files": [
-     "<ROOT>/gig_split/Part One.mp4",
-     "<ROOT>/gig_split/02 - gig.mp4",
-     "<ROOT>/gig_split/03 - gig.mp4"
-    ],
-    "manifest": "<ROOT>/gig_split/manifest.json",
-    "output_dir": "<ROOT>/gig_split",
-    "source": "<ROOT>/gig.mp4"
-   }
-  },
-  "export_only": {
-   "exit": 0,
-   "out": {
-    "files": [
-     "<ROOT>/gig_split/01 - gig.mp4"
-    ],
-    "manifest": null,
-    "output_dir": "<ROOT>/gig_split",
-    "source": "<ROOT>/gig.mp4"
-   }
-  },
-  "exported_files": {
-   "files": [
-    "01 - gig.mp4",
-    "02 - gig.mp4",
-    "03 - gig.mp4",
-    "Part One.mp4",
-    "manifest.json"
-   ]
   },
   "fresh_base_revision_ok": {
    "exit": 0,
@@ -3505,45 +3315,6 @@
   "add_split_too_close": {
    "exit": 1,
    "out": "Error: 7.52s is too close to the existing split at 7.5s\nFix: Choose a time at least a second away from every existing split, or move the existing one with `move_split`; `list_segments` shows where they are.\n{\n  \"code\": \"segments.too_close\",\n  \"message\": \"7.52s is too close to the existing split at 7.5s\",\n  \"fix\": \"Choose a time at least a second away from every existing split, or move the existing one with `move_split`; `list_segments` shows where they are.\"\n}\n"
-  },
-  "export_bad_only": {
-   "exit": 1,
-   "out": "Error: segment 9 doesn't exist: there are 2 segment(s)\nFix: Use a number from 1 up to the count `list_segments` (CLI `split-video segments VIDEO`) reports; split N is the cut between segments N and N+1.\n{\n  \"code\": \"segments.not_found\",\n  \"message\": \"segment 9 doesn't exist: there are 2 segment(s)\",\n  \"fix\": \"Use a number from 1 up to the count `list_segments` (CLI `split-video segments VIDEO`) reports; split N is the cut between segments N and N+1.\"\n}\n"
-  },
-  "export_conflict": {
-   "exit": 1,
-   "out": "Error: 2 output file(s) already exist (pass overwrite to replace): Part One.mp4, 02 - gig.mp4\nFix: Pass overwrite=true (CLI `--overwrite`) to replace it, or choose another `output` name.\n{\n  \"code\": \"render.output_exists\",\n  \"message\": \"2 output file(s) already exist (pass overwrite to replace): Part One.mp4, 02 - gig.mp4\",\n  \"fix\": \"Pass overwrite=true (CLI `--overwrite`) to replace it, or choose another `output` name.\"\n}\n"
-  },
-  "export_default": {
-   "exit": 0,
-   "out": {
-    "files": [
-     "<ROOT>/gig_split/Part One.mp4",
-     "<ROOT>/gig_split/02 - gig.mp4"
-    ],
-    "manifest": "<ROOT>/gig_split/manifest.json",
-    "output_dir": "<ROOT>/gig_split",
-    "source": "<ROOT>/gig.mp4"
-   }
-  },
-  "export_only": {
-   "exit": 0,
-   "out": {
-    "files": [
-     "<ROOT>/gig_split/01 - gig.mp4"
-    ],
-    "manifest": null,
-    "output_dir": "<ROOT>/gig_split",
-    "source": "<ROOT>/gig.mp4"
-   }
-  },
-  "exported_files": {
-   "files": [
-    "01 - gig.mp4",
-    "02 - gig.mp4",
-    "Part One.mp4",
-    "manifest.json"
-   ]
   },
   "fresh_base_revision_ok": {
    "exit": 0,
@@ -6800,41 +6571,6 @@
   "add_split_outside": {
    "error": "Error executing tool add_split: {\"code\": \"time.out_of_range\", \"message\": \"0s is outside the editable span (0s to 21s)\", \"fix\": \"Use a time within 0 s to 21 s. The media's duration is in `list_assets` (CLI `split-video library list DIR`, HTTP GET /api/v1/assets).\", \"details\": {\"range\": \"0 s to 21 s\", \"min_seconds\": 0.0, \"max_seconds\": 21.0}}"
   },
-  "export_bad_only": {
-   "error": "Error executing tool export: {\"code\": \"segments.not_found\", \"message\": \"segment 9 doesn't exist: there are 2 segment(s)\", \"fix\": \"Use a number from 1 up to the count `list_segments` (CLI `split-video segments VIDEO`) reports; split N is the cut between segments N and N+1.\"}"
-  },
-  "export_conflict": {
-   "error": "Error executing tool export: {\"code\": \"render.output_exists\", \"message\": \"2 output file(s) already exist (pass overwrite to replace): Part One.mp4, 02 - gig.mp4\", \"fix\": \"Pass overwrite=true (CLI `--overwrite`) to replace it, or choose another `output` name.\"}"
-  },
-  "export_default": {
-   "ok": {
-    "files": [
-     "gig_split/Part One.mp4",
-     "gig_split/02 - gig.mp4"
-    ],
-    "manifest": "gig_split/manifest.json",
-    "output_dir": "gig_split",
-    "video": "gig.mp4"
-   }
-  },
-  "export_only": {
-   "ok": {
-    "files": [
-     "gig_split/01 - gig.mp4"
-    ],
-    "manifest": null,
-    "output_dir": "gig_split",
-    "video": "gig.mp4"
-   }
-  },
-  "exported_files": {
-   "files": [
-    "01 - gig.mp4",
-    "02 - gig.mp4",
-    "Part One.mp4",
-    "manifest.json"
-   ]
-  },
   "fresh_base_revision_ok": {
    "ok": {
     "revision": 8,
@@ -7405,45 +7141,6 @@
   },
   "add_split_outside": {
    "error": "Error executing tool add_split: {\"code\": \"time.out_of_range\", \"message\": \"0s is outside the editable span (0s to 21s)\", \"fix\": \"Use a time within 0 s to 21 s. The media's duration is in `list_assets` (CLI `split-video library list DIR`, HTTP GET /api/v1/assets).\", \"details\": {\"range\": \"0 s to 21 s\", \"min_seconds\": 0.0, \"max_seconds\": 21.0}}"
-  },
-  "export_bad_only": {
-   "error": "Error executing tool export: {\"code\": \"segments.not_found\", \"message\": \"segment 9 doesn't exist: there are 4 segment(s)\", \"fix\": \"Use a number from 1 up to the count `list_segments` (CLI `split-video segments VIDEO`) reports; split N is the cut between segments N and N+1.\"}"
-  },
-  "export_conflict": {
-   "error": "Error executing tool export: {\"code\": \"render.output_exists\", \"message\": \"4 output file(s) already exist (pass overwrite to replace): Part One.mp4, 02 - gig.mp4, 03 - gig.mp4, 04 - gig.mp4\", \"fix\": \"Pass overwrite=true (CLI `--overwrite`) to replace it, or choose another `output` name.\"}"
-  },
-  "export_default": {
-   "ok": {
-    "files": [
-     "gig_split/Part One.mp4",
-     "gig_split/02 - gig.mp4",
-     "gig_split/03 - gig.mp4",
-     "gig_split/04 - gig.mp4"
-    ],
-    "manifest": "gig_split/manifest.json",
-    "output_dir": "gig_split",
-    "video": "gig.mp4"
-   }
-  },
-  "export_only": {
-   "ok": {
-    "files": [
-     "gig_split/01 - gig.mp4"
-    ],
-    "manifest": null,
-    "output_dir": "gig_split",
-    "video": "gig.mp4"
-   }
-  },
-  "exported_files": {
-   "files": [
-    "01 - gig.mp4",
-    "02 - gig.mp4",
-    "03 - gig.mp4",
-    "04 - gig.mp4",
-    "Part One.mp4",
-    "manifest.json"
-   ]
   },
   "fresh_base_revision_ok": {
    "ok": {
@@ -8156,41 +7853,6 @@
   "add_split_outside": {
    "error": "Error executing tool add_split: {\"code\": \"time.out_of_range\", \"message\": \"0s is outside the editable span (0s to 21s)\", \"fix\": \"Use a time within 0 s to 21 s. The media's duration is in `list_assets` (CLI `split-video library list DIR`, HTTP GET /api/v1/assets).\", \"details\": {\"range\": \"0 s to 21 s\", \"min_seconds\": 0.0, \"max_seconds\": 21.0}}"
   },
-  "export_bad_only": {
-   "error": "Error executing tool export: {\"code\": \"segments.not_found\", \"message\": \"segment 9 doesn't exist: there are 2 segment(s)\", \"fix\": \"Use a number from 1 up to the count `list_segments` (CLI `split-video segments VIDEO`) reports; split N is the cut between segments N and N+1.\"}"
-  },
-  "export_conflict": {
-   "error": "Error executing tool export: {\"code\": \"render.output_exists\", \"message\": \"2 output file(s) already exist (pass overwrite to replace): Part One.mp4, 02 - gig.mp4\", \"fix\": \"Pass overwrite=true (CLI `--overwrite`) to replace it, or choose another `output` name.\"}"
-  },
-  "export_default": {
-   "ok": {
-    "files": [
-     "gig_split/Part One.mp4",
-     "gig_split/02 - gig.mp4"
-    ],
-    "manifest": "gig_split/manifest.json",
-    "output_dir": "gig_split",
-    "video": "gig.mp4"
-   }
-  },
-  "export_only": {
-   "ok": {
-    "files": [
-     "gig_split/01 - gig.mp4"
-    ],
-    "manifest": null,
-    "output_dir": "gig_split",
-    "video": "gig.mp4"
-   }
-  },
-  "exported_files": {
-   "files": [
-    "01 - gig.mp4",
-    "02 - gig.mp4",
-    "Part One.mp4",
-    "manifest.json"
-   ]
-  },
   "fresh_base_revision_ok": {
    "ok": {
     "revision": 11,
@@ -8705,30 +8367,6 @@
   },
   "add_split_outside": {
    "error": "Error executing tool add_split: {\"code\": \"time.out_of_range\", \"message\": \"0s is outside the editable span (1.5s to 20s)\", \"fix\": \"Use a time within 1.5 s to 20 s. The media's duration is in `list_assets` (CLI `split-video library list DIR`, HTTP GET /api/v1/assets).\", \"details\": {\"range\": \"1.5 s to 20 s\", \"min_seconds\": 1.5, \"max_seconds\": 20.0}}"
-  },
-  "export_bad_only": {
-   "error": "Error executing tool export: {\"code\": \"segments.not_found\", \"message\": \"segment 9 doesn't exist: there are 3 segment(s)\", \"fix\": \"Use a number from 1 up to the count `list_segments` (CLI `split-video segments VIDEO`) reports; split N is the cut between segments N and N+1.\"}"
-  },
-  "export_conflict": {
-   "error": "Error executing tool export: {\"code\": \"segments.overlap\", \"message\": \"segments must not overlap\", \"fix\": \"Make each segment start where the previous one ends (no overlap), or remove one with `remove_split`; `list_segments` (CLI `split-video segments VIDEO`) shows the current boundaries.\"}"
-  },
-  "export_default": {
-   "error": "Error executing tool export: {\"code\": \"segments.overlap\", \"message\": \"segments must not overlap\", \"fix\": \"Make each segment start where the previous one ends (no overlap), or remove one with `remove_split`; `list_segments` (CLI `split-video segments VIDEO`) shows the current boundaries.\"}"
-  },
-  "export_only": {
-   "ok": {
-    "files": [
-     "gig_split/01 - gig.mp4"
-    ],
-    "manifest": null,
-    "output_dir": "gig_split",
-    "video": "gig.mp4"
-   }
-  },
-  "exported_files": {
-   "files": [
-    "01 - gig.mp4"
-   ]
   },
   "fresh_base_revision_ok": {
    "ok": {
@@ -9400,43 +9038,6 @@
   },
   "add_split_outside": {
    "error": "Error executing tool add_split: {\"code\": \"time.out_of_range\", \"message\": \"0s is outside the editable span (0s to 21s)\", \"fix\": \"Use a time within 0 s to 21 s. The media's duration is in `list_assets` (CLI `split-video library list DIR`, HTTP GET /api/v1/assets).\", \"details\": {\"range\": \"0 s to 21 s\", \"min_seconds\": 0.0, \"max_seconds\": 21.0}}"
-  },
-  "export_bad_only": {
-   "error": "Error executing tool export: {\"code\": \"segments.not_found\", \"message\": \"segment 9 doesn't exist: there are 4 segment(s)\", \"fix\": \"Use a number from 1 up to the count `list_segments` (CLI `split-video segments VIDEO`) reports; split N is the cut between segments N and N+1.\"}"
-  },
-  "export_conflict": {
-   "error": "Error executing tool export: {\"code\": \"render.output_exists\", \"message\": \"3 output file(s) already exist (pass overwrite to replace): Part One.mp4, 02 - gig.mp4, 03 - gig.mp4\", \"fix\": \"Pass overwrite=true (CLI `--overwrite`) to replace it, or choose another `output` name.\"}"
-  },
-  "export_default": {
-   "ok": {
-    "files": [
-     "gig_split/Part One.mp4",
-     "gig_split/02 - gig.mp4",
-     "gig_split/03 - gig.mp4"
-    ],
-    "manifest": "gig_split/manifest.json",
-    "output_dir": "gig_split",
-    "video": "gig.mp4"
-   }
-  },
-  "export_only": {
-   "ok": {
-    "files": [
-     "gig_split/01 - gig.mp4"
-    ],
-    "manifest": null,
-    "output_dir": "gig_split",
-    "video": "gig.mp4"
-   }
-  },
-  "exported_files": {
-   "files": [
-    "01 - gig.mp4",
-    "02 - gig.mp4",
-    "03 - gig.mp4",
-    "Part One.mp4",
-    "manifest.json"
-   ]
   },
   "fresh_base_revision_ok": {
    "ok": {
@@ -10148,41 +9749,6 @@
   },
   "add_split_outside": {
    "error": "Error executing tool add_split: {\"code\": \"time.out_of_range\", \"message\": \"0s is outside the editable span (0s to 21s)\", \"fix\": \"Use a time within 0 s to 21 s. The media's duration is in `list_assets` (CLI `split-video library list DIR`, HTTP GET /api/v1/assets).\", \"details\": {\"range\": \"0 s to 21 s\", \"min_seconds\": 0.0, \"max_seconds\": 21.0}}"
-  },
-  "export_bad_only": {
-   "error": "Error executing tool export: {\"code\": \"segments.not_found\", \"message\": \"segment 9 doesn't exist: there are 2 segment(s)\", \"fix\": \"Use a number from 1 up to the count `list_segments` (CLI `split-video segments VIDEO`) reports; split N is the cut between segments N and N+1.\"}"
-  },
-  "export_conflict": {
-   "error": "Error executing tool export: {\"code\": \"render.output_exists\", \"message\": \"2 output file(s) already exist (pass overwrite to replace): Part One.mp4, 02 - gig.mp4\", \"fix\": \"Pass overwrite=true (CLI `--overwrite`) to replace it, or choose another `output` name.\"}"
-  },
-  "export_default": {
-   "ok": {
-    "files": [
-     "gig_split/Part One.mp4",
-     "gig_split/02 - gig.mp4"
-    ],
-    "manifest": "gig_split/manifest.json",
-    "output_dir": "gig_split",
-    "video": "gig.mp4"
-   }
-  },
-  "export_only": {
-   "ok": {
-    "files": [
-     "gig_split/01 - gig.mp4"
-    ],
-    "manifest": null,
-    "output_dir": "gig_split",
-    "video": "gig.mp4"
-   }
-  },
-  "exported_files": {
-   "files": [
-    "01 - gig.mp4",
-    "02 - gig.mp4",
-    "Part One.mp4",
-    "manifest.json"
-   ]
   },
   "fresh_base_revision_ok": {
    "ok": {

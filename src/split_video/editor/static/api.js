@@ -160,21 +160,18 @@ export async function computeSegments({ silences, duration, minSilenceDuration, 
   }
 }
 
-export async function startExport({ segments, precise, outputFormat, overwrite, manifest }) {
-  return requestJSON(projectUrl("api/v1/export"), {
+// The unified export (POST /compose/export): the saved segments numbered in `only`, stream-copied (preset
+// "original"); returns the render queue's batch.
+export async function startExport({ only, precise }) {
+  if (currentPath === null) throw new Error("no project selected");
+  return requestJSON("api/v1/compose/export", {
     method: "POST",
-    body: JSON.stringify({
-      segments,
-      precise: !!precise,
-      output_format: outputFormat ?? null,
-      overwrite: overwrite ?? false,
-      manifest: manifest ?? true,
-    }),
+    body: JSON.stringify({ mode: "segments", video: currentPath, only, precise: !!precise, preset: "original" }),
   });
 }
 
-export async function getExportStatus(jobId) {
-  return requestJSON(`api/v1/export/${encodeURIComponent(jobId)}`);
+export async function getExportStatus(batchId) {
+  return requestJSON(`api/v1/compose/render-queue/${encodeURIComponent(batchId)}`);
 }
 
 export async function startAnalysis() {

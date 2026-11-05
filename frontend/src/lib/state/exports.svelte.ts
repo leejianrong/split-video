@@ -2,7 +2,7 @@ import {
   exportModesRouteApiV1ComposeExportPost,
   listJobsApiV1JobsGet,
   renderQueueCancelApiV1ComposeRenderQueueBatchIdCancelPost,
-  type SplitVideoEditorComposeExportRequest as ExportBody,
+  type ExportRequest as ExportBody,
   type RenderQueueOut,
 } from '../api/client';
 import { buildRequest, DEFAULTS, plannedFiles, type ExportSettings } from '../export/plan';

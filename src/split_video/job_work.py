@@ -1,7 +1,7 @@
-"""The work functions the job queue runs: export, audio analysis, timeline render, proxies, scans, transcription, scene analysis and on-screen text.
+"""The work functions the job queue runs: audio analysis, timeline render, proxies, scans, transcription, scene analysis and on-screen text.
 
 Each `*_work` builds a `Callable[[JobContext], Any]` for `JobQueue.submit`. They are thin: the
-actual operations are `project.run_export`, `project.run_analysis` and
+actual operations are `project.run_analysis` and
 `timeline_service.run_render`, which the CLI and MCP server also call inline, so there is one
 implementation. All that is added here is wiring the operation's progress callbacks to the job's
 `JobContext` and turning its outcome into a JSON-safe result.
@@ -38,50 +38,6 @@ RENDER_STEPS = 1000
 TRANSCRIBE_STEPS = 1000
 # A scene analysis reports seconds of video done; as a job it counts thousandths of the video.
 SCENE_STEPS = 1000
-
-
-def export_work(
-    media: MediaStore,
-    plan: project.ExportPlan,
-    *,
-    precise: bool,
-    output_format: str | None,
-    write_manifest_file: bool,
-    parameters: dict[str, Any],
-) -> Callable[[JobContext], dict[str, Any]]:
-    """Write the planned files. Progress counts files, the message is the file being written, and
-    the partial result `{"files": [...]}` lists what is on disk so far; the final result adds
-    `output_dir` and `manifest_path`."""
-
-    def work(ctx: JobContext) -> dict[str, Any]:
-        files: list[str] = []
-
-        def on_file_start(filename: str) -> None:
-            ctx.progress(len(files), message=filename)
-
-        def on_file_done(media_id: str) -> None:
-            files.append(media.display_path(media_id))
-            ctx.progress(len(files))
-            ctx.set_result({"files": list(files)})
-
-        _, manifest_id = project.run_export(
-            media,
-            plan,
-            precise=precise,
-            output_format=output_format,
-            write_manifest_file=write_manifest_file,
-            parameters=parameters,
-            on_file_start=on_file_start,
-            on_file_done=on_file_done,
-            cancel=ctx,
-        )
-        return {
-            "output_dir": media.display_path(plan.output_dir),
-            "manifest_path": media.display_path(manifest_id) if manifest_id is not None else None,
-            "files": files,
-        }
-
-    return work
 
 
 def analysis_summary(cache: ClassificationCache) -> dict[str, Any]:

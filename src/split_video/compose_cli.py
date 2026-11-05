@@ -942,6 +942,7 @@ def export_cmd(
     output_format: str | None = typer.Option(
         None, "--format", help="segments without render options: force a container/codec (re-encodes)."
     ),
+    manifest: bool = typer.Option(False, "--manifest/--no-manifest", help="segments: also write manifest.json."),
     size: str | None = typer.Option(None, "--size", help="Frame size WxH (renders)."),
     preset: str | None = typer.Option(
         None,
@@ -996,6 +997,7 @@ def export_cmd(
             overwrite=overwrite,
             precise=precise,
             output_format=output_format,
+            manifest=manifest,
             options=export_modes.RenderOptions(width=width, height=height, preset=preset, fit=fit, captions=captions),
         )
         status = {**_wait_and_report(jobs, status, as_json), "mode": mode}

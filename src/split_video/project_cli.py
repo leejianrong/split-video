@@ -327,55 +327,6 @@ def label_cmd(
     _report(source, segments, as_json, f"Updated segment {segment}", revision, segment=segment)
 
 
-def export_cmd(
-    source: Path = _Source,
-    only: str | None = typer.Option(
-        None, "--only", help="Comma-separated segment numbers to write (e.g. 1,3). Overrides include/exclude."
-    ),
-    output_format: str | None = typer.Option(None, "--format", help="Force a container/codec (implies re-encoding)."),
-    precise: bool = typer.Option(False, "--precise/--no-precise", help="Re-encode for frame-accurate cuts."),
-    overwrite: bool = typer.Option(False, "--overwrite", help="Replace files that already exist."),
-    manifest: bool = typer.Option(True, "--manifest/--no-manifest", help="Write manifest.json alongside the files."),
-    as_json: bool = _Json,
-) -> None:
-    """Write the project's segments to '<video>_split/'. Same result as the editor's Export button."""
-    try:
-        only_numbers = [int(n) for n in only.split(",") if n.strip()] if only is not None else None
-    except ValueError:
-        raise typer.BadParameter("--only takes comma-separated segment numbers, e.g. 1,3") from None
-    try:
-        _, media, source_id = _stores(source)
-        chosen = project.select_for_export(_current(source), only_numbers)
-        plan = project.plan_export(
-            media,
-            source_id,
-            [(s.start, s.end, s.export_name) for s in chosen],
-            output_format=output_format,
-            overwrite=overwrite,
-        )
-        written, manifest_path = project.run_export(
-            media,
-            plan,
-            precise=precise,
-            output_format=output_format,
-            write_manifest_file=manifest,
-            on_file_start=None if as_json else lambda name: console.print(f"[dim]writing {name}[/dim]"),
-        )
-    except _EXPECTED_ERRORS as exc:
-        raise _fail(exc, as_json, source)
-    if as_json:
-        _emit_json(
-            {
-                "source": str(source),
-                "output_dir": media.display_path(plan.output_dir),
-                "files": [media.display_path(p) for p in written],
-                "manifest": media.display_path(manifest_path) if manifest_path else None,
-            }
-        )
-    else:
-        console.print(f"[green]Done.[/green] Wrote {len(written)} file(s) to '{media.display_path(plan.output_dir)}'")
-
-
 def analyze_cmd(
     source: Path = _Source,
     force: bool = typer.Option(False, "--force", help="Re-run even if a cached analysis exists."),
@@ -414,5 +365,4 @@ def register(app: typer.Typer) -> None:
     app.command("move-split")(move_split_cmd)
     app.command("remove-split")(remove_split_cmd)
     app.command("label")(label_cmd)
-    app.command("export")(export_cmd)
     app.command("analyze")(analyze_cmd)

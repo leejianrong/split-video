@@ -71,7 +71,7 @@ split-video move-split liveshow.mp4 2 --to 25:10
 split-video remove-split liveshow.mp4 3
 split-video label liveshow.mp4 1 --label "Opener" --color "#d9822b"
 split-video label liveshow.mp4 4 --exclude                      # leave it out of exports
-split-video export liveshow.mp4 [--only 1,3]                    # same as the editor's Export
+split-video compose export segments --video liveshow.mp4 [--only 1,3] [--manifest]   # same as the editor's Export
 split-video analyze liveshow.mp4                                # YAMNet classification (needs the model, see below)
 ```
 

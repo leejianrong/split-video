@@ -6,7 +6,7 @@ the editor's HTTP API, a future event stream (SPL-37) and a hosted worker pool (
 who owns a job) all talk to the same thing. `InProcessJobQueue` is the local implementation:
 a bounded pool of daemon threads inside the server process. It is not a distributed queue.
 
-Job kinds are plain strings: `export`, `analysis`, `render`, `library_scan`, `proxy`, `transcription`, `scene_analysis`, `ocr`, `split`, `waveform` and `preview_range`.
+Job kinds are plain strings: `analysis`, `render`, `library_scan`, `proxy`, `transcription`, `scene_analysis`, `ocr`, `split`, `waveform` and `preview_range`.
 
 Cancellation is cooperative. `cancel` flags the job and runs the callbacks its work registered
 with `JobContext.on_cancel` (that is how a running ffmpeg is terminated at once); the work
@@ -36,7 +36,6 @@ from split_video.error_catalogue import describe
 log = logging.getLogger(__name__)
 
 # Job kinds.
-EXPORT = "export"
 ANALYSIS = "analysis"
 RENDER = "render"
 LIBRARY_SCAN = "library_scan"
@@ -105,7 +104,7 @@ class JobCancelledError(JobError):
 class JobInfo:
     """An immutable snapshot of one job.
 
-    `completed`/`total` are in whatever unit the work reports (export: files, analysis: audio
+    `completed`/`total` are in whatever unit the work reports (render: thousandths of the output, analysis: audio
     frames, render: thousandths of the output), with `total == 0` while unknown. `message` is
     the current item. `result` is JSON-safe: a partial summary the work published while running
     (`JobContext.set_result`), replaced by the summary of its return value when it finishes.

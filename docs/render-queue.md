@@ -65,19 +65,19 @@ returns (`name`, `output`, `duration`, `preset`, `fit`, `width`, `height`, `fps`
 
 ## Export modes: segments, timeline, highlights
 
-Splitting is an export mode, not a separate tool. One operation writes the files of a mode as a batch on this queue
+Splitting is an export mode, not a separate tool: the old `split-video export`, MCP `export` and `POST /api/v1/export` are gone (404), replaced by `segments` mode. One operation writes the files of a mode as a batch on this queue
 (`src/split_video/export_modes.py`), so it has the same concurrency limit, states, cancel and failure isolation, and
 the same answer plus `mode`. Poll and cancel with the render-queue calls above.
 
 | Surface | Call |
 | --- | --- |
 | HTTP | `POST /api/v1/compose/export` `{"mode": ..., ...}` |
-| CLI | `split-video compose export MODE [--video F] [--project NAME] [--timelines A,B] [--only 1,3] [--preset P] [--fit F] [--captions S] [--output-dir D] [--overwrite] [--concurrency N] [--json]` (waits, exit 1 if any file failed) |
+| CLI | `split-video compose export MODE [--video F] [--project NAME] [--timelines A,B] [--only 1,3] [--manifest] [--preset P] [--fit F] [--captions S] [--output-dir D] [--overwrite] [--concurrency N] [--json]` (waits, exit 1 if any file failed) |
 | MCP | `export_project(mode, video?, project?, timelines?, only?, preset?, ...)` returns at once |
 
 | `mode` | Needs | Writes |
 | --- | --- | --- |
-| `segments` | `video` | Each included segment of the recording's main track as its own file in `<video>_split/`, named by its `export_name`, else its label made safe for a filename (`Song 2.mp4`; the same label twice becomes `Song`, `Song (2)`), else the numbered default of `split-video export` (`NN - <video>`). A stream copy (`precise`, `output_format` as in the split export) unless a preset, size, fit or captions is given: then each segment is rendered to `.mp4` (its clip's crop and gain kept). When the recording's timeline has a canvas and no preset or size is given, the canvas's preset is used, so the segments are rendered at it; preset `original` opts out and keeps the stream copy. `only` names segments and overrides the include flags. No `manifest.json` (the old `export` still writes it). |
+| `segments` | `video` | Each included segment of the recording's main track as its own file in `<video>_split/`, named by its `export_name`, else its label made safe for a filename (`Song 2.mp4`; the same label twice becomes `Song`, `Song (2)`), else the numbered default (`NN - <video>`). A stream copy (`precise` re-encodes, `output_format` forces a container) unless a preset, size, fit or captions is given: then each segment is rendered to `.mp4` (its clip's crop and gain kept). When the recording's timeline has a canvas and no preset or size is given, the canvas's preset is used, so the segments are rendered at it; preset `original` opts out and keeps the stream copy. `only` names segments and overrides the include flags. `manifest: true` (CLI `--manifest`) also writes `manifest.json` (source, `precise`, one entry per file) beside the files when the export is queued. |
 | `timeline` | `project` (a timeline), or `video` (its own timeline) | The whole timeline as one `<project>.mp4` (a recording's name without its extension), in the root, beside the video for `video`, or in `output_dir`; `output` renames it. Every clip plays, whatever `included` says. It never overwrites a source file. |
 | `highlights` | `timelines` | Each listed timeline as a vertical short `<name>.mp4`: preset `vertical-1080`, fit `crop`, the `shorts` captions when a clip's asset has a transcript (`captions: "off"` or any option you pass wins). |
 

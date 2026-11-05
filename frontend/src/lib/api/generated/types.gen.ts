@@ -788,69 +788,93 @@ export type EvidenceOut = {
 };
 
 /**
- * ExportSegmentIn
+ * ExportRequest
+ *
+ * `POST /compose/export`: one export operation with a mode. The render options are those of a single render
+ * (`RenderRequest`); `output` applies to mode timeline.
  */
-export type ExportSegmentIn = {
+export type ExportRequest = {
     /**
-     * End
+     * Caption Font Size
      */
-    end: number;
+    caption_font_size?: number | null;
     /**
-     * Name
+     * Caption Highlight Color
      */
-    name?: string | null;
+    caption_highlight_color?: string | null;
     /**
-     * Start
+     * Caption Position
      */
-    start: number;
-};
-
-/**
- * ExportStartResponse
- */
-export type ExportStartResponse = {
+    caption_position?: string | null;
+    caption_range?: CaptionRange | null;
     /**
-     * Job Id
+     * Caption Tracks
      */
-    job_id: string;
-};
-
-/**
- * ExportStatusResponse
- */
-export type ExportStatusResponse = {
+    caption_tracks?: Array<number> | null;
     /**
-     * Completed
+     * Captions
      */
-    completed: number;
+    captions?: string | boolean | null;
     /**
-     * Current File
+     * Fit
      */
-    current_file?: string | null;
+    fit?: string | null;
     /**
-     * Error
+     * Height
      */
-    error?: string | null;
+    height?: number | null;
     /**
-     * Files
+     * Manifest
      */
-    files?: Array<string> | null;
+    manifest?: boolean;
     /**
-     * Manifest Path
+     * Mode
      */
-    manifest_path?: string | null;
+    mode: string;
+    /**
+     * Only
+     */
+    only?: Array<number> | null;
+    /**
+     * Output
+     */
+    output?: string | null;
     /**
      * Output Dir
      */
     output_dir?: string | null;
     /**
-     * Status
+     * Output Format
      */
-    status: string;
+    output_format?: string | null;
     /**
-     * Total
+     * Overwrite
      */
-    total: number;
+    overwrite?: boolean;
+    /**
+     * Precise
+     */
+    precise?: boolean;
+    /**
+     * Preset
+     */
+    preset?: string | null;
+    /**
+     * Project
+     */
+    project?: string | null;
+    /**
+     * Timelines
+     */
+    timelines?: Array<string> | null;
+    /**
+     * Video
+     */
+    video?: string | null;
+    /**
+     * Width
+     */
+    width?: number | null;
 };
 
 /**
@@ -3771,118 +3795,6 @@ export type WordOut = {
     word: string;
 };
 
-/**
- * ExportRequest
- *
- * `POST /compose/export`: one export operation with a mode. The render options are those of a single render
- * (`RenderRequest`); `output` applies to mode timeline.
- */
-export type SplitVideoEditorComposeExportRequest = {
-    /**
-     * Caption Font Size
-     */
-    caption_font_size?: number | null;
-    /**
-     * Caption Highlight Color
-     */
-    caption_highlight_color?: string | null;
-    /**
-     * Caption Position
-     */
-    caption_position?: string | null;
-    caption_range?: CaptionRange | null;
-    /**
-     * Caption Tracks
-     */
-    caption_tracks?: Array<number> | null;
-    /**
-     * Captions
-     */
-    captions?: string | boolean | null;
-    /**
-     * Fit
-     */
-    fit?: string | null;
-    /**
-     * Height
-     */
-    height?: number | null;
-    /**
-     * Mode
-     */
-    mode: string;
-    /**
-     * Only
-     */
-    only?: Array<number> | null;
-    /**
-     * Output
-     */
-    output?: string | null;
-    /**
-     * Output Dir
-     */
-    output_dir?: string | null;
-    /**
-     * Output Format
-     */
-    output_format?: string | null;
-    /**
-     * Overwrite
-     */
-    overwrite?: boolean;
-    /**
-     * Precise
-     */
-    precise?: boolean;
-    /**
-     * Preset
-     */
-    preset?: string | null;
-    /**
-     * Project
-     */
-    project?: string | null;
-    /**
-     * Timelines
-     */
-    timelines?: Array<string> | null;
-    /**
-     * Video
-     */
-    video?: string | null;
-    /**
-     * Width
-     */
-    width?: number | null;
-};
-
-/**
- * ExportRequest
- */
-export type SplitVideoEditorSchemasExportRequest = {
-    /**
-     * Manifest
-     */
-    manifest?: boolean;
-    /**
-     * Output Format
-     */
-    output_format?: string | null;
-    /**
-     * Overwrite
-     */
-    overwrite?: boolean;
-    /**
-     * Precise
-     */
-    precise?: boolean;
-    /**
-     * Segments
-     */
-    segments: Array<ExportSegmentIn>;
-};
-
 export type AnalyzeApiV1AnalyzePostData = {
     body?: never;
     path?: never;
@@ -5889,7 +5801,7 @@ export type RethresholdClassificationApiV1ClassificationThresholdsPostResponses 
 export type RethresholdClassificationApiV1ClassificationThresholdsPostResponse = RethresholdClassificationApiV1ClassificationThresholdsPostResponses[keyof RethresholdClassificationApiV1ClassificationThresholdsPostResponses];
 
 export type ExportModesRouteApiV1ComposeExportPostData = {
-    body: SplitVideoEditorComposeExportRequest;
+    body: ExportRequest;
     path?: never;
     query?: never;
     url: '/api/v1/compose/export';
@@ -7403,134 +7315,6 @@ export type EventsApiV1EventsGetResponses = {
 };
 
 export type EventsApiV1EventsGetResponse = EventsApiV1EventsGetResponses[keyof EventsApiV1EventsGetResponses];
-
-export type ExportApiV1ExportPostData = {
-    body: SplitVideoEditorSchemasExportRequest;
-    path?: never;
-    query: {
-        /**
-         * Path
-         *
-         * Project id: the video's path relative to the browse root.
-         */
-        path: string;
-    };
-    url: '/api/v1/export';
-};
-
-export type ExportApiV1ExportPostErrors = {
-    /**
-     * No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN).
-     */
-    401: UnauthorizedOut;
-    /**
-     * The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next.
-     */
-    404: ApiErrorOut;
-    /**
-     * Validation Error
-     */
-    422: HttpValidationError;
-    /**
-     * The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next.
-     */
-    501: ApiErrorOut;
-};
-
-export type ExportApiV1ExportPostError = ExportApiV1ExportPostErrors[keyof ExportApiV1ExportPostErrors];
-
-export type ExportApiV1ExportPostResponses = {
-    /**
-     * Successful Response
-     */
-    200: ExportStartResponse;
-};
-
-export type ExportApiV1ExportPostResponse = ExportApiV1ExportPostResponses[keyof ExportApiV1ExportPostResponses];
-
-export type ExportStatusApiV1ExportJobIdGetData = {
-    body?: never;
-    path: {
-        /**
-         * Job Id
-         */
-        job_id: string;
-    };
-    query?: never;
-    url: '/api/v1/export/{job_id}';
-};
-
-export type ExportStatusApiV1ExportJobIdGetErrors = {
-    /**
-     * No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN).
-     */
-    401: UnauthorizedOut;
-    /**
-     * The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next.
-     */
-    404: ApiErrorOut;
-    /**
-     * Validation Error
-     */
-    422: HttpValidationError;
-    /**
-     * The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next.
-     */
-    501: ApiErrorOut;
-};
-
-export type ExportStatusApiV1ExportJobIdGetError = ExportStatusApiV1ExportJobIdGetErrors[keyof ExportStatusApiV1ExportJobIdGetErrors];
-
-export type ExportStatusApiV1ExportJobIdGetResponses = {
-    /**
-     * Successful Response
-     */
-    200: ExportStatusResponse;
-};
-
-export type ExportStatusApiV1ExportJobIdGetResponse = ExportStatusApiV1ExportJobIdGetResponses[keyof ExportStatusApiV1ExportJobIdGetResponses];
-
-export type ExportCancelApiV1ExportJobIdCancelPostData = {
-    body?: never;
-    path: {
-        /**
-         * Job Id
-         */
-        job_id: string;
-    };
-    query?: never;
-    url: '/api/v1/export/{job_id}/cancel';
-};
-
-export type ExportCancelApiV1ExportJobIdCancelPostErrors = {
-    /**
-     * No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN).
-     */
-    401: UnauthorizedOut;
-    /**
-     * The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next.
-     */
-    404: ApiErrorOut;
-    /**
-     * Validation Error
-     */
-    422: HttpValidationError;
-    /**
-     * The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next.
-     */
-    501: ApiErrorOut;
-};
-
-export type ExportCancelApiV1ExportJobIdCancelPostError = ExportCancelApiV1ExportJobIdCancelPostErrors[keyof ExportCancelApiV1ExportJobIdCancelPostErrors];
-
-export type ExportCancelApiV1ExportJobIdCancelPostResponses = {
-    /**
-     * Successful Response
-     */
-    200: ExportStatusResponse;
-};
-
-export type ExportCancelApiV1ExportJobIdCancelPostResponse = ExportCancelApiV1ExportJobIdCancelPostResponses[keyof ExportCancelApiV1ExportJobIdCancelPostResponses];
 
 export type ListJobsApiV1JobsGetData = {
     body?: never;
