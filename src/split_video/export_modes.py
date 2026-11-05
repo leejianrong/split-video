@@ -12,10 +12,13 @@ Modes
 by its export name, else its label made safe for a filename (`Song 2.mp4`), else the numbered default.
 Without render options a file is a stream copy (`precise` re-encodes for frame accuracy), exactly as the split
 export writes it. With a preset, size, fit or captions each segment is rendered as a one-clip timeline (its clip's crop,
-gain and colour kept) to `.mp4`.
+gain and colour kept) to `.mp4`. When the recording's timeline has a canvas (`Project.canvas`) and no size or preset
+is given, the canvas's preset is used, so the segments are rendered at the canvas (SPL-136); preset `original`
+opts out and keeps the stream copy.
 
 `timeline` (a timeline project, or a recording's own timeline): the whole timeline as one `<name>.mp4`, named after
-the project (a recording's name without its extension). Rendered; every clip plays, whatever `included` says.
+the project (a recording's name without its extension). Rendered; every clip plays, whatever `included` says. It uses the
+project's canvas when no size or preset is given; preset `original` renders at the first clip's size instead.
 
 `highlights` (a list of timeline names): each named timeline as a vertical short, `<name>.mp4`, default preset
 `vertical-1080` with `fit` crop, and the `shorts` captions when a clip's asset has a transcript.
@@ -50,6 +53,7 @@ from split_video.store import ProjectStore
 from split_video.timeline import Clip, OutputExistsError, Project, TimelineError, Track
 
 MODES = ("segments", "timeline", "highlights")
+ORIGINAL = "original"  # preset value: no canvas, the recording's own shape (segments stay a stream copy)
 SHORT_PRESET = "vertical-1080"
 SHORT_FIT = "crop"
 SHORT_CAPTIONS = "shorts"
@@ -148,10 +152,11 @@ def _label_names(chosen: list[Any]) -> list[str | None]:
     return names
 
 
-def _single_clip(clip: Clip) -> Project:
-    """A timeline of just `clip` (crop, gain and colour kept), for rendering one segment on its own."""
+def _single_clip(clip: Clip, canvas: str | None = None) -> Project:
+    """A timeline of just `clip` (crop, gain and colour kept), for rendering one segment on its own, with the
+    project's `canvas` so the render follows it when no preset is given."""
     plain = replace(clip, start=0.0, transition="cut", transition_duration=0.0)
-    return Project(tracks=(Track(id="main", kind="video", clips=(plain,), magnetic=True),))
+    return Project(tracks=(Track(id="main", kind="video", clips=(plain,), magnetic=True),), canvas=canvas)
 
 
 def _render_item(
@@ -215,6 +220,7 @@ def _segments_items(
     precise: bool,
     output_format: str | None,
     options: RenderOptions,
+    original: bool,
 ) -> list[_Item]:
     segments = project.current_segments(store, media, video)
     project.select_for_export(segments, only)  # validates `only`
@@ -222,7 +228,9 @@ def _segments_items(
     if not numbers:
         raise ProjectError("segments list must not be empty: no segment is included (pass `only` to name some)")
     chosen = [segments[n - 1] for n in numbers]
-    rendering = options.any_set
+    timeline = project.video_timeline(store, media, video)
+    canvas = None if original else timeline.canvas
+    rendering = options.any_set or canvas is not None
     # The same planning as the split export: names, order and validation. Conflicts are per file below.
     plan = project.plan_export(
         media,
@@ -232,7 +240,6 @@ def _segments_items(
         overwrite=True,
     )
     folder = _directory(media, output_dir, plan.output_dir)
-    timeline = project.video_timeline(store, media, video)
     index = main_track_index(timeline)
     clips = [c for c in timeline.tracks[index].clips if c.kind == "media"] if index is not None else []
     items: list[_Item] = []
@@ -243,7 +250,7 @@ def _segments_items(
             clip = clips[number - 1]
             items.append(
                 _render_item(
-                    filename, _single_clip(clip), media, out_id, filename, options, options.captions, overwrite,
+                    filename, _single_clip(clip, canvas), media, out_id, filename, options, options.captions, overwrite,
                     claimed, {video},
                 )
             )  # fmt: skip
@@ -287,6 +294,7 @@ def _timeline_items(
     output_dir: str | None,
     overwrite: bool,
     options: RenderOptions,
+    original: bool,
 ) -> list[_Item]:
     if (video is None) == (name is None):
         raise ExportError("mode timeline needs exactly one of video (a recording's own timeline) and project (a name)")
@@ -299,6 +307,8 @@ def _timeline_items(
         timeline = timeline_service.load_existing(store, name, media)
         project_name = _stem(name)
         default_dir = ""
+    if original:
+        timeline = replace(timeline, canvas=None)
     filename = _plain_filename(output) if output else f"{project_name}.mp4"
     out_id = media.join(_directory(media, output_dir, default_dir), filename)
     sources = {c.source for t in timeline.tracks for c in t.clips if c.kind == "media"}
@@ -376,6 +386,9 @@ def submit_export(
     options = options or RenderOptions()
     if mode not in MODES:
         raise ExportError(f"unknown export mode {mode!r}; valid modes: {', '.join(MODES)}")
+    original = options.preset == ORIGINAL and mode != "highlights"
+    if original:
+        options = replace(options, preset=None)
     # Options shared by every file are checked once, before anything is queued.
     resolve_export(
         options.preset if options.preset is not None or mode != "highlights" else SHORT_PRESET,
@@ -387,9 +400,11 @@ def submit_export(
     if mode == "segments":
         if video is None:
             raise ExportError("mode segments needs video (the recording whose segments are written)")
-        items = _segments_items(store, media, video, only, output_dir, overwrite, precise, output_format, options)
+        items = _segments_items(
+            store, media, video, only, output_dir, overwrite, precise, output_format, options, original
+        )
     elif mode == "timeline":
-        items = _timeline_items(store, media, video, project_name, output, output_dir, overwrite, options)
+        items = _timeline_items(store, media, video, project_name, output, output_dir, overwrite, options, original)
     else:
         items = _highlight_items(store, media, list(timelines or []), output_dir, overwrite, options)
     if len(items) > MAX_BATCH:

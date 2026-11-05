@@ -943,7 +943,11 @@ def export_cmd(
         None, "--format", help="segments without render options: force a container/codec (re-encodes)."
     ),
     size: str | None = typer.Option(None, "--size", help="Frame size WxH (renders)."),
-    preset: str | None = typer.Option(None, "--preset", help="Export preset; highlights default to vertical-1080."),
+    preset: str | None = typer.Option(
+        None,
+        "--preset",
+        help="Export preset; highlights default to vertical-1080. A project canvas is the default; original ignores it (segments: stream copy).",
+    ),
     fit: str | None = typer.Option(None, "--fit", help="letterbox or crop; highlights default to crop."),
     captions: str | None = typer.Option(
         None, "--captions", help="Caption style (or off); highlights default to shorts when a transcript exists."

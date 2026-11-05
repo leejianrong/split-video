@@ -2,6 +2,7 @@
 
 import threading
 import time
+from dataclasses import replace
 
 import pytest
 
@@ -161,6 +162,47 @@ def test_segments_with_a_preset_render_each_one(store, media, jobs, fakes):
     assert _states(done) == ["done"] * 3 and fakes.copies == []
     assert all(j["output"].endswith(".mp4") for j in done["jobs"])
     assert done["jobs"][0]["result"]["preset"] == "draft-720" and done["jobs"][0]["result"]["duration"] == 10.0
+
+
+def _with_canvas(store, media):
+    video = project.video_timeline(store, media, "gig.mp4")
+    store.update_video_timeline("gig.mp4", lambda _: replace(video, canvas="9:16"), None)
+
+
+def test_segments_of_a_recording_with_a_canvas_render_at_it_unless_original(store, media, jobs, fakes):
+    """SPL-136: no preset means the canvas's; `original` keeps the stream copy; no canvas never changes."""
+    batch = export_modes.submit_export(jobs, store, media, "segments", video="gig.mp4")
+    assert _states(_wait(jobs, batch)) == ["done"] * 3 and len(fakes.copies) == 3  # no canvas: copies, as before
+    fakes.copies.clear()
+    _with_canvas(store, media)
+    done = _wait(jobs, export_modes.submit_export(jobs, store, media, "segments", video="gig.mp4", overwrite=True))
+    assert fakes.copies == [] and done["jobs"][0]["result"]["preset"] == "vertical-1080"
+    original = export_modes.RenderOptions(preset="original")
+    done = _wait(
+        jobs,
+        export_modes.submit_export(jobs, store, media, "segments", video="gig.mp4", overwrite=True, options=original),
+    )
+    assert len(fakes.copies) == 3 and "preset" not in done["jobs"][0]["result"]
+    explicit = export_modes.RenderOptions(preset="draft-720")
+    done = _wait(
+        jobs,
+        export_modes.submit_export(jobs, store, media, "segments", video="gig.mp4", overwrite=True, options=explicit),
+    )
+    assert done["jobs"][0]["result"]["preset"] == "draft-720"
+
+
+def test_a_timeline_export_uses_the_canvas_unless_original(store, media, jobs, fakes):
+    store.update_timeline("clip1", lambda p: replace(p, canvas="1:1"), None)
+    done = _wait(jobs, export_modes.submit_export(jobs, store, media, "timeline", project_name="clip1"))
+    assert done["jobs"][0]["result"]["preset"] == "square-1080"
+    original = export_modes.RenderOptions(preset="original")
+    done = _wait(
+        jobs,
+        export_modes.submit_export(
+            jobs, store, media, "timeline", project_name="clip1", overwrite=True, options=original
+        ),
+    )
+    assert done["jobs"][0]["result"]["preset"] is None and done["jobs"][0]["result"]["width"] == 1280
 
 
 def test_a_copy_that_fails_is_reported_and_the_rest_carry_on(store, media, jobs, fakes, monkeypatch):

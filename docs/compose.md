@@ -150,7 +150,7 @@ title text. A case passes when the mean absolute difference per channel and the 
 under its `Tolerance`, and, for moving footage, the frame is 3 times closer than the export's frame 0.2 s later.
 
 `test_the_canvas_preset_gives_the_export_frame` does the same for the canvas presets the top bar offers (vertical and
-square): the preview at the preset against the export at the preset's own size.
+square): the preview at the preset against the export at the preset's own size. `test_cli_and_mcp_exports_without_a_preset_match_the_canvas_preview` runs `export_modes.submit_export` (what the CLI, API and MCP call) on a project with a 9:16 canvas, timeline and segments modes, and compares it to the preview; with preset `original` the segment is still a 640x360 stream copy.
 
 Run them with `uv run pytest tests/unit/test_golden_frames.py -s` (about 20 s; the `-s` prints each measurement). A
 failure reads `mean difference 3.4 is over 2.5` or `1.8% of the samples differ by more than 24`: the preview and the
@@ -174,6 +174,8 @@ audio are not drawn by the preview and not compared.
 **Several renders at once** (the highlight reel plus shorts) run as a background queue with limited concurrency:
 `split-video compose render-queue batch.json`, `POST /api/v1/compose/render-queue`, MCP `queue_renders`; see
 [docs/render-queue.md](render-queue.md).
+
+An export with no `--preset` and no size follows the canvas too: `compose export` with mode `timeline` renders at it, and mode `segments` renders each segment at it instead of copying the stream (the top bar's canvas is on the recording's own timeline). To export at the source shape anyway, pass preset `original` (`--preset original`, MCP `preset: "original"`, API `preset`): segments stay a stream copy and a timeline renders at the first clip's size. Projects with no canvas are unchanged. `original` is not a preset in `presets`; modes other than segments and timeline do not take it.
 
 To export a recording's segments, a whole timeline or accepted highlights as shorts in one call: `split-video compose export`,
 `POST /api/v1/compose/export`, MCP `export_project` ([export modes](render-queue.md#export-modes-segments-timeline-highlights)).
