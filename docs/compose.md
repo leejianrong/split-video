@@ -91,9 +91,9 @@ reads a clip's proxy when it has one (right to within 1/15 s), `original` reads 
 reads a proxy. A time past the end is `time.out_of_range`.
 
 How close it is to the export: with `source=original` and the same size, the frame equals the export's frame at that
-time up to the H.264 encoding of the export, which the golden-frame tests below pin down. One known difference:
-after a cross-fade, ffmpeg's `xfade` can show the incoming clip one frame late in the export (ffmpeg 4.4 does), while the
-preview shows it on time (SPL-123).
+time up to the H.264 encoding of the export, which the golden-frame tests below pin down. The frame
+after a cross-fade is on time too: the render graph pads the outgoing clip with one cloned frame, because ffmpeg 4.4's
+`xfade` otherwise drops a frame and shows the incoming clip one frame late (SPL-123).
 
 ### Preview a range as a video
 

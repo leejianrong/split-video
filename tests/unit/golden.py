@@ -50,7 +50,6 @@ class Tolerance:
     share: float  # most of the samples that may differ by more than `pixel`
     pixel: int = 24
     separation: float | None = None  # the match must be this many times closer than the frame 0.2 s away
-    late_frame: bool = False  # the export may show the incoming clip one frame late after a cross-fade (SPL-123)
 
     def failures(self, m: "Measurement") -> list[str]:
         out = []
@@ -84,9 +83,7 @@ def measure(project, media, name, at, tol: Tolerance, preset=None) -> Measuremen
     frame = preview_frame(project, media, at, width=size[0], preset=preset, format="png", source="original")
     assert (frame.width, frame.height) == size
     mine = decode(frame.data)[2].astype(int)
-    steps = (0, 1) if tol.late_frame else (0,)
-    candidates = [(np.abs(mine - export_frame(media, name, frame.time + k / FPS)), k) for k in steps]
-    best, _ = min(candidates, key=lambda c: c[0].mean())
+    best = np.abs(mine - export_frame(media, name, frame.time))
     off = 0.2 if frame.time + 0.2 < frame.duration - 0.1 else -0.2
     away = np.abs(mine - export_frame(media, name, frame.time + off))
     return Measurement(best.mean(), float((best > tol.pixel).mean()), away.mean(), frame.time)

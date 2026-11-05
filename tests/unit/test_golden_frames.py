@@ -75,9 +75,8 @@ def title(media, text="Golden 123", y=0.5, font_size=0.15):
 # smallest mutation below. The mean catches colour and opacity, the share of bad samples catches small moves and text.
 CASES = {
     "overlay": (overlay, [0.25, 1.0, 2.0], Tolerance(mean=2.5, share=0.006, separation=3)),
-    # 0.5 is before the fade, 1.5 in it, 2.5 after it. After a fade ffmpeg 4.4's xfade can show the incoming clip
-    # one frame late while the preview shows it on time: SPL-123 tracks the fix, `late_frame` allows it meanwhile.
-    "crossfade": (crossfade, [0.5, 1.5, 2.5], Tolerance(mean=2.5, share=0.006, separation=3, late_frame=True)),
+    # 0.5 is before the fade, 1.5 in it, 2.0 and 2.5 at and after its end (SPL-123: no allowance for a late frame).
+    "crossfade": (crossfade, [0.5, 1.5, 2.0, 2.5], Tolerance(mean=2.5, share=0.006, separation=3)),
     "grade": (grade, [0.0, 1.5, 2.9], Tolerance(mean=2.5, share=0.006, separation=3)),
     "title": (title, [0.2, 1.0, 2.4], Tolerance(mean=2.0, share=0.0015)),
 }
