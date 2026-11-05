@@ -1,12 +1,6 @@
 """`preview.preview_frame`: the composite at one time, against the export's own frame (SPL-69), with real ffmpeg.
 
-Tolerance of the match test: the preview is a lossless PNG of the filter graph's output; the export's frame went
-through libx264 at its default crf (23), so it differs by the encoder's loss. The mean absolute difference over all
-channels must stay at or under `MEAN_TOLERANCE` (of 255) and no more than `BAD_SHARE` of the samples may differ by
-more than `PIXEL_TOLERANCE`; a wrong overlay, text, crop, colour or fade position moves both far past that, and
-the frame has to be at least `SEPARATION` times closer than the export's frame 0.2 s later. Of the export's
-frames at the time and one frame later the closer one counts: after a cross-fade ffmpeg's `xfade` can show the
-incoming clip one frame late (4.4 does), while the preview shows it on time.
+The frame-by-frame match with the export lives in `test_golden_frames.py` (SPL-74).
 """
 
 import subprocess
@@ -20,20 +14,28 @@ from split_video import assets, frames, proxy
 from split_video import timeline_ops as ops
 from split_video.local_media_store import LocalMediaStore
 from split_video.preview import preview_frame, window
-from split_video.render import render
 from split_video.timeline import TimelineError, empty_project
 
-MEAN_TOLERANCE = 4.0
-PIXEL_TOLERANCE = 24
-BAD_SHARE = 0.03
-SEPARATION = 3
-EXPORT_SIZE = (480, 270)
 # Seconds a preview may take in CI (it takes about a tenth of that locally; the card asks for one second).
 CI_BUDGET = 3.0
 
 
 def _make(path, lavfi):
-    cmd = ["ffmpeg", "-y", "-v", "error", "-f", "lavfi", "-i", lavfi, "-pix_fmt", "yuv420p", "-c:v", "libx264"]
+    cmd = [
+        "ffmpeg",
+        "-nostdin",
+        "-y",
+        "-v",
+        "error",
+        "-f",
+        "lavfi",
+        "-i",
+        lavfi,
+        "-pix_fmt",
+        "yuv420p",
+        "-c:v",
+        "libx264",
+    ]
     assert subprocess.run([*cmd, "-g", "30", str(path)], capture_output=True, check=False, timeout=120).returncode == 0
 
 
@@ -41,7 +43,8 @@ def _make(path, lavfi):
 def workspace(tmp_path_factory):
     """Smooth footage that changes with time (so a frame from the wrong moment does not match), 1080p at 30 fps."""
     root = tmp_path_factory.mktemp("preview")
-    _make(root / "a.mp4", "gradients=seed=3:speed=0.5:size=1920x1080:rate=30:duration=5")
+    # `gradients` is not reproducible (two runs give two files), which made the proxy test below flaky
+    _make(root / "a.mp4", "color=s=1920x1080:r=30:d=5,geq=r='X*255/W':g='128+100*sin(2*PI*(Y/H+T/2))':b='255-Y*255/H'")
     bands = "geq=r='128+100*sin(2*PI*(X/W+T))':g='X*255/W':b='Y*255/H'"
     _make(root / "b.mp4", f"color=s=1920x1080:r=30:d=4,{bands}")
     _make(root / "pip.mp4", "smptebars=size=640x360:rate=30:duration=4")
@@ -69,32 +72,6 @@ def _project(media):
 @pytest.fixture(scope="module")
 def project(workspace):
     return _project(workspace)
-
-
-@pytest.fixture(scope="module")
-def exported(workspace, project, tmp_path_factory):
-    render(project, workspace, "export.mp4", width=EXPORT_SIZE[0], height=EXPORT_SIZE[1])
-    return workspace
-
-
-def _export_frame(media, at):
-    cmd = ["ffmpeg", "-nostdin", "-v", "error", "-ss", f"{at}", "-i", str(media.root / "export.mp4")]
-    cmd += ["-frames:v", "1", "-f", "image2pipe", "-c:v", "png", "-"]
-    out = subprocess.run(cmd, capture_output=True, check=True, timeout=60).stdout
-    return decode(out)[2].astype(int)
-
-
-@pytest.mark.parametrize("at", [0.5, 1.5, 2.5, 2.9, 4.0, 4.9])
-def test_preview_matches_the_export_frame(exported, project, at):
-    # 0.5 main + overlay, 1.5 + title, 2.5 and 2.9 in the cross-fade, 4.0 and 4.9 second clip only
-    frame = preview_frame(project, exported, at, width=EXPORT_SIZE[0], format="png", source="original")
-    assert (frame.width, frame.height) == EXPORT_SIZE and frame.time == pytest.approx(at, abs=1 / 30)
-    mine = decode(frame.data)[2].astype(int)
-    best = min((np.abs(mine - _export_frame(exported, frame.time + k / 30)) for k in (0, 1)), key=np.mean)
-    away = np.abs(mine - _export_frame(exported, frame.time + (0.2 if at < 4 else -0.2)))
-    assert best.mean() <= MEAN_TOLERANCE, best.mean()
-    assert (best > PIXEL_TOLERANCE).mean() <= BAD_SHARE, (best > PIXEL_TOLERANCE).mean()
-    assert best.mean() * SEPARATION < away.mean()
 
 
 def test_window_keeps_only_what_is_on_screen_at_the_time(project):
