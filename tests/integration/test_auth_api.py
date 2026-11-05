@@ -45,7 +45,7 @@ def local(tmp_path):
 def test_local_mode_serves_everything_as_the_local_principal(local):
     body = local.get("/api/v1/whoami").json()
     assert body == {"id": "local", "name": "Local user", "kind": "local", "auth_required": False}
-    assert local.get("/api/session").status_code == 200  # a deprecated alias, no header
+    assert local.get("/api/v1/session").status_code == 200
 
 
 def test_local_mode_ignores_a_stray_authorization_header(local):
@@ -70,14 +70,11 @@ def _filled(path):
 
 
 def _all_protected_requests(app):
-    """(method, path) of every operation in the schema, its deprecated alias, and the two /media aliases."""
+    """(method, path) of every operation in the schema."""
     seen = set()
     for path, methods in app.openapi()["paths"].items():
         for method in methods:
             seen.add((method.upper(), _filled(path)))
-            legacy = path.removeprefix("/api/v1")
-            legacy = legacy if legacy.startswith("/media/") else "/api" + legacy
-            seen.add((method.upper(), _filled(legacy)))  # absent for v1-only routes: still must not be public
     return sorted(seen)
 
 
@@ -105,8 +102,8 @@ def test_every_route_needs_the_token_when_one_is_configured(secured):
         assert _send(secured, method, path, AUTH).status_code != 401, (method, path)
 
 
-def test_the_two_media_aliases_and_unknown_api_paths_are_protected_too(secured):
-    for path in ("/media/source", "/media/file", "/media/asset/x", "/api/nope", "/api/v1/nope"):
+def test_unknown_api_paths_are_protected_too(secured):
+    for path in ("/api/nope", "/api/v1/nope"):
         assert secured.get(path).status_code == 401, path
         assert secured.get(path, headers=AUTH).status_code != 401, path
 
@@ -118,14 +115,9 @@ def test_a_route_added_later_is_protected_without_doing_anything(secured):
     def added_later():
         return {"ok": True}
 
-    @secured.app.get("/media/added-later")
-    def media_added_later():
-        return {"ok": True}
-
-    for path in ("/api/v1/added-later", "/media/added-later"):
-        assert secured.get(path).status_code == 401
-        # (the static mount registered last shadows it, so with the token it is a 404, not a 401)
-        assert secured.get(path, headers=AUTH).status_code != 401
+    assert secured.get("/api/v1/added-later").status_code == 401
+    # (the static mount registered last shadows it, so with the token it is a 404, not a 401)
+    assert secured.get("/api/v1/added-later", headers=AUTH).status_code != 401
 
 
 def test_the_401_shape_and_whoami_with_a_valid_token(secured):

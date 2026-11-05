@@ -130,16 +130,6 @@ APP_NOT_BUILT_HINT = "The new editor is not built. Run `npm ci && npm run build`
 API_PREFIX = "/api/v1"
 
 
-_LEGACY_MEDIA_PATHS = ("/media/source", "/media/file")
-
-
-def _is_legacy_path(path: str) -> bool:
-    """A pre-versioning spelling kept as a deprecated alias for one release."""
-    if path in _LEGACY_MEDIA_PATHS or path.startswith("/media/asset/"):
-        return True
-    return path.startswith("/api/") and not path.startswith(f"{API_PREFIX}/")
-
-
 @dataclass
 class _ProjectState:
     """Everything the editor holds in memory for one source video.
@@ -251,7 +241,7 @@ def create_app(
     async def unauthorized(request: Request, exc: Unauthorized) -> Response:
         return unauthorized_response()
 
-    # Under /api/ and /media/ nothing is routed before the caller is authenticated (a no-op in local mode).
+    # Under /api/ nothing is routed before the caller is authenticated (a no-op in local mode).
     app.add_middleware(AuthMiddleware, authenticator=authenticator)
 
     app.add_exception_handler(ApiError, api_error_handler)  # type: ignore[arg-type]
@@ -261,9 +251,7 @@ def create_app(
     async def revision_conflict(request: Request, exc: RevisionConflictError) -> Response:
         return conflict_response(exc)
 
-    # Routes are declared once on these two routers (no /api prefix, no
-    # /media prefix) and mounted twice at the bottom: under /api/v1 (the
-    # schema) and as deprecated /api and /media aliases (hidden from it).
+    # Routes are declared on these two routers (no prefix) and mounted under /api/v1 below.
     api = APIRouter()
     media_routes = APIRouter()
 
@@ -286,11 +274,8 @@ def create_app(
             # Vite content-hashes everything under /app/assets/, so these are safe to cache forever. index.html
             # (the only file naming the hashes) falls through to no-store below.
             response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
-        elif not path.startswith(("/api/", "/media/")):
+        elif not path.startswith("/api/"):
             response.headers["Cache-Control"] = "no-store"
-        if _is_legacy_path(path):
-            response.headers["Deprecation"] = "true"
-            response.headers["Link"] = f'<{API_PREFIX}>; rel="successor-version"'
         return response
 
     browse_root = root.parent if root.is_file() else root
@@ -602,10 +587,7 @@ def create_app(
     api.include_router(make_compose_router(provider, jobs))
     media_routes.include_router(make_compose_media_router(provider))
 
-    # New in v1, no deprecated alias.
-    v1_only = APIRouter()
-
-    @v1_only.get("/whoami", response_model=WhoAmIOut)
+    @api.get("/whoami", response_model=WhoAmIOut)
     def whoami(principal: Principal = principal_dependency) -> WhoAmIOut:
         """The principal this request is made as; use it to check that a token works."""
         return WhoAmIOut(
@@ -617,8 +599,6 @@ def create_app(
     guard: dict = {"dependencies": [Depends(current_principal)], "responses": UNAUTHORIZED_RESPONSES}
     app.include_router(api, prefix=API_PREFIX, **guard)
     app.include_router(media_routes, prefix=API_PREFIX, **guard)
-    app.include_router(v1_only, prefix=API_PREFIX, **guard)
-    # The event stream is new in v1 and has no deprecated alias: it is registered only under /api/v1.
     app.include_router(make_events_router(bus), prefix=API_PREFIX, **guard)
     app.include_router(make_library_router(provider, jobs), prefix=API_PREFIX, **guard)
     app.include_router(make_uploads_router(provider), prefix=API_PREFIX, **guard)
@@ -641,12 +621,6 @@ def create_app(
     app.include_router(make_ops_router(provider), prefix=API_PREFIX, **guard)
     app.include_router(make_presets_router(), prefix=API_PREFIX, **guard)
     app.include_router(make_caption_styles_router(), prefix=API_PREFIX, **guard)
-    # Deprecated aliases for one release: /api/... and /media/... as they were
-    # before versioning. Not in the OpenAPI schema; responses carry a
-    # `Deprecation` header (set by the middleware above). Registered after /api/v1 so it can't shadow it.
-    app.include_router(api, prefix="/api", include_in_schema=False, **guard)
-    app.include_router(media_routes, include_in_schema=False, **guard)
-
     default_openapi = app.openapi
 
     def openapi() -> dict:
@@ -663,7 +637,7 @@ def create_app(
     app.openapi = openapi  # type: ignore[method-assign]
 
     # Mounted last: Starlette matches routes in registration order, and this
-    # catch-all static mount must not shadow the /api/* and /media/* routes.
+    # catch-all static mount must not shadow the /api/* routes.
     # The static/ directory is owned by the frontend build; if it's not
     # populated yet, drop a placeholder so the mount doesn't error.
     STATIC_DIR.mkdir(parents=True, exist_ok=True)

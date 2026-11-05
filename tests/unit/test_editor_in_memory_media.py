@@ -93,7 +93,6 @@ def test_media_source_serves_ranges_from_open_read(client):
     assert client.get("/api/v1/media/file", params={"path": "sub/other.mp4"}).content == b"x" * 10
     assert client.get("/api/v1/media/file", params={"path": "../x"}).status_code == 400
     assert client.get("/api/v1/media/file", params={"path": "nope.mp4"}).status_code == 404
-    assert client.get("/media/source", params={"path": "gig.mp4"}).headers["deprecation"] == "true"
 
 
 def test_export_job_writes_to_the_media_store(client, media, monkeypatch):

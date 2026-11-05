@@ -22,7 +22,7 @@ dev: ## Build and run the visual editor in Docker via Compose (override with DIR
 frontend: ## Build the Svelte app into src/split_video/editor/static_app (served at /app/)
 	cd frontend && npm ci && npm run build
 
-frontend-dev: ## Vite dev server on :5173, proxying /api and /media to `split-video edit` on :8765
+frontend-dev: ## Vite dev server on :5173, proxying /api to `split-video edit` on :8765
 	cd frontend && npm run dev
 
 api-client: ## Regenerate the TypeScript API client from openapi.json (run after `make openapi`)

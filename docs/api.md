@@ -4,9 +4,8 @@ The editor's JSON API is versioned under `/api/v1` (media at
 `/api/v1/media/source?path=...`). Its OpenAPI schema is committed as
 [`openapi.json`](../openapi.json) at the repo root, and CI fails if it drifts
 from the code. After changing a route or schema, regenerate it with
-`make openapi`. The old unversioned paths (`/api/...`, `/media/source`,
-`/media/file`) still work for one release as deprecated aliases (they send a
-`Deprecation: true` header and are not in the schema).
+`make openapi`. Every route lives under `/api/v1`; there are no unversioned
+paths (the earlier `/api/...` and `/media/...` aliases are gone and answer 404).
 
 Project state responses carry a `revision`, and writes take an optional
 `If-Match` header; see [Revisions](revisions.md).
@@ -25,8 +24,8 @@ queues a `preview_range` job that renders up to 30 s of the timeline as a low-re
 ## API token (agents and hosted use)
 
 By default the server is a local single-user tool and the API is open. Start
-it with `SPLIT_VIDEO_TOKEN` set and every request under `/api/` and `/media/`
-(including the event stream and the deprecated aliases) must carry
+it with `SPLIT_VIDEO_TOKEN` set and every request under `/api/`
+(including the event stream) must carry
 `Authorization: Bearer <token>`, or it gets a `401` with a `WWW-Authenticate:
 Bearer` header and the body `{"detail": "...", "error": "unauthorized"}`. The
 static page, `/openapi.json` and the docs stay public. `GET /api/v1/whoami`
@@ -67,8 +66,7 @@ in place. The `revision` is one number across both. See
 
 ## Import, split jobs and a video's own timeline (the Media tab)
 
-These are what the editor's Media tab calls; each is a plain `/api/v1` route that agents can use too (all new in v1, so
-no deprecated alias).
+These are what the editor's Media tab calls; each is a plain `/api/v1` route that agents can use too.
 
 | Route | What it does |
 |---|---|

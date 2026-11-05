@@ -150,7 +150,7 @@ The generated directory is excluded from eslint and prettier but is type-checked
 
 Things to know about the output:
 
-- Only `/api/v1` is in the schema (the deprecated unversioned aliases are not), so there is one function per
+- Every route is under `/api/v1`, so there is one function per
   operation. Names come from FastAPI's operation ids, so they are long (`whoamiApiV1WhoamiGet`,
   `listAssetsApiV1AssetsGet`); fixing that means setting `operation_id`s in the backend, not renaming in the frontend.
 - The client throws on failure (`throwOnError: true`), and success returns `{ data, request, response }`.
