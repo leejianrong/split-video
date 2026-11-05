@@ -1,4 +1,5 @@
 import { playbackApi, type ChunkApi } from './playbackApi';
+import { neighbourCut } from '../timeline/cuts';
 import { playhead } from './playhead.svelte';
 
 /**
@@ -196,6 +197,23 @@ export class PlaybackStore {
   /** Stop where the picture is and cancel the renders still running; chunks already loaded stay for a quick resume. */
   pause(): void {
     if (this.#wanted || this.state !== 'paused') this.#halt();
+  }
+
+  /** The user moves the playhead by `delta` seconds (J/L, frame step): playing carries on from the new place, paused shows its still. */
+  step(delta: number): void {
+    this.#jump(this.#deps.getTime() + delta);
+  }
+
+  /** The user jumps to the cut before or after the playhead (`points`: `cutPoints`); stays put at either end. */
+  cut(points: readonly number[], direction: 'prev' | 'next'): void {
+    const target = neighbourCut(points, this.#deps.getTime(), direction);
+    if (target !== null) this.#jump(target);
+  }
+
+  #jump(time: number): void {
+    const clamped = Math.min(Math.max(0, time), this.#duration);
+    this.#deps.setTime(clamped);
+    this.seeked(this.#deps.getTime());
   }
 
   /** The user moved the playhead (a click on the ruler, Home/End). */

@@ -418,15 +418,15 @@ The `?` overlay lists exactly this table.
 | Keys | Action | Status |
 |---|---|---|
 | Space / K | Play / pause | current |
-| J / L | Step back / forward 5 s | current |
+| J / L | Step back / forward 5 s | built (SPL-127) |
 | S | Split at the playhead | built (SPL-76) |
 | Ctrl/Cmd+B | Split at the playhead | new, CapCut-like alias |
 | Delete / Backspace | Delete the selected clip or cut (a cut: remove the cut) | current, widened |
 | Shift+Delete | Ripple delete: delete the selection and close the gap | new |
 | Left / Right | Nudge the selected cut 0.1 s (1 s with Shift) | current |
-| Comma / Period | Previous / next frame | new |
+| Comma / Period | Previous / next frame | built (SPL-127) |
 | Home / End | Playhead to start / end | new |
-| Up / Down | Playhead to previous / next cut | new |
+| Up / Down | Playhead to previous / next cut | built (SPL-127) |
 | Ctrl+Z | Undo | new |
 | Ctrl+Shift+Z / Ctrl+Y | Redo | new |
 | Ctrl+A | Select all clips on unlocked lanes | new |
