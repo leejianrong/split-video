@@ -211,7 +211,7 @@ They are saved on the track as optional `locked`, `hidden`, `muted` (written onl
 made the file format version 3: a version 1 or 2 file migrates on load (no canvas, shown as 16:9) and is written back as
 3, on the next edit or `compose migrate`. A render, `preview-frame` or `preview-range` that names no `--preset`
 and no size uses the canvas's preset (`youtube-1080p`, `vertical-1080`, `square-1080`); a project that never chose one
-keeps the first clip's size. Switching keeps every clip. `show`, `GET /api/v1/compose/projects/{name}` and MCP
+keeps the first clip's size. Switching keeps every clip, and so does an `apply-plan` replace, which keeps the canvas. `show`, `GET /api/v1/compose/projects/{name}` and MCP
 `show_timeline` return `canvas: {ratio, preset, needs_reframe}`, where `needs_reframe` lists the main-track clips whose
 picture (after their crop) is not the canvas's shape and that have no `fit` of their own, so the export letterboxes or
 crops them as it is told to.

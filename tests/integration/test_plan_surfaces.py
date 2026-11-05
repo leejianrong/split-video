@@ -5,6 +5,7 @@ import json
 import shutil
 import subprocess
 import sys
+from dataclasses import replace
 
 import pytest
 from fastapi.testclient import TestClient
@@ -234,6 +235,19 @@ def test_revisions_on_every_surface(media_dir, tmp_path):
     assert loud.status_code == 200 and loud.json()["revision"] == 4
     exists = client.put("/api/v1/compose/projects/reel/plan", json=plan_for(ids))
     assert exists.status_code == 422 and exists.json()["errors"][0]["code"] == "plan.project.exists"
+
+
+def test_replace_keeps_the_canvas_over_http_and_cli(media_dir, tmp_path):
+    root, ids = workspace(media_dir, tmp_path, "canvas")
+    client = TestClient(create_app(root, DEFAULTS))
+    assert client.put("/api/v1/compose/projects/reel/plan", json=plan_for(ids)).status_code == 200
+    store = LocalProjectStore(root)
+    store.save_timeline("reel", replace(store.load_existing_timeline("reel"), canvas="9:16"), 1)
+    again = plan_for(ids, mode="replace")
+    assert client.put("/api/v1/compose/projects/reel/plan", json=again, headers={"If-Match": '"2"'}).status_code == 200
+    assert client.get("/api/v1/compose/projects/reel").json()["canvas"]["ratio"] == "9:16"
+    assert cli_apply(root, again, "--base-revision", "3", tmp_path=tmp_path).exit_code == 0
+    assert store.load_existing_timeline("reel").canvas == "9:16"
 
 
 def test_cli_text_output(media_dir, tmp_path):
