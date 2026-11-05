@@ -13,7 +13,7 @@ import pytest
 from jsonschema import Draft202012Validator
 from test_edit_plan import FILES, SpyStore, World
 
-from split_video import edit_ops, edit_plan, timeline_service
+from split_video import edit_ops, edit_plan, timeline_ops, timeline_service
 from split_video.edit_ops import OpsInvalidError
 from split_video.errors import RevisionConflictError
 from split_video.timeline import ProjectNotFoundError, TimelineError
@@ -591,7 +591,7 @@ def test_every_op_has_a_handler_a_doc_row_and_a_single_edit_twin():
         for f in spec.fields:
             assert f"`{f.name}`" in text, (name, f.name)
     assert list(edit_ops.OPS) == [
-        "add_clip", "trim_clip", "move_clip", "remove_clip", "set_transition", "set_clip_properties",
+        "add_clip", "trim_clip", "split_clip", "move_clip", "remove_clip", "set_transition", "set_clip_properties",
         "add_text_clip", "set_text_properties", "add_track", "remove_track", "move_track", "place_clip",
         "set_track_flags", "set_canvas",
     ]  # fmt: skip
@@ -626,6 +626,8 @@ def refusals(w):
         ({"op": "trim_clip", "clip": "ghost", "out": 3}, "ops.clip.not_found", "/clip"),
         ({"op": "trim_clip", "clip": first, "out": 400}, "plan.clip.out_of_range", "/out"),
         ({"op": "trim_clip", "clip": first, "in": 40}, "plan.clip.in_after_out", "/out"),
+        ({"op": "split_clip", "clip": first, "at": 0.05}, "ops.clip.split_point", "/at"),
+        ({"op": "split_clip", "clip": "ghost", "at": 3}, "ops.clip.not_found", "/clip"),
         ({"op": "move_clip", "clip": first, "to_index": 50}, "ops.index.out_of_range", "/to_index"),
         ({"op": "move_clip", "clip": "ovc", "to_index": 0}, "ops.clip.move_on_free_track", "/clip"),
         ({"op": "remove_clip", "clip": "ghost"}, "ops.clip.not_found", "/clip"),
@@ -965,3 +967,79 @@ def test_add_clip_label_is_kept_and_checked(world):
         world, doc([{"op": "add_clip", "asset": world.ids["a"], "label": "x" * 121}]), base_revision=out["revision"]
     )
     assert "ops.field.length" in codes(report)
+
+
+def test_split_clip_on_every_track_kind_keeps_the_cut_continuous_and_the_duration(world):
+    seed(world)
+    scene = [
+        {"op": "add_track", "id": "ov", "kind": "video"},
+        {"op": "add_track", "id": "au", "kind": "audio"},
+        {"op": "add_text_clip", "id": "tx", "track": "ov", "text": "hi", "duration": 4, "start": 20},
+        {"op": "add_clip", "id": "ovc", "asset": world.ids["a"], "track": "ov", "in": 2, "out": 8, "start": 30},
+        {"op": "add_clip", "id": "snd", "asset": world.ids["song"], "track": "au", "in": 1, "out": 9, "start": 2},
+    ]
+    edit_ops.apply_ops(world.media, world.store, doc(scene))
+    first = world.store.load_timeline(NAME).tracks[0].clips[1].id  # main clip 2 (30..60)
+    before = world.store.load_timeline(NAME)
+    cuts = [(first, 41.0), ("tx", 22.5), ("ovc", 33.0), ("snd", 5.0)]
+    result = edit_ops.apply_ops(
+        world.media,
+        world.store,
+        doc([{"op": "split_clip", "id": f"r{i}", "clip": c, "at": at} for i, (c, at) in enumerate(cuts)]),
+    )
+    assert [r["ids"]["right"] for r in result["results"]] == ["r0", "r1", "r2", "r3"]
+    after = world.store.load_timeline(NAME)
+    assert after.duration == before.duration
+    for i, (clip_id, at) in enumerate(cuts):
+        old_track, old_i = timeline_ops.find_clip(before, clip_id)
+        track, j = timeline_ops.find_clip(after, clip_id)
+        left, right = track.clips[j], track.clips[j + 1]
+        old = old_track.clips[old_i]
+        assert right.id == f"r{i}"
+        assert (left.in_point, right.out_point) == (old.in_point, old.out_point)
+        assert left.out_point == right.in_point
+        assert (left.start, left.end, right.start, right.end) == (old.start, at, at, old.end)
+        assert right.text == old.text and right.kind == old.kind and right.asset == old.asset
+
+
+def test_split_clip_keeps_properties_and_leaves_the_crossfade_with_the_left_half(world):
+    seed(world)
+    main = world.store.load_timeline(NAME).tracks[0].clips
+    edit_ops.apply_ops(
+        world.media,
+        world.store,
+        doc(
+            [
+                {"op": "set_transition", "clip": main[1].id, "transition": "crossfade", "duration": 2},
+                {"op": "set_transition", "clip": main[2].id, "transition": "crossfade", "duration": 2},
+                {"op": "set_clip_properties", "clip": main[1].id, "gain": 0.5, "fit": "crop", "scale": 0.8},
+            ]
+        ),
+    )
+    before = world.store.load_timeline(NAME).tracks[0]
+    mid = before.clips[1]
+    edit_ops.apply_ops(world.media, world.store, doc([{"op": "split_clip", "clip": mid.id, "at": mid.start + 10}]))
+    clips = world.store.load_timeline(NAME).tracks[0].clips
+    left, right = clips[1], clips[2]
+    assert (left.transition, left.transition_duration) == ("crossfade", 2)
+    assert (right.transition, right.transition_duration) == ("cut", 0)
+    assert (left.gain, left.fit, left.scale) == (right.gain, right.fit, right.scale) == (0.5, "crop", 0.8)
+    assert clips[3].transition == "crossfade"  # the next clip still fades in, now from the right half
+    assert world.store.load_timeline(NAME).duration == before.end
+
+
+def test_split_clip_refuses_a_cut_inside_a_crossfade_or_on_a_locked_track(world):
+    seed(world)
+    main = world.store.load_timeline(NAME).tracks[0]
+    mid = main.clips[1]
+    edit_ops.apply_ops(
+        world.media,
+        world.store,
+        doc([{"op": "set_transition", "clip": mid.id, "transition": "crossfade", "duration": 2}]),
+    )
+    start = world.store.load_timeline(NAME).tracks[0].clips[1].start
+    report = failure(world, doc([{"op": "split_clip", "clip": mid.id, "at": start + 1}]))
+    assert codes(report) == ["ops.clip.split_in_fade"]
+    edit_ops.apply_ops(world.media, world.store, doc([{"op": "set_track_flags", "track": main.id, "locked": True}]))
+    report = failure(world, doc([{"op": "split_clip", "clip": mid.id, "at": start + 10}]))
+    assert codes(report) == ["ops.track.locked"]

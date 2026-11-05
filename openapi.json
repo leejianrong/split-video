@@ -11292,7 +11292,7 @@
     },
     "/api/v1/compose/projects/{name}/ops": {
       "post": {
-        "description": "Apply a batch of timeline edits (add_clip, trim_clip, move_clip, remove_clip, set_transition,\nset_clip_properties, add_text_clip, set_text_properties, add_track, remove_track, move_track, place_clip) to the\nexisting project `name`, atomically: every op or none, saved once. Clips and tracks are addressed by id; a\ncreating op may be given an `id` that later ops in the batch use. The body is validated against\n`GET /api/v1/schemas/edit-ops` (strict). With `dry_run=true` nothing is written and the result carries the\nresulting project as `timeline`. The first op the project refuses stops the batch; `continue_on_error: true`\nin the body (dry run only) collects every independent problem. 422 carries the report, 409 a stale\nrevision (`If-Match`).",
+        "description": "Apply a batch of timeline edits (add_clip, trim_clip, split_clip, move_clip, remove_clip, set_transition,\nset_clip_properties, add_text_clip, set_text_properties, add_track, remove_track, move_track, place_clip) to the\nexisting project `name`, atomically: every op or none, saved once. Clips and tracks are addressed by id; a\ncreating op may be given an `id` that later ops in the batch use. The body is validated against\n`GET /api/v1/schemas/edit-ops` (strict). With `dry_run=true` nothing is written and the result carries the\nresulting project as `timeline`. The first op the project refuses stops the batch; `continue_on_error: true`\nin the body (dry run only) collects every independent problem. 422 carries the report, 409 a stale\nrevision (`If-Match`).",
         "operationId": "apply_ops_api_v1_compose_projects__name__ops_post",
         "parameters": [
           {

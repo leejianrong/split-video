@@ -405,6 +405,19 @@ def remove_clip(
     return edit(store, name, lambda p: timeline_ops.remove_clip(p, clip_id), media, base_revision=base_revision)
 
 
+def split_clip(
+    store: ProjectStore,
+    name: str,
+    clip_id: str,
+    at: float,
+    media: MediaStore | None = None,
+    *,
+    base_revision: int | None = None,
+) -> Project:
+    """Cut a clip in two at `at` timeline seconds (`timeline_ops.split_clip`): one edit, one revision."""
+    return edit(store, name, lambda p: timeline_ops.split_clip(p, clip_id, at)[0], media, base_revision=base_revision)
+
+
 def set_transition(
     store: ProjectStore,
     name: str,

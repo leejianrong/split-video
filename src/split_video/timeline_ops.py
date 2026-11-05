@@ -46,7 +46,7 @@ class RuleViolation(TimelineError):
     `crossfade_room`, `start_negative`, `overlap`, `magnetic_start`, `free_index`, `index_range`,
     `move_on_free`, `crossfade_free_track`, `text_target`, `not_text_clip`, `last_video_track`,
     `kind_mismatch`, `main_track_dest`, `crop_invalid`, `crop_not_applicable`, `fit_not_applicable`, `track_locked`,
-    `main_track_hidden`."""
+    `main_track_hidden`, `split_point`, `split_in_fade`."""
 
     def __init__(self, reason: str, message: str) -> None:
         super().__init__(message)
@@ -219,6 +219,31 @@ def remove_clip(project: Project, clip_id: str) -> Project:
     clips = list(track.clips)
     del clips[i]
     return _with_clips(project, track, clips)
+
+
+def split_clip(project: Project, clip_id: str, at: float) -> tuple[Project, Clip]:
+    """Cut a clip in two at `at` (timeline seconds). The left half keeps the id, the clip's start, its crossfade in
+    and every property; the right half starts where the left ends, uses the source from where it stops, and is a
+    plain cut with no export name. Neither half may be shorter than `MIN_CLIP`, and on the main track the cut may
+    not fall inside a crossfade (the track would shift). Returns the new project and the right half."""
+    track, i = find_clip(project, clip_id)
+    clip = track.clips[i]
+    if not clip.start + MIN_CLIP <= at <= clip.end - MIN_CLIP:
+        raise RuleViolation(
+            "split_point",
+            f"the cut at {at:g}s must be inside the clip ({clip.start:g}s..{clip.end:g}s), "
+            f"at least {MIN_CLIP:g}s from each edge",
+        )
+    middle = clip.in_point + (at - clip.start)
+    right = replace(
+        clip, id=new_id(), in_point=middle, start=at, transition="cut", transition_duration=0.0, export_name=None
+    )
+    clips = list(track.clips)
+    clips[i : i + 1] = [replace(clip, out_point=middle), right]
+    new = _with_clips(project, track, clips)
+    if abs(find_track(new, track.id).end - track.end) > 1e-6:
+        raise RuleViolation("split_in_fade", f"the cut at {at:g}s falls inside a crossfade; cut before or after it")
+    return new, find_clip_in(new, right.id)
 
 
 def set_transition(project: Project, clip_id: str, transition: str, duration: float = 0.0) -> Project:

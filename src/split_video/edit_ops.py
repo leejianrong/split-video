@@ -184,6 +184,20 @@ OPS: dict[str, OpSpec] = {
             any_of=("in", "out"),
         ),
         _spec(
+            "split_clip",
+            "Cut a clip in two at a time on the timeline (`timeline_service.split_clip`).",
+            _id_field("right-hand clip"),
+            _ref("clip"),
+            Field(
+                "at",
+                "number",
+                "Where to cut, seconds on the timeline; at least 0.1 s inside the clip on both sides.",
+                required=True,
+                minimum=0.0,
+            ),
+            creates="clip",
+        ),
+        _spec(
             "move_clip",
             "Move a clip within its magnetic track (`timeline_service.move_clip`).",
             _ref("clip"),
@@ -558,6 +572,8 @@ _RULES: dict[str, tuple[str, str | None, str]] = {
         "duration",
         "shorten the crossfade or lengthen the neighbouring clips",
     ),
+    "split_point": ("ops.clip.split_point", "at", "pick a time inside the clip, not on its edge"),
+    "split_in_fade": ("ops.clip.split_in_fade", "at", "pick a time outside the crossfades at the clip's ends"),
     "start_negative": ("ops.clip.start_negative", "start", "start at 0 or later"),
     "overlap": ("plan.clip.overlap", "start", "move it later, put it on another track, or shorten the earlier clip"),
     "magnetic_start": (
@@ -803,6 +819,21 @@ def _op_trim_clip(run: _Run, project: Project, op: _Op) -> tuple[Project, str, d
     return new, f"trimmed clip {clip.id} to {new_in:g}s..{new_out:g}s", {"clip": clip.id, "track": track.id}
 
 
+def _op_split_clip(run: _Run, project: Project, op: _Op) -> tuple[Project, str, dict[str, str]]:
+    track, _ = _clip(project, op)
+    right_id = _new_id(run, project, op, "clip")
+    try:
+        new, right = timeline_ops.split_clip(project, op.raw["clip"], float(op.raw["at"]))
+    except TimelineError as exc:
+        raise _rule_failure(op, exc) from None
+    new = _rename(new, "clip", right.id, right_id)
+    return (
+        new,
+        f"split clip {op.raw['clip']} at {float(op.raw['at']):g}s, the second half is {right_id}",
+        {"clip": op.raw["clip"], "right": right_id, "track": track.id},
+    )
+
+
 def _op_move_clip(run: _Run, project: Project, op: _Op) -> tuple[Project, str, dict[str, str]]:
     track, _ = _clip(project, op)
     try:
@@ -968,6 +999,7 @@ def _op_set_canvas(run: _Run, project: Project, op: _Op) -> tuple[Project, str, 
 _HANDLERS: dict[str, Callable[[_Run, Project, _Op], tuple[Project, str, dict[str, str]]]] = {
     "add_clip": _op_add_clip,
     "trim_clip": _op_trim_clip,
+    "split_clip": _op_split_clip,
     "move_clip": _op_move_clip,
     "remove_clip": _op_remove_clip,
     "set_transition": _op_set_transition,

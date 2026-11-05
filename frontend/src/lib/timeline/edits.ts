@@ -186,3 +186,25 @@ export function dropOps(
   const index = mainClips.filter((c) => c.start + c.duration / 2 < time).length;
   return [{ op: 'add_clip', asset: asset.id, index }];
 }
+
+/**
+ * The clips `S` cuts at `time`: those the playhead is strictly inside, on unlocked lanes. With a selection, only the
+ * selected ones; with none, the topmost one (lanes are ordered top to bottom, so an overlay or title wins over the main
+ * clip below it, and the main track's audio lane shares the main clip). The engine checks the 0.1 s margins.
+ */
+export function splitTargets(
+  lanes: readonly Lane[],
+  time: number,
+  selected: readonly string[],
+): ClipOut[] {
+  const inside = lanes
+    .filter((lane) => !lane.track.locked)
+    .flatMap((lane) => lane.clips.filter((c) => c.start < time && time < c.end))
+    .filter((clip, i, all) => all.findIndex((c) => c.id === clip.id) === i);
+  return selected.length ? inside.filter((c) => selected.includes(c.id)) : inside.slice(0, 1);
+}
+
+/** One `split_clip` op per target: a batch, so cutting several selected clips is one revision. */
+export function splitOps(targets: readonly ClipOut[], time: number): EditOp[] {
+  return targets.map((clip) => ({ op: 'split_clip', clip: clip.id, at: ms(time) }));
+}

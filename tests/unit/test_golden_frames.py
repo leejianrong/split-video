@@ -96,12 +96,21 @@ def main_placed(media, x=0.35, y=0.4, scale=0.6, opacity=0.7):
     return ops.set_clip_properties(p, clip.id, x=x, y=y, scale=scale, opacity=opacity)
 
 
+def split(media):
+    """SPL-76: the overlay project with the main clip and the overlay clip each cut in two (the cuts are 0.3 s apart)."""
+    p = overlay(media)
+    for track in p.tracks:
+        p, _ = ops.split_clip(p, track.clips[0].id, 1.5 if track.magnetic else 1.2)
+    return p
+
+
 # Measured on ffmpeg 4.4 (docs/compose.md has the numbers): the limits sit between the worst good frame and the
 # smallest mutation below. The mean catches colour and opacity, the share of bad samples catches small moves and text.
 CASES = {
     "overlay": (overlay, [0.25, 1.0, 2.0], Tolerance(mean=2.5, share=0.006, separation=3)),
     # 0.5 is before the fade, 1.5 in it, 2.0 and 2.5 at and after its end (SPL-123: no allowance for a late frame).
     "crossfade": (crossfade, [0.5, 1.5, 2.0, 2.5], Tolerance(mean=2.5, share=0.006, separation=3)),
+    "split": (split, [1.0, 1.3, 1.6, 2.2], Tolerance(mean=2.5, share=0.006, separation=3)),
     "grade": (grade, [0.0, 1.5, 2.9], Tolerance(mean=2.5, share=0.006, separation=3)),
     "title": (title, [0.2, 1.0, 2.4], Tolerance(mean=2.0, share=0.0015)),
     "own_fit": (own_fit, [0.5, 1.5, 2.5], Tolerance(mean=2.5, share=0.006)),  # static bars: no separation

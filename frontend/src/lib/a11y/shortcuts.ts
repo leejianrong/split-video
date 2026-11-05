@@ -60,7 +60,7 @@ export const SHORTCUTS: readonly ShortcutEntry[] = [
   {
     id: 'timeline.split',
     keys: ['S'],
-    label: 'Split at the playhead (adds a cut)',
+    label: 'Split at the playhead',
     group: 'Editing',
     when: 'editor',
   },

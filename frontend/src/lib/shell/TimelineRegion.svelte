@@ -1,5 +1,14 @@
 <script lang="ts">
+  import { announce } from '../a11y/announce';
+  import { registerAction } from '../a11y/dispatcher';
+  import { clipSelection } from '../state/clipSelection.svelte';
+  import { reportEditError } from '../state/editErrors';
+  import { playhead } from '../state/playhead.svelte';
+  import { project } from '../state/project.svelte';
+  import { toasts } from '../state/toasts.svelte';
   import { timelineView } from '../state/timelineView.svelte';
+  import { splitOps, splitTargets } from '../timeline/edits';
+  import { buildLanes } from '../timeline/lanes';
   import { sliderToZoom, zoomToSlider } from '../timeline/scale';
   import Timeline from '../timeline/Timeline.svelte';
   import IconButton from '../ui/IconButton.svelte';
@@ -10,6 +19,39 @@
   const zoomValue = $derived(
     zoomToSlider(timelineView.pxPerSecond, timelineView.duration, timelineView.width),
   );
+
+  /** Cut the selected clips (or, with none selected, the topmost one) at the playhead: one edit, then select the right halves. */
+  async function splitAtPlayhead(): Promise<void> {
+    const time = playhead.time;
+    const targets = splitTargets(buildLanes(project.timeline), time, clipSelection.ids);
+    if (targets.length === 0) {
+      toasts.show({
+        kind: 'warning',
+        message: clipSelection.ids.length
+          ? 'The playhead is not inside a selected clip, so nothing was split.'
+          : 'The playhead is not on a clip. Move it onto one, then split.',
+      });
+      return;
+    }
+    if (!(await project.applyOps(splitOps(targets, time)))) {
+      reportEditError();
+      return;
+    }
+    const clips = buildLanes(project.timeline).flatMap((l) => l.clips);
+    const right = targets.flatMap((cut) => {
+      const left = clips.find((c) => c.id === cut.id);
+      return clips.filter(
+        (c) =>
+          c.id !== cut.id &&
+          c.in_point === left?.out_point &&
+          Math.abs(c.start - (left?.end ?? NaN)) < 1e-6,
+      );
+    });
+    clipSelection.ids = right.map((c) => c.id);
+    announce(`Split at ${time.toFixed(1)} seconds`);
+  }
+  $effect(() => registerAction('timeline.split', () => void splitAtPlayhead()));
+  $effect(() => registerAction('timeline.splitAlias', () => void splitAtPlayhead()));
 </script>
 
 <section class="timeline" data-region="timeline" aria-label="Timeline">
@@ -21,7 +63,8 @@
       icon="scissors"
       action="timeline.split"
       size="sm"
-      disabled
+      disabled={!project.timeline?.tracks.some((t) => t.clips.length)}
+      onclick={splitAtPlayhead}
     />
     <IconButton label="Delete" icon="trash" action="timeline.delete" size="sm" disabled />
     <span class="spacer"></span>
