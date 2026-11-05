@@ -17,8 +17,7 @@ and `source="original"` it is the export's frame up to the encoder's loss (the t
 Sources: `source="auto"` reads a clip's proxy when it has one (fast on long or high-bitrate files, time right to
 within one proxy frame, 1/15 s), `"original"` reads the files like the export, which never reads a proxy.
 
-Not drawn: captions (a render option, see `captions.py`) and audio. Known difference: after a cross-fade ffmpeg's
-`xfade` can show the incoming clip one frame late in the export (4.4 does); the preview shows it on time.
+Not drawn: captions (a render option, see `captions.py`) and audio.
 """
 
 from __future__ import annotations

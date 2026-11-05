@@ -194,7 +194,10 @@ def _main_chain(
                 # xfade refuses inputs with different timebases ("Error reinitializing filters").
                 parts.append(f"[{vlabel}]settb=1/{fps}[vt{n}]")
                 vlabel, joined_by_cut = f"vt{n}", False
-            parts.append(f"[{vlabel}][v{n}]xfade=transition=fade:duration={d:.3f}:offset={length - d:.3f}[{nv}]")
+            # ffmpeg 4.4's xfade drops one frame when the first input ends exactly where the fade does, which
+            # shows the incoming clip one frame late from then on (SPL-123); one cloned frame past the end avoids it.
+            parts.append(f"[{vlabel}]tpad=stop=1:stop_mode=clone[vp{n}]")
+            parts.append(f"[vp{n}][v{n}]xfade=transition=fade:duration={d:.3f}:offset={length - d:.3f}[{nv}]")
             if audio:
                 parts.append(f"[{alabel}][a{n}]acrossfade=d={d:.3f}[{na}]")
             length += clip.duration - d

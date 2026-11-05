@@ -163,7 +163,7 @@ def test_crossfade_after_a_cut_resets_the_picture_timebase():
     p, _ = _main([5, 4, 3])
     p = ops.set_transition(p, p.tracks[0].clips[2].id, "crossfade", 1)
     graph = build_plan(p, _infos(p), 320, 240).graph
-    assert "[vj1]settb=1/30[vt2];[vt2][v2]xfade" in graph
+    assert "[vj1]settb=1/30[vt2];[vt2]tpad=stop=1:stop_mode=clone[vp2];[vp2][v2]xfade" in graph
     p, _ = _main([5, 4])
     p = ops.set_transition(p, p.tracks[0].clips[1].id, "crossfade", 1)
     assert "settb" not in build_plan(p, _infos(p), 320, 240).graph  # nothing to fix without a cut before
