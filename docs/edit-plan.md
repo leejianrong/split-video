@@ -52,7 +52,8 @@ In the HTTP route the URL names the project: `project` may be left out of the bo
 | `meta` | object | Free-form notes for yourself. Echoed in the response, never stored, never validated, not part of `plan_hash`. |
 
 **Replace rule.** Replacing an existing project must carry `base_revision` (409 on mismatch, like every other write) or
-`"replace_unconditionally": true`. Replacing a project that does not exist is `plan.project.not_found`; use `create`.
+`"replace_unconditionally": true`. Replacing a project that does not exist is `plan.project.not_found`; use `create`. A replace keeps the project's canvas (the output ratio); the plan does not carry one, set it with
+`set_canvas`.
 
 ### Track
 

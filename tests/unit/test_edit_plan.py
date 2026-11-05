@@ -5,6 +5,7 @@ import importlib.util
 import json
 import re
 import time
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -316,6 +317,16 @@ def test_an_invalid_replace_leaves_the_existing_project_untouched(world):
         edit_plan.apply_plan(world.media, world.store, bad)
     after = world.store.load_existing_timeline("reel")
     assert after == before and after.revision == before.revision == 1
+
+
+def test_replace_keeps_the_project_canvas_and_a_dry_run_shows_it(world):
+    edit_plan.apply_plan(world.media, world.store, minimal(world))
+    world.store.save_timeline("reel", replace(world.store.load_existing_timeline("reel"), canvas="9:16"), 1)
+    again = minimal(world, mode="replace", base_revision=2)
+    dry = edit_plan.apply_plan(world.media, world.store, again, dry_run=True)
+    assert dry["timeline"]["canvas"]["ratio"] == "9:16"
+    edit_plan.apply_plan(world.media, world.store, again)
+    assert world.store.load_existing_timeline("reel").canvas == "9:16"
 
 
 def test_a_failed_save_leaves_the_previous_project_intact(world, monkeypatch):

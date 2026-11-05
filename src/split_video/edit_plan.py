@@ -1133,6 +1133,8 @@ def apply_plan(
     name, mode = doc["project"], doc.get("mode", "create")
     base = base_revision if base_revision is not None else doc.get("base_revision")
     expected = 0 if mode == "create" else base  # None: replace_unconditionally
+    if mode == "replace":  # the canvas is an output setting, not part of the clips the plan describes
+        project = replace(project, canvas=store.load_timeline(name).canvas)
     if dry_run:
         current = store.load_timeline(name).revision if store.timeline_exists(name) else 0
         store_module.check_base_revision("timeline project", name, current, expected)
