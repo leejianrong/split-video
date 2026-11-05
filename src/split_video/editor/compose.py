@@ -103,11 +103,18 @@ class TrackOut(BaseModel):
     muted: bool = False  # a muted track is silent
 
 
+class CanvasOut(BaseModel):
+    ratio: str  # the project's output ratio: 16:9, 9:16 or 1:1 (16:9 until one is chosen)
+    preset: str  # the export preset the ratio stands for
+    needs_reframe: list[str]  # ids of main-track clips whose picture is not this shape (fit or crop them)
+
+
 class ProjectOut(BaseModel):
     name: str
     # The project file's revision; send it back as the `If-Match` header on writes (see editor/revisions.py).
     revision: int = 0
     duration: float
+    canvas: CanvasOut
     tracks: list[TrackOut]
 
 
@@ -368,6 +375,7 @@ def project_out(media: MediaStore, name: str, project: Project) -> ProjectOut:
         name=name,
         revision=project.revision,
         duration=timeline_module.ms(project.duration),
+        canvas=CanvasOut(**timeline_service.canvas_view(project, rows)),
         tracks=[
             TrackOut(
                 id=t.id,

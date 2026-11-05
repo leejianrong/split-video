@@ -270,6 +270,12 @@ OPS: dict[str, OpSpec] = {
             Field("muted", "boolean", "A muted track is silent in the preview and the export."),
             any_of=("locked", "hidden", "muted"),
         ),
+        _spec(
+            "set_canvas",
+            "Set the project's output ratio. Clips are kept; `canvas.needs_reframe` in the timeline view lists the "
+            "ones whose picture does not match it (`timeline_ops.set_canvas`).",
+            Field("ratio", "string", "The canvas ratio.", required=True, enum=tuple(timeline.CANVASES)),
+        ),
     )
 }
 
@@ -939,6 +945,14 @@ def _op_set_track_flags(run: _Run, project: Project, op: _Op) -> tuple[Project, 
     return new, f"set track {track.id}: {shown}", {"track": track.id}
 
 
+def _op_set_canvas(run: _Run, project: Project, op: _Op) -> tuple[Project, str, dict[str, str]]:
+    try:
+        new = timeline_ops.set_canvas(project, op.raw["ratio"])
+    except TimelineError as exc:
+        raise _rule_failure(op, exc) from None
+    return new, f"set canvas {op.raw['ratio']}", {"canvas": op.raw["ratio"]}
+
+
 _HANDLERS: dict[str, Callable[[_Run, Project, _Op], tuple[Project, str, dict[str, str]]]] = {
     "add_clip": _op_add_clip,
     "trim_clip": _op_trim_clip,
@@ -953,6 +967,7 @@ _HANDLERS: dict[str, Callable[[_Run, Project, _Op], tuple[Project, str, dict[str
     "move_track": _op_move_track,
     "place_clip": _op_place_clip,
     "set_track_flags": _op_set_track_flags,
+    "set_canvas": _op_set_canvas,
 }
 assert set(_HANDLERS) == set(OPS)
 

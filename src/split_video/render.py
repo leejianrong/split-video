@@ -403,7 +403,7 @@ def render(
     `{"preset", "fit", "width", "height", "fps"}`, plus `"captions"` (the report of `captions.build`) when captions were asked for.
 
     The picture is the first clip's size unless `width` and `height` (see `check_size`) or an export `preset`
-    (see `presets.py`, which also sets frame rate and encoder) say otherwise; explicit size beats the preset's.
+    (see `presets.py`, which also sets frame rate and encoder) say otherwise; explicit size beats the preset's. With neither, a project that has a canvas (`Project.canvas`) uses its preset.
     Every clip then fits that frame: `fit="letterbox"` (default) scales it to fit and pads, `"crop"` scales it to
     cover and cuts the overflow (clips with their own crop are not affected).
 
@@ -415,7 +415,9 @@ def render(
 
     Clips are found by asset id (relinked if their file moved); a clip that can't be found
     is a `SourceNotFoundError` naming the asset and its last known path."""
-    settings = presets.resolve_export(preset, width, height, fit)
+    settings = presets.resolve_export(
+        presets.canvas_preset(preset, width, height, project.canvas_preset), width, height, fit
+    )
     prepared = prepare(project, media, settings)
     project, infos, width, height, font = (
         prepared.project, prepared.infos, prepared.width, prepared.height, prepared.font

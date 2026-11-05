@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { untrack } from 'svelte';
+  import { canvasOf } from '../state/canvas';
   import { exports } from '../state/exports.svelte';
   import { project } from '../state/project.svelte';
   import { ui } from '../state/ui.svelte';
@@ -7,7 +9,14 @@
   import Dialog from '../ui/Dialog.svelte';
   import Select from '../ui/Select.svelte';
   import TextField from '../ui/TextField.svelte';
-  import { defaultFolder, estimateSeconds, formatEstimate, MODES, PRESETS } from './plan';
+  import {
+    defaultFolder,
+    estimateSeconds,
+    formatEstimate,
+    MODES,
+    PRESETS,
+    type PresetId,
+  } from './plan';
   import RenderQueue from './RenderQueue.svelte';
 
   // The export dialog (ux-spec #export): what to export, the settings, then Start export (N). The render queue sits
@@ -37,6 +46,15 @@
         ? 'No included segments on the timeline.'
         : 'The timeline is empty.',
   );
+
+  // The export starts from the project canvas, so it matches the preview; the picker below can still override it.
+  const canvasPreset = $derived(canvasOf(project.canvas).preset as PresetId);
+  $effect(() => {
+    const preset = canvasPreset;
+    untrack(() => {
+      if (s.preset !== 'original') s.preset = preset;
+    });
+  });
 
   // Switching away from the stream copy (only segments have it) must not leave a preset the mode cannot show.
   $effect(() => {

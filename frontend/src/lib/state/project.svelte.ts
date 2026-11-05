@@ -8,6 +8,7 @@ import {
   type ProjectOut,
   type StateResponse,
 } from '../api/client';
+import { type CanvasId } from './canvas';
 import type { ProjectEvent } from './jobs.svelte';
 
 export type ProjectStatus = 'idle' | 'loading' | 'ready' | 'error';
@@ -49,6 +50,10 @@ export class ProjectStore {
       ? null
       : Math.max(this.timeline?.revision ?? 0, this.project?.revision ?? 0),
   );
+  /** The project canvas (output ratio), stored in the project; 16:9 until one is chosen. The preview and export follow it. */
+  canvas = $derived<CanvasId>((this.timeline?.canvas.ratio as CanvasId | undefined) ?? '16:9');
+  /** Ids of the main-track clips whose picture is not the canvas's shape (the engine's `canvas.needs_reframe`). */
+  needsReframe = $derived<readonly string[]>(this.timeline?.canvas.needs_reframe ?? []);
   /** The name shown in the top bar: the video's file name. */
   name = $derived(this.project?.filename ?? null);
 
@@ -185,6 +190,11 @@ export class ProjectStore {
       const { data } = await getVideoTimelineApiV1ProjectTimelineGet({ query: { path: id ?? '' } });
       return data;
     });
+  }
+
+  /** Set the project canvas (a stored edit: a new revision, so playback and stills treat it like any other). */
+  setCanvas(ratio: CanvasId): Promise<boolean> {
+    return this.applyOps([{ op: 'set_canvas', ratio }]);
   }
 
   /** Forget the open project (back to the start or library views keep the last one unless asked). */

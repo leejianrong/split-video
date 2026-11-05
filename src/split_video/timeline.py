@@ -40,7 +40,15 @@ from split_video.media_store import MediaOutsideRootError, MediaStore
 #
 # Split metadata (SPL-116) is the same kind of change: a clip's optional `label`, `label_color`, `included`
 # (written only when false) and `export_name` hold what a split project's segment had. The version stays 2.
-FORMAT_VERSION = 2
+#
+# Version 3 (canvas, SPL-82): the project's optional `canvas` (an output ratio from `CANVASES`) is written only when
+# one was chosen. `migrate` brings a version 1 or 2 file to 3 on load (no canvas: "not chosen", shown as 16:9), so
+# the next save writes version 3. A build that only knows version 2 ignores `canvas` and writes version 2 back.
+FORMAT_VERSION = 3
+
+# The output ratios the editor offers and the export preset each one is (`presets.py`).
+CANVASES: dict[str, str] = {"16:9": "youtube-1080p", "9:16": "vertical-1080", "1:1": "square-1080"}
+DEFAULT_CANVAS = "16:9"
 
 TRACK_KINDS = ("video", "audio")
 TRANSITIONS = ("cut", "crossfade")
@@ -149,6 +157,19 @@ class Project:
     # by the `ProjectStore`, which owns it; editing functions build new `Project`s without it and the
     # store ignores whatever they carry. Not part of equality: two projects with the same tracks are equal.
     revision: int = field(default=0, compare=False)
+    # The output ratio chosen for the project (a key of `CANVASES`); None until one is chosen. Renders and previews
+    # without an explicit preset or size use its preset; with None they keep the first clip's size.
+    canvas: str | None = None
+
+    @property
+    def canvas_ratio(self) -> str:
+        """The ratio to show: the chosen canvas, else 16:9."""
+        return self.canvas or DEFAULT_CANVAS
+
+    @property
+    def canvas_preset(self) -> str | None:
+        """The export preset the chosen canvas stands for (None: no canvas chosen)."""
+        return CANVASES[self.canvas] if self.canvas else None
 
     @property
     def duration(self) -> float:
@@ -199,6 +220,7 @@ def shown_crop(crop: dict[str, float] | None) -> dict[str, float] | None:
 def to_dict(project: Project) -> dict[str, Any]:
     return {
         "version": FORMAT_VERSION,
+        **({"canvas": project.canvas} if project.canvas else {}),
         "tracks": [
             {
                 "id": t.id,
@@ -257,7 +279,30 @@ def _crop_from_dict(raw: Any) -> dict[str, float]:
     }
 
 
+def _v2_to_v3(data: dict[str, Any]) -> dict[str, Any]:
+    # Version 2 had no canvas: a stray key is not a choice anyone made.
+    return {k: v for k, v in data.items() if k != "canvas"}
+
+
+# One step per version: MIGRATIONS[n] turns a version n file into a version n + 1 one. Version 1 to 2 changes no key
+# the model reads (the clips' missing `asset` is filled by `assets.link_project`), so it only stamps the version.
+MIGRATIONS = {1: lambda data: dict(data), 2: _v2_to_v3}
+
+
+def migrate(data: dict[str, Any]) -> dict[str, Any]:
+    """`data` (a timeline file's content) brought to `FORMAT_VERSION`, as a new dict. A file with no version is
+    version 1; one newer than this build is returned as it is (read as far as it is understood)."""
+    version = data.get("version", 1)
+    if not isinstance(version, int) or isinstance(version, bool):
+        return data
+    while version < FORMAT_VERSION:
+        data = {**MIGRATIONS[version](data), "version": version + 1}
+        version += 1
+    return data
+
+
 def from_dict(data: dict[str, Any]) -> Project:
+    data = migrate(data)
     tracks = []
     for t in data["tracks"]:
         kind = str(t.get("kind", "video"))
@@ -305,7 +350,10 @@ def from_dict(data: dict[str, Any]) -> Project:
                 muted=bool(t.get("muted", False)),
             )
         )
-    return Project(tracks=tuple(tracks))
+    canvas = data.get("canvas")
+    if canvas is not None and canvas not in CANVASES:
+        raise ValueError(f"unknown canvas {canvas!r}")
+    return Project(tracks=tuple(tracks), canvas=canvas)
 
 
 class ProjectNotFoundError(TimelineError):

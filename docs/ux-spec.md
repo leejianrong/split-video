@@ -94,8 +94,8 @@ Behaviour:
   retry") and the agent status ("Agent connected, 2 edits live" when an agent
   session is attached; hidden otherwise).
 - The aspect ratio picker in the top bar sets the project canvas (16:9, 9:16,
-  1:1), which is the output ratio. Changing it never moves clips; it changes crop
-  and fit (see [Preview](#preview)).
+  1:1), which is the output ratio. It is saved in the project and restored on reopen. Changing it never moves clips; it changes crop
+  and fit (see [Preview](#preview)), and the inspector's Project panel counts the clips whose shape no longer matches.
 
 ## Left tabs
 

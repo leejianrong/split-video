@@ -86,7 +86,7 @@ def load_existing(
     is how a front door that turns clip numbers into ids does so against the version the caller saw.
 
     With `media`, its clips are linked to assets (see `assets.link_project`): a version 1 project
-    gains asset ids and a moved file is found again. The result is the version 2 model, but the
+    gains asset ids and a moved file is found again. The result is the current model, but the
     project file is not rewritten by reading; the next edit saves it, or `migrate_project` does."""
     project = store.load_existing_timeline(name)
     store_module.check_base_revision("timeline project", name, project.revision, base_revision)
@@ -94,8 +94,8 @@ def load_existing(
 
 
 def migrate_project(store: ProjectStore, media: MediaStore, name: str, *, base_revision: int | None = None) -> Project:
-    """Link `name`'s clips to assets and save the project now, rewriting a version 1 file as
-    version 2. A clip whose file is missing keeps its `source` and stays unlinked."""
+    """Link `name`'s clips to assets and save the project now, rewriting an older file in
+    the current version. A clip whose file is missing keeps its `source` and stays unlinked."""
     return store.update_timeline(name, lambda p: assets.link_project(media, p), base_revision)
 
 
@@ -118,7 +118,7 @@ def edit(
     concurrent edits never lose each other. With `base_revision` the edit only applies if the project
     is still at that revision, else `RevisionConflictError` and nothing is written; without it, the
     edit applies to the latest version. Given `media`, the clips are linked to assets first, so the
-    first edit of a version 1 project saves it as version 2."""
+    first edit of an older project saves it in the current version."""
 
     def apply(project: Project) -> Project:
         return change(project if media is None else assets.link_project(media, project))
@@ -358,6 +358,13 @@ def set_track_flags(
     )  # fmt: skip
 
 
+def set_canvas(
+    store: ProjectStore, name: str, ratio: str, media: MediaStore | None = None, *, base_revision: int | None = None
+) -> Project:
+    """Set the project's output ratio (`timeline_ops.set_canvas`); clips are kept."""
+    return edit(store, name, lambda p: timeline_ops.set_canvas(p, ratio), media, base_revision=base_revision)
+
+
 def remove_track(
     store: ProjectStore, name: str, track_id: str, media: MediaStore | None = None, *, base_revision: int | None = None
 ) -> Project:
@@ -479,6 +486,25 @@ def render_result(name: str, filename: str, project: Project, used: dict[str, An
 # --- describing ---------------------------------------------------------------
 
 
+def canvas_view(project: Project, rows: dict[str, Any]) -> dict[str, Any]:
+    """The project's canvas as every surface shows it: `ratio` (16:9 until one is chosen), the export `preset` it
+    stands for, and `needs_reframe`, the ids of main-track media clips whose picture (their crop, if any) is not the
+    canvas's shape, so they are letterboxed or cropped by the export's fit. Clips with an unknown source are left out.
+    `rows` maps a clip id to its located asset (or None)."""
+    ratio = project.canvas_ratio
+    num, den = (int(n) for n in ratio.split(":"))
+    main = next((t for t in project.tracks if t.kind == "video"), None)
+    flagged = []
+    for c in main.clips if main else ():
+        row = rows.get(c.id) if c.kind == "media" else None
+        if row is None or not row.asset.width or not row.asset.height:
+            continue
+        shape = (row.asset.width * c.crop_w) / (row.asset.height * c.crop_h)
+        if abs(shape / (num / den) - 1) > 0.02:
+            flagged.append(c.id)
+    return {"ratio": ratio, "preset": timeline.CANVASES[ratio], "needs_reframe": flagged}
+
+
 def describe(media: MediaStore, name: str, project: Project, *, read_only: bool = False) -> dict[str, Any]:
     """JSON-friendly view of a project, with clips numbered from 1 per track.
 
@@ -494,6 +520,7 @@ def describe(media: MediaStore, name: str, project: Project, *, read_only: bool 
         "name": name,
         "revision": project.revision,
         "duration": timeline.ms(project.duration),
+        "canvas": canvas_view(project, rows),
         "tracks": [
             {
                 "index": n + 1,
