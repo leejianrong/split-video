@@ -1,14 +1,17 @@
 <script lang="ts">
+  import { registerAction } from '../a11y/dispatcher';
   import { formatClock } from '../format';
+  import { playback } from '../state/playback.svelte';
   import { playhead } from '../state/playhead.svelte';
   import { preview } from '../state/preview.svelte';
   import { project } from '../state/project.svelte';
   import Button from '../ui/Button.svelte';
   import Icon from '../ui/icons/Icon.svelte';
   import IconButton from '../ui/IconButton.svelte';
+  import PlaybackSurface from './PlaybackSurface.svelte';
 
   // The preview region: a header with the time readout, the canvas frame in the project's ratio holding the still of
-  // the timeline at the playhead, and the transport. Playback arrives with its own card, so the controls stay disabled.
+  // the timeline at the playhead (the still), the chunk videos that play over it (PlaybackSurface), and the transport.
   const total = $derived(project.project ? formatClock(project.project.duration) : '0:00:00');
   const hasClips = $derived(project.timeline?.tracks.some((t) => t.clips.length > 0) ?? false);
 
@@ -24,15 +27,45 @@
       : 0,
   );
 
+  // The still is for a paused or waiting playhead; while a video is on screen the video is the picture.
   $effect(() => {
     const path = project.id;
     if (path === null || !hasClips || stillWidth === 0) {
       preview.clear();
       return;
     }
+    if (playback.showing !== 'still' && playback.state !== 'paused') return;
     preview.request({ path, time: playhead.time, width: stillWidth, revision: project.revision });
   });
   $effect(() => () => preview.clear());
+
+  // Paused on the last frame of a video: it stays until the still of that moment has arrived, then the still takes over.
+  $effect(() => {
+    if (
+      playback.state === 'paused' &&
+      playback.showing !== 'still' &&
+      !preview.busy &&
+      preview.time !== null &&
+      Math.abs(preview.time - playhead.time) < 0.25
+    )
+      playback.release();
+  });
+
+  $effect(() => {
+    playback.sync({
+      path: hasClips ? project.id : null,
+      revision: project.revision,
+      duration: project.timeline?.duration ?? 0,
+    });
+  });
+  $effect(() => playhead.onSeek((time) => playback.seeked(time)));
+  $effect(() => registerAction('transport.toggle', () => playback.toggle()));
+  $effect(() =>
+    registerAction('transport.edge', ({ key }) => {
+      playhead.seek(key === 'home' ? 0 : playhead.duration);
+    }),
+  );
+  const playing = $derived(playback.state !== 'paused');
 </script>
 
 <main class="preview" data-region="preview" aria-label="Preview">
@@ -42,11 +75,16 @@
     <Button size="sm" disabled aria-label="Fit">Fit <Icon name="chevronDown" size={14} /></Button>
   </div>
   <div class="stage">
+    <!-- Clicking the picture toggles playback; the keyboard has Space and K (transport.toggle), so no key handler here. -->
+    <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
     <div
       class="frame"
       data-testid="preview-frame"
+      data-playback={playback.state}
+      data-showing={playback.showing}
       style:--ratio={preview.ratio}
       bind:clientWidth={frameWidth}
+      onclick={() => hasClips && playback.toggle()}
     >
       {#if preview.url}
         <img
@@ -60,7 +98,8 @@
         <span class="ratio">16:9</span>
         <p>Your timeline shows here.</p>
       {/if}
-      {#if preview.busy && preview.url}
+      <PlaybackSurface />
+      {#if preview.busy && preview.url && !playing}
         <span class="spinner" role="status" aria-label="Updating the preview"></span>
       {/if}
       {#if preview.error}
@@ -73,7 +112,16 @@
   </div>
   <div class="transport" role="group" aria-label="Playback">
     <IconButton label="Previous cut" icon="skipBack" action="transport.cut" disabled />
-    <IconButton label="Play / pause" icon="play" action="transport.toggle" size="lg" disabled />
+    <IconButton
+      label={playing ? 'Pause' : 'Play'}
+      icon={playing ? 'pause' : 'play'}
+      action="transport.toggle"
+      size="lg"
+      disabled={!hasClips}
+      aria-pressed={playing}
+      onclick={() => playback.toggle()}
+      data-testid="play"
+    />
     <IconButton label="Next cut" icon="skipForward" action="transport.cut" disabled />
   </div>
 </main>

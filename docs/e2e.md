@@ -16,6 +16,7 @@ surfaces, not the browser.)
 | `export.spec.ts` | Render the timeline to a tiny 720p file from the export dialog and check it with `ffprobe`; an existing file fails with a fix |
 | `live-refresh.spec.ts` | An outside CLI edit (`apply-ops`) appears in the open editor without a reload; removing the selected clip clears the selection |
 | `preview.spec.ts` | The preview shows a still at the playhead, follows ruler clicks with few requests, and redraws (same time, new picture) when an outside edit adds a picture-in-picture and a title |
+| `playback.spec.ts` | Space plays the composite from pre-rendered chunks: the playhead keeps wall-clock pace across a chunk join with no long frame gap, the playing picture is the composite (overlay and title) with sound, a seek recovers in under 3 s, a pause cancels a queued chunk job, an edit during playback rebuffers and resumes; while a chunk renders the main track plays as a draft (or the still stays with "Preparing preview" when it cannot) and hands over with one sound (skipped if the browser cannot decode H.264 and AAC; about 30 s) |
 | `preview-range.spec.ts` | A preview range chunk plays in a `<video>` (`canplay`, duration, seek, audio decoded), a repeat request is a cache hit, and an outside edit makes the old chunk 404 (skipped if the browser cannot decode H.264 and AAC) |
 | `a11y.spec.ts` | axe checks of the first-run page, the library, the shell on every tab, the inspector and the export dialog |
 
