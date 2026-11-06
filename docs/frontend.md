@@ -80,7 +80,7 @@ Play shows the full composite, overlays and all audio, by chaining the server's 
 `state/playback.svelte.ts` (`PlaybackStore`), written like `StillScheduler` so it is tested without a browser
 (`playback.test.ts`: fake slots, fake API, fake timers). `shell/PlaybackSurface.svelte` holds the three `<video>`
 elements, `state/videoSlot.ts` wraps one, `state/playbackApi.ts` talks to `POST /api/v1/project/preview-range`,
-`GET .../preview-range/{key}` (fetched as a blob through the client, so the token is sent) and the job queue's cancel.
+`GET .../preview-range/{key}` (fetched as a blob through the client, so the token is sent) and the cancel by request key.
 
 - **Grid and lookahead**: chunks are 8 s ranges at multiples of 8 s (`CHUNK_SECONDS`), the one under the playhead and
   `LOOKAHEAD` = 2 ahead. 8 s renders in about 1.5 s on a typical project (about 5x real time), so a cold start or a seek to
@@ -88,8 +88,9 @@ elements, `state/videoSlot.ts` wraps one, `state/playbackApi.ts` talks to `POST 
   exact range, so the fixed grid is what makes replays and seeks cache hits. Three chunks in use leaves 5 of the server's
   8 cached chunks (`KEEP`, unchanged) for the ones just played. The last chunk is cut at the timeline's end.
 - **One render at a time**: the server has one preview worker, so the store starts the current chunk first and the next
-  only when no request is rendering. Chunks outside the window are dropped and their jobs cancelled (`POST
-  /jobs/{id}/cancel`, real: ffmpeg stops); a pause, a seek away and an edit all cancel what is in flight.
+  only when no request is rendering. Chunks outside the window are dropped and their jobs cancelled (`DELETE
+  /preview-range-requests/{key}` with the key each chunk's POST carried as `Idempotency-Key`, so it works even while the
+  POST is still in flight; real: ffmpeg stops); a pause, a seek away and an edit all cancel what is in flight.
 - **Lead-in** (SPL-126): every chunk but the first is requested from `LEAD_IN` = 1 s before its grid start (`[7, 16)` for
   the second one), so the server's key (the range) already covers the lead-in and a replay is still a cache hit. The file's
   first second is never shown; it lets the next element run before the join (a paused element needs about 0.1 s after

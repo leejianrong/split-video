@@ -1,4 +1,5 @@
 import {
+  cancelRequestApiV1PreviewRangeRequestsKeyDelete,
   getVideoChunkApiV1ProjectPreviewRangeKeyGet,
   startVideoApiV1ProjectPreviewRangePost,
 } from '../api/client';
@@ -11,16 +12,20 @@ export interface Started {
   key: string;
 }
 
-/** What playback asks of the server: the preview-range endpoints (SPL-70) and the job queue's cancel. */
+/**
+ * What playback asks of the server: the preview-range endpoints (SPL-70). A request carries a client-made key, so the
+ * render can be cancelled by it even when the request is aborted before the job id comes back (SPL-128).
+ */
 export interface ChunkApi {
   start(
     path: string,
     range: { start: number; end: number; preset: string },
+    requestKey: string,
     signal: AbortSignal,
   ): Promise<Started>;
   /** Resolves when the render is done; rejects when it failed or was cancelled. */
   finished(jobId: string, signal: AbortSignal): Promise<void>;
-  cancel(jobId: string): Promise<unknown>;
+  cancel(requestKey: string): Promise<unknown>;
   fetch(path: string, key: string, signal: AbortSignal): Promise<Blob>;
 }
 
@@ -28,10 +33,11 @@ export interface ChunkApi {
 const RENDER_TIMEOUT_MS = 90_000;
 
 export const playbackApi: ChunkApi = {
-  async start(path, range, signal) {
+  async start(path, range, requestKey, signal) {
     const { data } = await startVideoApiV1ProjectPreviewRangePost({
       query: { path },
       body: range,
+      headers: { 'Idempotency-Key': requestKey },
       signal,
     });
     return { jobId: data.job_id, cached: data.cached, key: data.key };
@@ -65,7 +71,7 @@ export const playbackApi: ChunkApi = {
     });
   },
 
-  cancel: (jobId) => jobs.cancel(jobId),
+  cancel: (key) => cancelRequestApiV1PreviewRangeRequestsKeyDelete({ path: { key } }),
 
   async fetch(path, key, signal) {
     const { data } = await getVideoChunkApiV1ProjectPreviewRangeKeyGet({

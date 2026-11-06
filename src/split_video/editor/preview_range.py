@@ -5,17 +5,22 @@
 (`cached` true, `result` the chunk, the job already `done`), otherwise a `preview_range` job is queued (poll or cancel
 it with `/jobs/{job_id}`; progress is thousandths; its result is the same chunk description). The chunk is fetched with
 `GET /compose/projects/{name}/preview-range/{key}` as `video/mp4` with Range support, so a `<video>` plays and seeks in
-it. After an edit the key is gone (404): ask for the range again. `POST /project/preview-range?path=` and
-`GET /project/preview-range/{key}?path=` are the same for the video's own timeline. Errors: 404 unknown timeline or
-missing source, 400 for a bad height or source or a range over 30 s (`preview.range_too_long`), 422 for a range outside
-the timeline or a timeline the export would refuse too.
+it. A client that may abort the POST before the job id comes back sends an `Idempotency-Key` header: the same key (per
+principal) answers with the same job, and `DELETE /preview-range-requests/{key}` cancels that job by key, or, if the
+POST has not arrived yet, cancels it on arrival (204 either way; the 256 most recent keys are remembered). After an
+edit the key is gone (404): ask for the range again. `POST /project/preview-range?path=` and `GET /project/preview-
+range/{key}?path=` are the same for the video's own timeline. Errors: 404 unknown timeline or missing source, 400 for
+a bad height or source or a range over 30 s (`preview.range_too_long`), 422 for a range outside the timeline or a
+timeline the export would refuse too.
 """
 
 from __future__ import annotations
 
+import threading
+from collections import OrderedDict
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from pydantic import BaseModel
 from starlette.responses import Response
 
@@ -62,13 +67,30 @@ CHUNK_RESPONSES = {
     206: {"description": "The requested byte range."},
 }  # fmt: skip
 
+MAX_KEYS = 256
+KEY_HEADER = Header(None, description="A client-chosen key: a retry with it is the same job, and DELETE /preview-range-requests/{key} cancels it")  # fmt: skip
+
 
 def make_router(provider: StoreProvider, jobs: JobQueue) -> APIRouter:
     router = APIRouter()
     ctx_dep = Depends(make_context_dependency(provider))
+    lock = threading.Lock()
+    # Request key -> the answer given for it; None once cancelled before its POST arrived. Bounded, oldest first out.
+    requests: OrderedDict[tuple[str, str], PreviewRangeStartOut | None] = OrderedDict()
+
+    def remember(slot: tuple[str, str], out: PreviewRangeStartOut | None) -> None:
+        requests[slot] = out
+        requests.move_to_end(slot)
+        while len(requests) > MAX_KEYS:
+            requests.popitem(last=False)
 
     def start(
-        project: Project, name: str, anchor: str, request: PreviewRangeRequest, ctx: RequestContext
+        project: Project,
+        name: str,
+        anchor: str,
+        request: PreviewRangeRequest,
+        ctx: RequestContext,
+        key: str | None,
     ) -> PreviewRangeStartOut:
         try:
             plan = preview_range.plan_range(
@@ -85,15 +107,30 @@ def make_router(provider: StoreProvider, jobs: JobQueue) -> APIRouter:
             raise api_error(422, exc) from None
         label = f"{name} {plan.start:g}-{plan.end:g} s"
         hit = preview_range.lookup(ctx.media, plan)
-        if hit is not None:
-            job_id = jobs.record_done(
-                PREVIEW_RANGE, result=hit, label=label, total=RENDER_STEPS, owner=ctx.principal.id
-            )
-            return PreviewRangeStartOut(job_id=job_id, cached=True, key=plan.key, revision=plan.revision, result=hit)
-        job_id = jobs.submit(
-            PREVIEW_RANGE, preview_range_work(ctx.media, plan), label=label, total=RENDER_STEPS, owner=ctx.principal.id
-        )
-        return PreviewRangeStartOut(job_id=job_id, cached=False, key=plan.key, revision=plan.revision)
+        slot = (ctx.principal.id, key or "")
+        with lock:
+            seen = requests.get(slot) if key else None
+            if seen is not None:
+                return seen
+            if hit is not None:
+                job_id = jobs.record_done(
+                    PREVIEW_RANGE, result=hit, label=label, total=RENDER_STEPS, owner=ctx.principal.id
+                )
+                out = PreviewRangeStartOut(job_id=job_id, cached=True, key=plan.key, revision=plan.revision, result=hit)
+            else:
+                job_id = jobs.submit(
+                    PREVIEW_RANGE,
+                    preview_range_work(ctx.media, plan),
+                    label=label,
+                    total=RENDER_STEPS,
+                    owner=ctx.principal.id,
+                )
+                out = PreviewRangeStartOut(job_id=job_id, cached=False, key=plan.key, revision=plan.revision)
+            if key:
+                if slot in requests:  # cancelled before this POST arrived
+                    jobs.cancel(job_id)
+                remember(slot, out)
+            return out
 
     def chunk(anchor: str, key: str, project: Project, request: Request, ctx: RequestContext) -> Response:
         media_id = preview_range.find_chunk(ctx.media, anchor, key, project.revision)
@@ -125,12 +162,17 @@ def make_router(provider: StoreProvider, jobs: JobQueue) -> APIRouter:
             raise api_error(422, exc) from None
 
     @router.post("/compose/projects/{name}/preview-range", response_model=PreviewRangeStartOut)
-    def start_named(name: str, request: PreviewRangeRequest, ctx: RequestContext = ctx_dep) -> PreviewRangeStartOut:
+    def start_named(
+        name: str,
+        request: PreviewRangeRequest,
+        ctx: RequestContext = ctx_dep,
+        idempotency_key: str | None = KEY_HEADER,
+    ) -> PreviewRangeStartOut:
         """Queue a low-resolution mp4 of the timeline from `start` to `end` seconds (at most 30 s), drawn by the
         export's own filter graph with all audio mixed (no captions), cached by project revision: asking again for
         the same range before an edit returns the chunk at once (`cached`). Fetch the finished chunk with
         `GET /compose/projects/{name}/preview-range/{key}`."""
-        return start(named(ctx, name), name, preview_range.anchor_of_project(name), request, ctx)
+        return start(named(ctx, name), name, preview_range.anchor_of_project(name), request, ctx, idempotency_key)
 
     @router.get("/compose/projects/{name}/preview-range/{key}", responses=CHUNK_RESPONSES, response_class=Response)
     def get_named_chunk(name: str, key: str, request: Request, ctx: RequestContext = ctx_dep) -> Response:
@@ -143,11 +185,12 @@ def make_router(provider: StoreProvider, jobs: JobQueue) -> APIRouter:
         request: PreviewRangeRequest,
         path: str = Query(..., description=PATH_DESCRIPTION),
         ctx: RequestContext = ctx_dep,
+        idempotency_key: str | None = KEY_HEADER,
     ) -> PreviewRangeStartOut:
         """The same chunk for the video's own timeline (the project the editor has open), addressed by the video's
         `path`: the answer is that of `POST /compose/projects/{name}/preview-range`."""
         video, project = video_of(ctx, path)
-        return start(project, path, video, request, ctx)
+        return start(project, path, video, request, ctx, idempotency_key)
 
     @router.get("/project/preview-range/{key}", responses=CHUNK_RESPONSES, response_class=Response)
     def get_video_chunk(
@@ -156,5 +199,18 @@ def make_router(provider: StoreProvider, jobs: JobQueue) -> APIRouter:
         """The chunk `key` of the video's own timeline, as `GET /compose/projects/{name}/preview-range/{key}`."""
         video, project = video_of(ctx, path)
         return chunk(video, key, project, request, ctx)
+
+    @router.delete("/preview-range-requests/{key}", status_code=204, response_class=Response)
+    def cancel_request(key: str, ctx: RequestContext = ctx_dep) -> Response:
+        """Cancel the render started by the POST that carried `Idempotency-Key: {key}`, whether or not the client
+        ever read its job id. A key whose POST has not arrived yet cancels that POST's job when it does. 204 always."""
+        slot = (ctx.principal.id, key)
+        with lock:
+            seen = requests.get(slot)
+            if seen is not None:
+                jobs.cancel(seen.job_id)
+            else:
+                remember(slot, None)
+        return Response(status_code=204)
 
     return router

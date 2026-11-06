@@ -6651,6 +6651,14 @@ export type GetPreviewFrameApiV1ComposeProjectsNamePreviewFrameGetResponse = Get
 
 export type StartNamedApiV1ComposeProjectsNamePreviewRangePostData = {
     body: PreviewRangeRequest;
+    headers?: {
+        /**
+         * Idempotency-Key
+         *
+         * A client-chosen key: a retry with it is the same job, and DELETE /preview-range-requests/{key} cancels it
+         */
+        'idempotency-key'?: string | null;
+    };
     path: {
         /**
          * Name
@@ -7827,6 +7835,48 @@ export type ListPresetsApiV1PresetsGetResponses = {
 
 export type ListPresetsApiV1PresetsGetResponse = ListPresetsApiV1PresetsGetResponses[keyof ListPresetsApiV1PresetsGetResponses];
 
+export type CancelRequestApiV1PreviewRangeRequestsKeyDeleteData = {
+    body?: never;
+    path: {
+        /**
+         * Key
+         */
+        key: string;
+    };
+    query?: never;
+    url: '/api/v1/preview-range-requests/{key}';
+};
+
+export type CancelRequestApiV1PreviewRangeRequestsKeyDeleteErrors = {
+    /**
+     * No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN).
+     */
+    401: UnauthorizedOut;
+    /**
+     * The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next.
+     */
+    404: ApiErrorOut;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+    /**
+     * The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next.
+     */
+    501: ApiErrorOut;
+};
+
+export type CancelRequestApiV1PreviewRangeRequestsKeyDeleteError = CancelRequestApiV1PreviewRangeRequestsKeyDeleteErrors[keyof CancelRequestApiV1PreviewRangeRequestsKeyDeleteErrors];
+
+export type CancelRequestApiV1PreviewRangeRequestsKeyDeleteResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type CancelRequestApiV1PreviewRangeRequestsKeyDeleteResponse = CancelRequestApiV1PreviewRangeRequestsKeyDeleteResponses[keyof CancelRequestApiV1PreviewRangeRequestsKeyDeleteResponses];
+
 export type SaveCurrentProjectApiV1ProjectPostData = {
     body: ProjectSaveRequest;
     headers?: {
@@ -8134,6 +8184,14 @@ export type GetVideoPreviewFrameApiV1ProjectPreviewFrameGetResponse = GetVideoPr
 
 export type StartVideoApiV1ProjectPreviewRangePostData = {
     body: PreviewRangeRequest;
+    headers?: {
+        /**
+         * Idempotency-Key
+         *
+         * A client-chosen key: a retry with it is the same job, and DELETE /preview-range-requests/{key} cancels it
+         */
+        'idempotency-key'?: string | null;
+    };
     path?: never;
     query: {
         /**
