@@ -90,10 +90,16 @@ elements, `state/videoSlot.ts` wraps one, `state/playbackApi.ts` talks to `POST 
 - **One render at a time**: the server has one preview worker, so the store starts the current chunk first and the next
   only when no request is rendering. Chunks outside the window are dropped and their jobs cancelled (`POST
   /jobs/{id}/cancel`, real: ffmpeg stops); a pause, a seek away and an edit all cancel what is in flight.
-- **Double buffer**: the chunk playing is in one `<video>`, the next is loaded and paused at its first frame in the other.
-  A 16 ms ticker watches the playing element; 0.1 s before its end the next one starts, the old one stays on screen and
-  loaded for 0.3 s (a hidden element draws no frames) and is then cleared and its blob revoked, so no element or object URL
-  is left per chunk. Underrun (the next chunk not ready) holds the still with "Preparing preview" and rebuffers.
+- **Lead-in** (SPL-126): every chunk but the first is requested from `LEAD_IN` = 1 s before its grid start (`[7, 16)` for
+  the second one), so the server's key (the range) already covers the lead-in and a replay is still a cache hit. The file's
+  first second is never shown; it lets the next element run before the join (a paused element needs about 0.1 s after
+  `play()` to deliver frames, which used to drop 2 to 5 frames at every join).
+- **Double buffer**: the chunk playing is in one `<video>`, the next is loaded in the other and parked 0.75 s into its
+  lead-in. A 16 ms ticker watches the playing element; 0.5 s before its end the next one plays, muted and hidden, 0.25 s
+  ahead of the playing one. When the playing one reaches the same timeline time (within half a frame) the next one is
+  unmuted and shown and the old one is paused and cleared, its blob revoked, so one sound and one picture are on at any
+  moment and no element or object URL is left per chunk. If the next never lines up, the swap happens 0.1 s before the end
+  anyway. Underrun (the next chunk not ready) holds the still with "Preparing preview" and rebuffers.
 - **The playhead**: while playing, the video's `currentTime` is the single source of truth (`playhead.advance`, which does
   not notify). A user seek (`playhead.seek`: ruler, Home/End) takes over: inside what is in memory it is a seek in the
   video; elsewhere the still shows at once (SPL-71) and the chunk of the new place is requested first. Play at the very end

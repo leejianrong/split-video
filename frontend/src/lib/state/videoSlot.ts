@@ -25,6 +25,8 @@ export function videoSlot(el: HTMLVideoElement): VideoSlot {
   return {
     load(src) {
       const ready = once(el, 'loadeddata');
+      el.muted = false;
+      el.playbackRate = 1;
       el.preload = 'auto';
       el.src = src;
       el.load();
@@ -42,6 +44,18 @@ export function videoSlot(el: HTMLVideoElement): VideoSlot {
       el.pause();
       el.removeAttribute('src');
       el.load(); // releases the decoder and the buffered data
+    },
+    get muted() {
+      return el.muted;
+    },
+    set muted(value) {
+      el.muted = value;
+    },
+    get playbackRate() {
+      return el.playbackRate;
+    },
+    set playbackRate(value) {
+      el.playbackRate = value;
     },
     get source() {
       return el.getAttribute('src');
