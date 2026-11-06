@@ -271,7 +271,7 @@ class InMemoryMediaStore:
 
     def _is_dir(self, media_id: str) -> bool:
         prefix = media_id + "/" if media_id else ""
-        return media_id == "" or any(i.startswith(prefix) for i in self._files)
+        return media_id == "" or any(i.startswith(prefix) for i in list(self._files))
 
     def exists(self, media_id: str) -> bool:
         media_id = self.resolve(media_id)
@@ -297,7 +297,7 @@ class InMemoryMediaStore:
         prefix = target + "/" if target else ""
         dirs: set[str] = set()
         files: list[str] = []
-        for media_id in self._files:
+        for media_id in list(self._files):  # snapshot: other threads add concurrently
             if not media_id.startswith(prefix):
                 continue
             head, _, rest = media_id[len(prefix) :].partition("/")
