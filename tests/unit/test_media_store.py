@@ -279,3 +279,42 @@ def test_in_memory_probe_without_info_is_a_probe_error():
     store.add("a.mp4", b"x")
     with pytest.raises(ProbeError):
         store.probe("a.mp4")
+
+
+def test_in_memory_store_survives_concurrent_writes_and_listing():
+    # Regression: iterating _files while another thread added to it raised
+    # "dictionary changed size during iteration".
+    import sys
+    import threading
+
+    store = InMemoryMediaStore()
+    store.add("seed.mp4")
+    errors: list[BaseException] = []
+
+    def write(n):
+        try:
+            for i in range(1000):
+                store.add(f"out/{n}-{i}.mp4")
+        except Exception as exc:  # noqa: BLE001
+            errors.append(exc)
+
+    def read():
+        try:
+            for _ in range(100):
+                store.list_dir("out")
+                store.exists("out")
+        except Exception as exc:  # noqa: BLE001
+            errors.append(exc)
+
+    old = sys.getswitchinterval()
+    sys.setswitchinterval(1e-6)
+    try:
+        threads = [threading.Thread(target=write, args=(n,)) for n in range(3)]
+        threads += [threading.Thread(target=read) for _ in range(3)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(60)
+    finally:
+        sys.setswitchinterval(old)
+    assert not errors
