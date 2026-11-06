@@ -2,9 +2,9 @@
 
 `POST /assets/{id}/waveform` queues a `waveform` job (poll `/jobs/{job_id}`): one streamed decode of the audio, so a
 three-hour recording never sits in memory, stored in the waveform cache next to the file. `GET /assets/{id}/waveform`
-answers with what is stored and is a 404 until the job has run, like the scene signals and the proxy. The editor
-draws from this and never decodes audio itself. An asset with no audio has no waveform: `POST` is a 422 and `GET` a 404
-that says so.
+answers with what is stored, or a 202 `{status: "preparing"}` until the job has run (a state, not an error, so a
+client's log stays clean). The editor draws from this and never decodes audio itself. An asset with no audio has no
+waveform: `POST` is a 422 and `GET` a 404 that says so.
 
 The answer carries two curves; the finer one for the zoom level is the client's choice: `peaks` (min and max sample per
 bucket, `duration / len(peaks)` seconds each, 2000 buckets) and `loudness` (RMS dB per `loudness_window` seconds,
@@ -13,7 +13,10 @@ bucket, `duration / len(peaks)` seconds each, 2000 buckets) and `loudness` (RMS 
 
 from __future__ import annotations
 
+from typing import Literal
+
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from split_video import assets
@@ -31,6 +34,11 @@ NO_AUDIO = "this asset has no audio, so it has no waveform"
 
 class WaveformStartResponse(BaseModel):
     job_id: str
+
+
+class WaveformPreparingOut(BaseModel):
+    status: Literal["preparing"] = "preparing"
+    detail: str = "no waveform yet: POST this path to make one"
 
 
 class AssetWaveformOut(BaseModel):
@@ -63,17 +71,21 @@ def make_router(provider: StoreProvider, jobs: JobQueue) -> APIRouter:
         )
         return WaveformStartResponse(job_id=job_id)
 
-    @router.get("/assets/{asset_id}/waveform", response_model=AssetWaveformOut)
-    def get_waveform(asset_id: str, ctx: RequestContext = ctx_dep) -> AssetWaveformOut:
+    @router.get(
+        "/assets/{asset_id}/waveform",
+        response_model=AssetWaveformOut,
+        responses={202: {"model": WaveformPreparingOut, "description": "No waveform stored yet."}},
+    )
+    def get_waveform(asset_id: str, ctx: RequestContext = ctx_dep) -> AssetWaveformOut | JSONResponse:
         """The stored waveform of the asset: peaks and the loudness curve (see the module description). Never
-        decodes audio. 404 until a `waveform` job has run (or after the file changed), and for an asset without audio."""
+        decodes audio. 202 `preparing` until a `waveform` job has run (or after the file changed); 404 for an asset without audio."""
         asset = asset_of(ctx, asset_id)
         if not asset.has_audio:
             raise HTTPException(status_code=404, detail=NO_AUDIO)
         cache = WaveformCache(ctx.media, asset.path)
         peaks, loudness = cache.stored_peaks(), cache.stored_loudness()
         if peaks is None or loudness is None:
-            raise HTTPException(status_code=404, detail="no waveform yet: POST this path to make one")
+            return JSONResponse(WaveformPreparingOut().model_dump(), status_code=202)
         return AssetWaveformOut(
             asset=asset.id,
             duration=asset.duration,

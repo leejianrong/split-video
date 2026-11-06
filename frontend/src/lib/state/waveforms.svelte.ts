@@ -18,7 +18,7 @@ const POLL_LIMIT_MS = 20 * 60 * 1000;
 
 /**
  * The stored waveforms of the assets on the timeline, by asset id. The server decodes the audio once, as a job, and
- * keeps the curves next to the recording; this only asks for them: a 404 "no waveform yet" starts the job and the
+ * keeps the curves next to the recording; this only asks for them: a 202 "preparing" starts the job and the
  * lane draws a placeholder until the curves are there. An asset without audio is `none`.
  */
 export class WaveformStore {
@@ -46,12 +46,9 @@ export class WaveformStore {
   async #fetch(id: string): Promise<AssetWaveformOut | null> {
     try {
       const { data } = await getWaveformApiV1AssetsAssetIdWaveformGet({ path: { asset_id: id } });
-      return data;
+      return data && 'peaks' in data ? data : null; // a 202 `preparing` has no peaks
     } catch (cause) {
-      if (cause instanceof ApiError && cause.status === 404) {
-        if (/no audio/i.test(cause.message)) throw new NoAudio();
-        return null;
-      }
+      if (cause instanceof ApiError && cause.status === 404) throw new NoAudio();
       throw cause;
     }
   }

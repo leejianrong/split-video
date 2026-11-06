@@ -485,7 +485,7 @@ export const searchTranscriptApiV1AssetsAssetIdTranscriptSearchGet = <ThrowOnErr
  * Get Waveform
  *
  * The stored waveform of the asset: peaks and the loudness curve (see the module description). Never
- * decodes audio. 404 until a `waveform` job has run (or after the file changed), and for an asset without audio.
+ * decodes audio. 202 `preparing` until a `waveform` job has run (or after the file changed); 404 for an asset without audio.
  */
 export const getWaveformApiV1AssetsAssetIdWaveformGet = <ThrowOnError extends boolean = true>(options: Options<GetWaveformApiV1AssetsAssetIdWaveformGetData, ThrowOnError>): RequestResult<GetWaveformApiV1AssetsAssetIdWaveformGetResponses, GetWaveformApiV1AssetsAssetIdWaveformGetErrors, ThrowOnError> => (options.client ?? client).get<GetWaveformApiV1AssetsAssetIdWaveformGetResponses, GetWaveformApiV1AssetsAssetIdWaveformGetErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],

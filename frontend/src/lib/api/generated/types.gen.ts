@@ -3754,6 +3754,20 @@ export type VisualSearchOut = {
 };
 
 /**
+ * WaveformPreparingOut
+ */
+export type WaveformPreparingOut = {
+    /**
+     * Detail
+     */
+    detail?: string;
+    /**
+     * Status
+     */
+    status?: 'preparing';
+};
+
+/**
  * WaveformResponse
  */
 export type WaveformResponse = {
@@ -5614,6 +5628,10 @@ export type GetWaveformApiV1AssetsAssetIdWaveformGetResponses = {
      * Successful Response
      */
     200: AssetWaveformOut;
+    /**
+     * No waveform stored yet.
+     */
+    202: WaveformPreparingOut;
 };
 
 export type GetWaveformApiV1AssetsAssetIdWaveformGetResponse = GetWaveformApiV1AssetsAssetIdWaveformGetResponses[keyof GetWaveformApiV1AssetsAssetIdWaveformGetResponses];

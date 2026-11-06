@@ -18,12 +18,7 @@ const data = {
   loudness_window: 1,
   loudness: [-20],
 };
-const notYet = () =>
-  new ApiError({
-    code: 'unknown',
-    message: 'no waveform yet: POST this path to make one',
-    status: 404,
-  });
+const notYet = { data: { status: 'preparing', detail: 'no waveform yet' } };
 const noAudio = () =>
   new ApiError({
     code: 'unknown',
@@ -51,11 +46,8 @@ describe('WaveformStore', () => {
     store.dispose();
   });
 
-  it('on a 404 starts the job once, then polls until the curves are there', async () => {
-    getWave
-      .mockRejectedValueOnce(notYet())
-      .mockRejectedValueOnce(notYet())
-      .mockResolvedValue({ data });
+  it('on a 202 preparing starts the job once, then polls until the curves are there', async () => {
+    getWave.mockResolvedValueOnce(notYet).mockResolvedValueOnce(notYet).mockResolvedValue({ data });
     startWave.mockResolvedValue({ data: { job_id: 'j' } });
     const store = new WaveformStore();
     store.ensure('a_1');
@@ -75,7 +67,7 @@ describe('WaveformStore', () => {
     const store = new WaveformStore();
     store.ensure('a_mute');
     await vi.waitFor(() => expect(store.get('a_mute')?.status).toBe('none'));
-    getWave.mockRejectedValue(notYet());
+    getWave.mockResolvedValue(notYet);
     startWave.mockRejectedValue(
       new ApiError({ code: 'unknown', message: 'no audio', status: 422 }),
     );
@@ -89,7 +81,7 @@ describe('WaveformStore', () => {
     const store = new WaveformStore();
     store.ensure('a_1');
     await vi.waitFor(() => expect(store.get('a_1')?.status).toBe('failed'));
-    getWave.mockRejectedValue(notYet());
+    getWave.mockResolvedValue(notYet);
     startWave.mockResolvedValue({ data: { job_id: 'j' } });
     store.ensure('a_2');
     await vi.waitFor(() => expect(store.get('a_2')?.status).toBe('computing'));
