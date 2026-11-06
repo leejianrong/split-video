@@ -58,7 +58,7 @@ A full run takes under a minute on 4 workers; CI runs 2 and takes a few minutes.
 
 ## In CI
 
-The `e2e` job (`.github/workflows/ci.yml`) installs ffmpeg, uv and Node, builds the frontend, restores the Chromium
+The `e2e` job (`.github/workflows/ci.yml`) installs ffmpeg (the shared `.github/actions/install-ffmpeg`, which caches the .deb files and bounds apt with retries and `timeout`; the `test` job uses it too), uv and Node, builds the frontend, restores the Chromium
 download from the cache (keyed by `package-lock.json`, so a Playwright bump refreshes it), installs the browser and its
 system libraries (`npx playwright install --with-deps chromium`), and runs `npm run e2e`. On failure it uploads the
 `e2e-report` artifact (HTML report, and per failed test the trace, screenshot and the server's log).
