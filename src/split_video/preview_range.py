@@ -20,11 +20,11 @@ middle of it, so the chunk is rendered from the fade's start and the lead-in is 
 
 Cache: chunks live in the sidecar of the `anchor` media id (the video, or `<name>.timeline` for a named project, see
 `MediaStore.derived_id`), never in a central path, with a small JSON index beside them. The key is a hash of the
-project revision, the range and the options, so any edit gives new keys and a chunk of an older revision is never
-served (`find_chunk`). When a new chunk is stored, chunks of other revisions are deleted and at most `KEEP` (8) chunks
-remain, least recently used first out: one project holds at most about 8 x 3 MB. A hit renders nothing. The key does
-not cover the source files themselves: replacing a source file without editing the project keeps serving the old chunk
-until the next edit.
+project revision, the range, the options and the size and mtime of every source file the chunk is rendered from (the
+proxy where `source="auto"` uses one), so any edit or replaced source gives new keys and a chunk of an older revision is
+never served (`find_chunk`). When a new chunk is stored, chunks of other revisions are deleted, then at most `KEEP` (8)
+chunks and `MAX_BYTES` remain, least recently used first out. A chunk of a replaced source is never asked for again; it
+stays until those limits push it out. A hit renders nothing.
 """
 
 from __future__ import annotations
@@ -48,6 +48,8 @@ MIN_RANGE = 0.1
 DEFAULT_HEIGHT = 480
 MAX_HEIGHT = 720
 KEEP = 8  # chunks kept per project
+# KEEP chunks of the longest range are about 25 MB, so this only bites on unusually heavy chunks (high-motion 720p).
+MAX_BYTES = 256 * 1024 * 1024
 MIME = "video/mp4"
 VERSION = 1  # part of the key: bump when the encoding changes
 SOURCES = frames.SOURCES
@@ -150,13 +152,24 @@ def plan_range(
         raise RangeError(f"the range is {end - start:g} s after the timeline's end; at least {MIN_RANGE:g} s is needed")
     out_height = preview._even(min(height or DEFAULT_HEIGHT, prepared.height))
     out_width = preview._even(out_height * prepared.width / prepared.height)
+    sources = _source_stats(media, prepared.project, dict(prepared.infos), source)
     digest = hashlib.sha1(
-        f"{VERSION}|{project.revision}|{start}|{end}|{out_height}|{preset}|{settings.fit}|{source}".encode()
+        f"{VERSION}|{project.revision}|{start}|{end}|{out_height}|{preset}|{settings.fit}|{source}|{sources}".encode()
     ).hexdigest()[:20]
     return RangePlan(
         name, project.revision, digest, media.derived_id(anchor, f"preview-{digest}.mp4"), anchor, start, end,
         out_width, out_height, settings.fps, source, settings, prepared,
     )  # fmt: skip
+
+
+def _source_stats(
+    media: MediaStore, project: Project, infos: dict[str, Any], source: str
+) -> list[tuple[str, int, float]]:
+    """Id, size and mtime of each file the chunk is rendered from, so a replaced file changes the key."""
+    if source == "auto":
+        project, _ = preview.use_proxies(media, project, infos)
+    ids = {c.source for t in project.tracks for c in t.clips if c.source}
+    return [(i, st.size, st.mtime) for i in sorted(ids) for st in [media.stat(i)]]
 
 
 def _result(plan: RangePlan, entry: dict[str, Any], media: MediaStore, *, cached: bool, source: str) -> dict[str, Any]:
@@ -248,11 +261,14 @@ def render_range(
 
 
 def _store(media: MediaStore, plan: RangePlan, entry: dict[str, Any]) -> None:
-    """Add `entry`, then delete the chunks of other revisions and all but the `KEEP` most recently used."""
+    """Add `entry`, then delete the chunks of other revisions, then the least recently used until `KEEP` and `MAX_BYTES`
+    hold (the new chunk always stays)."""
     entries = [e for e in _read_index(media, plan.anchor) if e["key"] != plan.key]
     stale = [e for e in entries if e["revision"] != plan.revision]
     current = [e for e in entries if e["revision"] == plan.revision]
     kept = [*current, entry][-KEEP:]
-    for gone in [*stale, *current[: len(current) + 1 - len(kept)]]:
+    while len(kept) > 1 and sum(e["bytes"] for e in kept) > MAX_BYTES:
+        kept.pop(0)
+    for gone in [*stale, *(e for e in current if e not in kept)]:
         media.delete(gone["media"])
     _write_index(media, plan.anchor, kept)

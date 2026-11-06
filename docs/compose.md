@@ -142,11 +142,13 @@ seeks ask for ranges that are already cached. It keeps the one playing and two a
 ones just played, so a short rewind is a cache hit). See [the frontend docs](frontend.md#playback).
 
 The cache lives in the video's `.split-video-cache/` sidecar (for a named project, next to its `<name>.timeline` anchor),
-never under `~/.cache`. The key hashes the project revision, the range and the options, so any edit gives new keys: the
-old key answers `404` and the old files are deleted when the next chunk is stored. Asking again for the same range
-before an edit answers at once (`cached: true`, no ffmpeg; a job that is already `done`). At most 8 chunks are kept per
-project, least recently used first out (about 20 MB at 30 s each). The key does not cover the source files: replacing a
-source without editing the project keeps serving the old chunk.
+never under `~/.cache`. The key hashes the project revision, the range, the options and the size and modification time
+of each source file the chunk is rendered from (the proxy where `source=auto` uses one), so any edit or replaced source
+gives new keys: the old key answers `404` for an edit, and the old files are deleted when the next chunk is stored.
+Asking again for the same range before that answers at once (`cached: true`, no ffmpeg; a job that is already `done`).
+Two limits apply per project, least recently used first out: at most 8 chunks and at most 256 MiB in all (`MAX_BYTES`;
+8 chunks of 30 s are about 25 MB, so the byte cap only matters for unusually heavy chunks). The chunk just rendered is
+always kept. Chunks of a replaced source are never asked for again and stay on disk until those limits push them out.
 
 Measured on a 1080p project (two 40 s main clips with a cross-fade, a picture-in-picture, a title; `source=original`,
 854x480): a 10 s range renders in 1.8 s (930 KB), a 30 s range in 5.7 s (2.4 MB; test footage is noisier than most);

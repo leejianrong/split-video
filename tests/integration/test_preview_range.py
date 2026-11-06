@@ -1,6 +1,7 @@
 """Preview range chunks through the HTTP API, the CLI and MCP, with real ffmpeg (SPL-70)."""
 
 import json
+import os
 import subprocess
 import threading
 import time
@@ -234,6 +235,40 @@ def test_the_cache_keeps_a_bounded_number_of_chunks(workspace, monkeypatch):
     assert preview_range.lookup(media, plans[1]) is None and not media.is_file(plans[1].chunk)
     assert preview_range.lookup(media, plans[0]) is not None and preview_range.lookup(media, plans[2]) is not None
     assert len(chunks(workspace)) == 2
+
+
+def test_replacing_a_source_gives_a_fresh_chunk_for_the_same_revision_and_range(workspace):
+    store, media = LocalProjectStore(workspace.resolve()), LocalMediaStore(workspace.resolve())
+    project = timeline_service.load_existing(store, "show", media)
+    anchor = preview_range.anchor_of_project("show")
+
+    def plan():
+        return preview_range.plan_range(project, media, anchor, 0, 0.5, name="show", height=90)
+
+    first = plan()
+    assert preview_range.render_range(media, first)["cached"] is False
+    assert plan().key == first.key and preview_range.render_range(media, plan())["cached"] is True
+    red = workspace / "red.mp4"
+    stat = red.stat()
+    os.utime(red, (stat.st_atime, stat.st_mtime + 10))  # same size, replaced a moment later
+    second = plan()
+    assert second.key != first.key and second.revision == first.revision
+    assert preview_range.render_range(media, second)["cached"] is False
+
+
+def test_the_cache_never_exceeds_the_byte_cap_and_drops_the_oldest_first(workspace, monkeypatch):
+    store, media = LocalProjectStore(workspace.resolve()), LocalMediaStore(workspace.resolve())
+    project = timeline_service.load_existing(store, "show", media)
+    anchor = preview_range.anchor_of_project("show")
+    plans = [preview_range.plan_range(project, media, anchor, n, n + 0.5, name="show", height=90) for n in (0, 1, 2)]
+    size = preview_range.render_range(media, plans[0])["bytes"]
+    monkeypatch.setattr(preview_range, "MAX_BYTES", size * 2 + size // 2, raising=False)  # room for about two chunks
+    preview_range.render_range(media, plans[1])
+    preview_range.render_range(media, plans[2])
+    total = sum((workspace / ".split-video-cache" / n).stat().st_size for n in chunks(workspace))
+    assert total <= size * 2 + size // 2
+    assert preview_range.lookup(media, plans[0]) is None and not media.is_file(plans[0].chunk)
+    assert preview_range.lookup(media, plans[2]) is not None
 
 
 def test_a_range_starting_inside_a_cross_fade_is_exact_and_mixes_the_sound(workspace):
