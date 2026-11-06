@@ -122,11 +122,11 @@ def test_track_flags_are_in_the_timeline_and_a_locked_track_refuses_edits(client
     assert hide_main.json()["errors"][0]["code"] == "ops.track.main_hidden"
 
 
-def test_waveform_is_404_until_the_job_has_run_then_serves_both_curves(client):
+def test_waveform_is_202_preparing_until_the_job_has_run_then_serves_both_curves(client):
     asset = _split(client)
     url = f"/api/v1/assets/{asset['id']}/waveform"
     missing = client.get(url)
-    assert missing.status_code == 404 and "POST" in missing.json()["detail"]
+    assert missing.status_code == 202 and missing.json()["status"] == "preparing" and "POST" in missing.json()["detail"]
     job = _wait(client, client.post(url).json()["job_id"])
     assert job["kind"] == "waveform" and job["state"] == "done", job
     got = client.get(url).json()

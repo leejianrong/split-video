@@ -6099,6 +6099,23 @@
         "title": "VisualSearchOut",
         "type": "object"
       },
+      "WaveformPreparingOut": {
+        "properties": {
+          "detail": {
+            "default": "no waveform yet: POST this path to make one",
+            "title": "Detail",
+            "type": "string"
+          },
+          "status": {
+            "const": "preparing",
+            "default": "preparing",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "title": "WaveformPreparingOut",
+        "type": "object"
+      },
       "WaveformResponse": {
         "properties": {
           "buckets": {
@@ -9774,7 +9791,7 @@
     },
     "/api/v1/assets/{asset_id}/waveform": {
       "get": {
-        "description": "The stored waveform of the asset: peaks and the loudness curve (see the module description). Never\ndecodes audio. 404 until a `waveform` job has run (or after the file changed), and for an asset without audio.",
+        "description": "The stored waveform of the asset: peaks and the loudness curve (see the module description). Never\ndecodes audio. 202 `preparing` until a `waveform` job has run (or after the file changed); 404 for an asset without audio.",
         "operationId": "get_waveform_api_v1_assets__asset_id__waveform_get",
         "parameters": [
           {
@@ -9797,6 +9814,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WaveformPreparingOut"
+                }
+              }
+            },
+            "description": "No waveform stored yet."
           },
           "401": {
             "content": {

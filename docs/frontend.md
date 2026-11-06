@@ -413,7 +413,7 @@ applied" (the same path as every edit); a refused edit (a locked lane, an overla
 | Playhead | `state/playhead.svelte.ts` | Click or drag the ruler or the red head; the preview readout and still follow. The preview does not play yet. |
 | Selection | `state/clipSelection.svelte.ts` | Click, Shift- or Ctrl-click adds, Escape clears; the inspector header names it ("Selected: Song 2, 4 min 12 s"). |
 | Filmstrip | `timeline/thumbs.ts`, `state/thumbs.svelte.ts` | Frames from `GET /assets/{id}/frame` for the visible part of each clip only, on a time grid shared across zoom levels, 4 requests at a time, never the same URL twice; a tile that has not arrived is not drawn. |
-| Waveform | `timeline/waveform.ts`, `state/waveforms.svelte.ts` | From `GET /assets/{id}/waveform` (the server decodes once, as a `waveform` job; "Preparing the waveform..." until then). The finer of the two stored curves is drawn as columns for the visible part. |
+| Waveform | `timeline/waveform.ts`, `state/waveforms.svelte.ts` | From `GET /assets/{id}/waveform` (the server decodes once, as a `waveform` job; "Preparing the waveform..." until then, from a 202 `preparing` answer, so the console stays free of 4xx). The finer of the two stored curves is drawn as columns for the visible part. |
 
 **Performance.** Only the clips that touch the screen (plus 240 px) are elements, found with binary searches; ticks, tiles
 and waveform columns are the visible ones; wheel zoom is coalesced to one update per frame. A 3 h project with 108 segments
