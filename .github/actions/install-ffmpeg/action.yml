@@ -1,0 +1,30 @@
+name: Install ffmpeg
+description: Install Ubuntu's ffmpeg from cached .deb files, with bounded apt retries (SPL-140).
+runs:
+  using: composite
+  steps:
+    - id: os
+      shell: bash
+      run: echo "id=$(. /etc/os-release && echo "$ID-$VERSION_ID")-${ImageVersion:-unknown}" >> "$GITHUB_OUTPUT"
+
+    - id: cache
+      uses: actions/cache@v6
+      with:
+        path: ~/ffmpeg-debs
+        key: ffmpeg-debs-${{ steps.os.outputs.id }}
+
+    # Composite steps have no timeout-minutes, so `timeout` bounds each apt call instead: a stalled mirror fails in
+    # minutes, not at the job limit.
+    - name: Download on cache miss
+      if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        APT="-o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30"
+        timeout 180 sudo apt-get $APT update
+        timeout 300 sudo apt-get $APT install -y --no-install-recommends --download-only ffmpeg
+        mkdir -p ~/ffmpeg-debs
+        cp /var/cache/apt/archives/*.deb ~/ffmpeg-debs/
+
+    - name: Install
+      shell: bash
+      run: timeout 120 sudo dpkg -i ~/ffmpeg-debs/*.deb && ffmpeg -version | head -1
