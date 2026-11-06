@@ -1,0 +1,12 @@
+{
+  "name": "browser-compositor-spike",
+  "private": true,
+  "type": "module",
+  "description": "SPL-73 spike: not part of the app, not built or linted by CI. See README.md.",
+  "dependencies": {
+    "mp4box": "2.5.0"
+  },
+  "devDependencies": {
+    "playwright": "1.64.1"
+  }
+}

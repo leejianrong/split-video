@@ -200,9 +200,10 @@ lands.
 - Rendering follows ADR 0002: server-side preview, so what is shown matches
   export. While a preview frame renders, the previous frame stays with a small
   spinner; scrubbing may show lower-quality frames, never wrong ones. Targets: a still
-  frame within 500 ms of a scrub, and playback at 720p proxy quality. SPL-73
-  (browser compositor spike) and SPL-69 to SPL-72 confirm these are feasible;
-  if they are not, the targets are revisited.
+  frame within 500 ms of a scrub, and playback at 720p proxy quality. SPL-69 to
+  SPL-72 built the server preview; the browser compositor spike (SPL-73) found a
+  server still takes about 320 ms (460 ms worst) and recommends no client compositor
+  for now ([decision](decisions/browser-compositor.md)).
 - **Ratio**: the project canvas (16:9, 9:16, 1:1) set in the top bar; it is the
   output ratio. A clip whose shape differs is shown per its canvas fit: Crop to
   fill, Letterbox, or Reframe (see [Inspector](#inspector)). A clip's reframe
@@ -515,7 +516,7 @@ wireframes. The sections above already reflect them.
 7. **Export names.** The whole-timeline file is named after the project. The
    failed-render example uses a name an export can produce.
 8. **Preview targets.** A scrubbed still within 500 ms; playback at 720p proxy
-   quality. SPL-73 and SPL-69 to SPL-72 confirm feasibility, otherwise revisit.
+   quality. SPL-69 to SPL-72 meet it on the server; SPL-73 says no client compositor for now.
 9. **Window.** Narrower than 1280 px shows a "window too small" notice;
    minimum height 720 px; no touch support in M3.
 10. **Dark theme only.**
