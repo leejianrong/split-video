@@ -11785,6 +11785,24 @@
               "title": "Name",
               "type": "string"
             }
+          },
+          {
+            "description": "A client-chosen key: a retry with it is the same job, and DELETE /preview-range-requests/{key} cancels it",
+            "in": "header",
+            "name": "idempotency-key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "A client-chosen key: a retry with it is the same job, and DELETE /preview-range-requests/{key} cancels it",
+              "title": "Idempotency-Key"
+            }
           }
         ],
         "requestBody": {
@@ -13897,6 +13915,69 @@
         "summary": "List Presets"
       }
     },
+    "/api/v1/preview-range-requests/{key}": {
+      "delete": {
+        "description": "Cancel the render started by the POST that carried `Idempotency-Key: {key}`, whether or not the client\never read its job id. A key whose POST has not arrived yet cancels that POST's job when it does. 204 always.",
+        "operationId": "cancel_request_api_v1_preview_range_requests__key__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "title": "Key",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedOut"
+                }
+              }
+            },
+            "description": "No valid bearer token (only when the server is started with SPLIT_VIDEO_TOKEN)."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorOut"
+                }
+              }
+            },
+            "description": "The request failed; `code` is a stable code of the error catalogue (docs/errors.md) and `fix` says what to do next."
+          }
+        },
+        "summary": "Cancel Request"
+      }
+    },
     "/api/v1/project": {
       "post": {
         "description": "Replace the project's segments. Send `If-Match` with the revision they were edited from;\n409 `revision_conflict` if the project changed since (the response says its current revision).",
@@ -14531,6 +14612,24 @@
               "description": "The video's path relative to the browse root (the project id the editor opens).",
               "title": "Path",
               "type": "string"
+            }
+          },
+          {
+            "description": "A client-chosen key: a retry with it is the same job, and DELETE /preview-range-requests/{key} cancels it",
+            "in": "header",
+            "name": "idempotency-key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "A client-chosen key: a retry with it is the same job, and DELETE /preview-range-requests/{key} cancels it",
+              "title": "Idempotency-Key"
             }
           }
         ],

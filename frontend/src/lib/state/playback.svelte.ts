@@ -78,7 +78,8 @@ interface Chunk {
   /** How much of the rendered file comes before `start` (0 for the first chunk). */
   lead: number;
   status: 'starting' | 'rendering' | 'fetching' | 'ready' | 'failed';
-  jobId: string | null;
+  /** Names this chunk's request on the server, so its render can be cancelled before the job id is known. */
+  requestKey: string;
   abort: AbortController;
   url: string | null;
 }
@@ -307,7 +308,7 @@ export class PlaybackStore {
       index,
       ...b,
       status: 'starting',
-      jobId: null,
+      requestKey: crypto.randomUUID(),
       abort: new AbortController(),
       url: null,
     };
@@ -352,14 +353,10 @@ export class PlaybackStore {
       const started = await this.#deps.api.start(
         path,
         { start: chunk.start - chunk.lead, end: chunk.end, preset: this.#preset! },
+        chunk.requestKey,
         signal,
       );
-      chunk.jobId = started.jobId;
-      if (signal.aborted) {
-        // Dropped while the request was in flight: the server queued the render anyway, so stop it.
-        if (!started.cached) void this.#deps.api.cancel(started.jobId).catch(() => undefined);
-        return;
-      }
+      if (signal.aborted) return;
       if (!started.cached) {
         chunk.status = 'rendering';
         await this.#deps.api.finished(started.jobId, signal);
@@ -390,8 +387,8 @@ export class PlaybackStore {
   #drop(chunk: Chunk): void {
     this.#chunks.delete(chunk.index);
     chunk.abort.abort();
-    if (chunk.jobId && (chunk.status === 'rendering' || chunk.status === 'starting')) {
-      const job = this.#deps.api.cancel(chunk.jobId).catch(() => undefined);
+    if (chunk.status === 'rendering' || chunk.status === 'starting') {
+      const job = this.#deps.api.cancel(chunk.requestKey).catch(() => undefined);
       this.#cancels.add(job);
       void job.then(() => this.#cancels.delete(job));
     }

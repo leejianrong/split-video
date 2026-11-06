@@ -2,6 +2,7 @@
 
 import json
 import subprocess
+import threading
 import time
 
 import pytest
@@ -160,6 +161,64 @@ def test_a_cancelled_render_leaves_no_file_and_no_cache_entry(workspace):
     with pytest.raises(JobCancelledError):
         preview_range.render_range(media, plan, cancel=Cancelled())
     assert chunks(workspace) == [] and preview_range.lookup(media, plan) is None
+
+
+@pytest.fixture
+def held_renders(monkeypatch):
+    """Every render waits until its job is cancelled (or the test ends), so the abort race is driven by hand."""
+    release = threading.Event()  # the test is over
+
+    def work_for(media, plan):
+        def work(ctx):
+            cancelled = threading.Event()
+            ctx.on_cancel(cancelled.set)
+            while not (cancelled.wait(0.05) or release.is_set()):
+                pass
+            ctx.raise_if_cancelled()
+            return {}
+
+        return work
+
+    monkeypatch.setattr("split_video.editor.preview_range.preview_range_work", work_for)
+    yield
+    release.set()
+
+
+def live(client):
+    return [
+        j for j in client.get("/api/v1/jobs?kind=preview_range").json()["jobs"] if j["state"] in ("queued", "running")
+    ]
+
+
+def test_cancelling_by_key_ends_a_render_whose_job_id_was_never_read(workspace, held_renders):
+    client = TestClient(create_app(workspace, DEFAULTS))
+    headers = {"Idempotency-Key": "chunk-1"}
+    first = client.post(URL, json=BODY, headers=headers).json()  # the browser aborted before reading this
+    again = client.post(URL, json={**BODY, "end": 2.0}, headers=headers).json()
+    assert again["job_id"] == first["job_id"]  # a retry with the same key is the same job
+    other = client.post(URL, json=BODY, headers={"Idempotency-Key": "chunk-2"}).json()
+    assert other["job_id"] != first["job_id"]
+
+    assert client.delete("/api/v1/preview-range-requests/chunk-1").status_code == 204
+    assert client.delete("/api/v1/preview-range-requests/chunk-1").status_code == 204  # idempotent
+    assert finish(client, first["job_id"])["state"] == "cancelled"
+    assert [j["id"] for j in live(client)] == [other["job_id"]]  # only the other key's render is left
+
+
+def test_a_cancel_that_arrives_before_its_post_leaves_no_job_running(workspace, held_renders):
+    client = TestClient(create_app(workspace, DEFAULTS))
+    assert client.delete("/api/v1/preview-range-requests/late").status_code == 204
+    late = client.post(URL, json=BODY, headers={"Idempotency-Key": "late"}).json()
+    assert finish(client, late["job_id"])["state"] == "cancelled" and live(client) == []
+
+
+def test_the_remembered_keys_are_bounded(workspace, held_renders):
+    client = TestClient(create_app(workspace, DEFAULTS))
+    for n in range(300):
+        client.delete(f"/api/v1/preview-range-requests/k{n}")
+    first = client.post(URL, json=BODY, headers={"Idempotency-Key": "k0"}).json()  # k0 was forgotten: a fresh job
+    job = client.get(f"/api/v1/jobs/{first['job_id']}").json()
+    assert job["cancel_requested"] is False and job["state"] in ("queued", "running")
 
 
 def test_the_cache_keeps_a_bounded_number_of_chunks(workspace, monkeypatch):

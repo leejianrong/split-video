@@ -114,6 +114,13 @@ curl localhost:8765/api/v1/jobs/JOB_ID                         # state done: res
 curl -o chunk.mp4 localhost:8765/api/v1/compose/projects/mix/preview-range/KEY   # video/mp4, Range supported
 ```
 
+A client that may abort the POST before the job id comes back (the editor does when playback moves on) sends an
+`Idempotency-Key` header of its own making. The same key answers with the same job instead of queuing another, and
+`DELETE /api/v1/preview-range-requests/{key}` cancels that job by key (204 whether or not the job exists, so it is safe
+to repeat). A DELETE that overtakes its POST is remembered: the POST then queues a job that is cancelled at once. Keys
+belong to the principal that sent them, and the server remembers the 256 most recent. The CLI and MCP tool render
+inline and return no job, so they have no key.
+
 The chunk is H.264 (Constrained Baseline, `ultrafast`, crf 30) and AAC 64 kbit/s in an mp4 with `+faststart`, which every
 browser plays and seeks in without downloading it first. It is `height` pixels high (default 480, at most 720, never above
 the export's) with the export's aspect ratio and frame rate (`preset` and `fit` are the export's). `source=auto` (default)

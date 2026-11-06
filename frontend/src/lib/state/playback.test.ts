@@ -58,7 +58,9 @@ interface Req {
 
 function setup(duration = 40, draft: DraftSource | null = null) {
   const reqs: Req[] = [];
-  const cancels: string[] = [];
+  const cancels: string[] = []; // job ids, found by the request key the controller cancels with
+  const jobOfKey = new Map<string, string>();
+  let startGate: Promise<void> | null = null; // while set, a request has been sent but no job id has come back
   const fetched: string[] = [];
   const revoked: string[] = [];
   const cachedRanges = new Set<number>();
@@ -66,8 +68,10 @@ function setup(duration = 40, draft: DraftSource | null = null) {
   const frames = new Set<() => void>();
   const lengths = new Map<string, number>();
   const api: ChunkApi = {
-    async start(_path, range, signal) {
+    async start(_path, range, requestKey, signal) {
+      await startGate;
       const jobId = `job${reqs.length}`;
+      jobOfKey.set(requestKey, jobId);
       const cached = cachedRanges.has(range.start);
       const finished = new Promise<void>((resolve, reject) => {
         reqs.push({
@@ -86,8 +90,8 @@ function setup(duration = 40, draft: DraftSource | null = null) {
     finished(jobId) {
       return (api as unknown as Record<string, Promise<void>>)[`wait_${jobId}`]!;
     },
-    async cancel(jobId) {
-      cancels.push(jobId);
+    async cancel(requestKey) {
+      cancels.push(jobOfKey.get(requestKey) ?? `unsent:${requestKey}`);
     },
     async fetch(_path, key) {
       fetched.push(key);
@@ -135,6 +139,9 @@ function setup(duration = 40, draft: DraftSource | null = null) {
     draftSlot,
     reqs,
     cancels,
+    holdStarts: () => {
+      startGate = new Promise<void>(() => undefined);
+    },
     revoked,
     cachedRanges,
     flush,
@@ -283,6 +290,18 @@ describe('PlaybackStore', () => {
     t.store.play();
     await t.flush();
     expect(t.reqs[0]!.range).toEqual({ start: 0, end: 8 });
+  });
+
+  it('cancels by request key a render whose request was aborted before the job id came back', async () => {
+    const t = setup();
+    t.holdStarts();
+    t.store.play();
+    await t.flush();
+    expect(t.reqs).toHaveLength(0);
+    t.store.pause();
+    await t.flush();
+    expect(t.cancels).toHaveLength(1);
+    expect(t.cancels[0]).toMatch(/^unsent:/);
   });
 
   it('cancels the render in flight when paused, and keeps the loaded chunk for a quick resume', async () => {
