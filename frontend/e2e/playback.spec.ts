@@ -5,7 +5,13 @@ import { test, expect, openEditor, timeline, type App } from './fixtures';
 
 // Playback through pre-rendered lookahead chunks (SPL-72): the composite plays in a <video>, chunks join without a gap,
 // a seek and an edit recover, a pause cancels the renders still running. Numbers are printed as `PLAYBACK ...` lines.
-const JOIN_GAP_MS = 200; // six frames at 30 fps
+// The join is judged on the picture's own time, which is exact: the timeline time of consecutive shown frames is one
+// frame (33 ms) apart, a dropped frame makes it two or more. On a quiet machine a join measures 33 ms; the bound is
+// four frames less a margin because a loaded runner stalls the page for whole display refreshes, and because the swap
+// hides the old element before its last frame's callback runs, so that frame is sometimes not seen (a 67 ms step with
+// the picture still continuous). Before SPL-126 the step was 133 to 167 ms on every run. The wall-clock gap is printed
+// but not asserted: it is quantised to the 16.7 ms refresh and a stall anywhere shows in it.
+const JOIN_STEP_MS = 120;
 const SHOTS = process.env.PLAYBACK_SHOTS; // a folder: also take the screenshots the card's verification reads
 
 const seconds = async (page: Page): Promise<number> => {
@@ -54,6 +60,7 @@ test('playback: the composite plays through lookahead chunks, crosses a join, se
 }) => {
   test.setTimeout(150_000);
   const errors: string[] = [];
+  const starts: number[] = []; // the timeline second each chunk file starts at (lead-in included), in request order
   let settled = false;
   // A chunk 404s once the timeline moves past its revision, so a late fetch of an older chunk is not an error: only
   // the newest revision asked for counts (key -> revision from the start responses).
@@ -66,6 +73,7 @@ test('playback: the composite plays through lookahead chunks, crosses a join, se
       const body = (await r.json().catch(() => null)) as { key: string; revision: number } | null;
       if (body) {
         revisionOf.set(body.key, body.revision);
+        starts.push((r.request().postDataJSON() as { start: number }).start);
         newest = Math.max(newest, body.revision);
       }
       return;
@@ -77,6 +85,16 @@ test('playback: the composite plays through lookahead chunks, crosses a join, se
     errors.push(`${r.status()} ${url}`);
   });
 
+  await page.addInitScript(() => {
+    const w = window as unknown as { __blobs: string[] };
+    w.__blobs = [];
+    const create = URL.createObjectURL.bind(URL);
+    URL.createObjectURL = (o: Blob | MediaSource) => {
+      const url = create(o);
+      if (o instanceof Blob && o.type === 'video/mp4') w.__blobs.push(url); // the chunks, in the order they were asked for
+      return url;
+    };
+  });
   await openEditor(page, app);
   const codecs = await page.evaluate(() =>
     document.createElement('video').canPlayType('video/mp4; codecs="avc1.42E01E, mp4a.40.2"'),
@@ -96,13 +114,15 @@ test('playback: the composite plays through lookahead chunks, crosses a join, se
   await expect(page.getByTestId('clip')).toHaveCount(clipsBefore + 2, { timeout: 20_000 });
   await expect(page.getByTestId('preview-still')).toBeVisible();
 
-  // Frame gaps: every presented frame of either element, by wall clock, with the element it came from.
+  // Frame gaps: every frame presented on screen (by either element), by wall clock, with the element it came from.
   await page.evaluate(() => {
-    const w = window as unknown as { __frames: [number, string][] };
+    const w = window as unknown as { __frames: [number, string, number, string][] };
     w.__frames = [];
     document.querySelectorAll<HTMLVideoElement>('[data-testid=preview-video]').forEach((v) => {
-      const tick = (now: number) => {
-        w.__frames.push([now, v.dataset.slot!]);
+      const tick = (now: number, meta: VideoFrameCallbackMetadata) => {
+        // a hidden element decodes ahead: only what is shown counts
+        if (v.classList.contains('on'))
+          w.__frames.push([now, v.dataset.slot!, meta.mediaTime, v.currentSrc]);
         v.requestVideoFrameCallback(tick);
       };
       v.requestVideoFrameCallback(tick);
@@ -138,25 +158,38 @@ test('playback: the composite plays through lookahead chunks, crosses a join, se
   expect(pace).toBeLessThan(1.2);
   await showing(page, 'chunk');
 
-  const gaps = await page.evaluate(() => {
-    const f = (window as unknown as { __frames: [number, string][] }).__frames;
-    const d = f.slice(1).map(([t, slot], i) => ({ gap: t - f[i]![0], swap: slot !== f[i]![1] }));
+  const gaps = await page.evaluate((chunkStarts) => {
+    const w = window as unknown as {
+      __frames: [number, string, number, string][];
+      __blobs: string[];
+    };
+    // timeline ms of each shown frame: where its file starts on the timeline plus its time in the file
+    const f = w.__frames.map(([t, slot, media, src]) => ({
+      t,
+      slot,
+      at: (chunkStarts[w.__blobs.indexOf(src)]! + media) * 1000,
+    }));
+    const d = f
+      .slice(1)
+      .map((x, i) => ({ gap: x.t - f[i]!.t, step: x.at - f[i]!.at, swap: x.slot !== f[i]!.slot }));
     const sorted = d.map((x) => x.gap).sort((a, b) => a - b);
-    const swaps = d.filter((x) => x.swap).map((x) => x.gap);
+    const joins = d.filter((x) => x.swap);
     return {
       frames: f.length,
       median: sorted[Math.floor(sorted.length / 2)]!,
       max: sorted[sorted.length - 1]!,
-      swaps,
+      swaps: joins.map((x) => x.gap),
+      steps: joins.map((x) => x.step),
     };
-  });
+  }, starts);
   console.log(
-    `PLAYBACK frame gap: median ${gaps.median.toFixed(0)} ms, max ${gaps.max.toFixed(0)} ms, at the swap ${gaps.swaps.map((g) => g.toFixed(0)).join(', ')} ms, over ${gaps.frames} frames`,
+    `PLAYBACK frame gap: median ${gaps.median.toFixed(0)} ms, max ${gaps.max.toFixed(0)} ms, at the swap ${gaps.swaps.map((g) => g.toFixed(0)).join(', ')} ms (picture advances ${gaps.steps.map((g) => g.toFixed(0)).join(', ')} ms), over ${gaps.frames} frames`,
   );
   // Only the join is asserted: a one-off stall of a loaded runner elsewhere (the max is printed above) is not a
   // playback regression, a gap at the chunk swap is.
   expect(gaps.swaps.length).toBeGreaterThanOrEqual(1); // a join was crossed
-  expect(Math.max(...gaps.swaps)).toBeLessThan(JOIN_GAP_MS);
+  expect(Math.max(...gaps.steps)).toBeLessThan(JOIN_STEP_MS); // no frame dropped
+  expect(Math.min(...gaps.steps)).toBeGreaterThan(0); // none shown twice or out of order
 
   // The element playing is the composite chunk, it decodes sound, and its picture is the composite (overlay and title).
   const audio = await playing.evaluate(
@@ -274,7 +307,7 @@ test('playback: the composite plays through lookahead chunks, crosses a join, se
   await expect
     .poll(
       async () =>
-        (await previewJobs(app)).filter((j) => j.label.includes('88-96') && j.state === 'cancelled')
+        (await previewJobs(app)).filter((j) => j.label.includes('87-96') && j.state === 'cancelled')
           .length,
       { timeout: 10_000, message: 'the queued chunk job was cancelled' },
     )

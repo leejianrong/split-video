@@ -14,6 +14,8 @@ class FakeSlot implements VideoSlot {
   duration = 0;
   ended = false;
   playing = false;
+  muted = false;
+  playbackRate = 1;
   get source() {
     return this.src;
   }
@@ -153,16 +155,16 @@ describe('PlaybackStore', () => {
     t.setTime(11);
     t.store.play();
     await t.flush();
-    expect(t.reqs.map((r) => r.range)).toEqual([{ start: 8, end: 16 }]);
+    expect(t.reqs.map((r) => r.range)).toEqual([{ start: 7, end: 16 }]); // from a second before the grid start (the lead-in)
     expect(t.store.state).toBe('buffering');
     await t.finish(0);
-    expect(t.reqs.map((r) => r.range.start)).toEqual([8, 16]); // the next starts only after the first renders
+    expect(t.reqs.map((r) => r.range.start)).toEqual([7, 15]); // the next starts only after the first renders
     await t.finish(1);
     await t.finish(2);
     expect(t.reqs.map((r) => r.range)).toEqual([
-      { start: 8, end: 16 },
-      { start: 16, end: 24 },
-      { start: 24, end: 32 },
+      { start: 7, end: 16 },
+      { start: 15, end: 24 },
+      { start: 23, end: 32 },
     ]);
     expect(LOOKAHEAD).toBe(2);
     await t.finish(2);
@@ -179,13 +181,13 @@ describe('PlaybackStore', () => {
     expect(t.store.showing).toBe('chunk');
     const slot = t.slots[t.store.activeSlot!];
     expect(slot.playing).toBe(true);
-    expect(slot.time).toBe(3); // 11 - 8
-    slot.time = 4.5;
+    expect(slot.time).toBe(4); // 11 - 8, plus the 1 s lead-in in the file
+    slot.time = 5.5;
     t.frame();
     expect(t.getTime()).toBe(12.5);
   });
 
-  it('swaps to the preloaded chunk in the other element at the join, with no gap, and frees the old one', async () => {
+  it('plays the next chunk muted from its lead-in, shows it when it catches up, and frees the old one', async () => {
     const t = setup();
     t.store.play();
     await t.flush();
@@ -193,24 +195,56 @@ describe('PlaybackStore', () => {
     await t.finish(1);
     const first = t.store.activeSlot!;
     const other = first === 0 ? 1 : 0;
-    expect(t.slots[other].src).toBe('blob:k8'); // loaded, paused at its first frame
+    expect(t.slots[other].src).toBe('blob:k7'); // loaded, parked in its lead-in
     expect(t.slots[other].playing).toBe(false);
-    t.slots[first].time = 7.95;
+    expect(t.slots[other].time).toBe(0.5);
+    t.slots[first].time = 7.1;
     t.frame();
-    expect(t.store.activeSlot).toBe(first); // the old one stays on screen until the next plays
+    expect(t.slots[other].playing).toBe(false); // too early
+    t.slots[first].time = 7.3;
+    t.frame();
     await t.flush();
+    expect(t.slots[other].playing).toBe(true); // running under the old one, silent, hidden, slowed to catch up
+    expect(t.slots[other].muted).toBe(true);
+    expect(t.slots[other].playbackRate).toBeLessThan(1);
+    expect(t.store.activeSlot).toBe(first);
+    t.slots[first].time = 7.5;
+    t.slots[other].time = 0.8; // 0.3 s ahead of the old one (timeline 7.8)
+    t.frame();
+    expect(t.store.activeSlot).toBe(first);
+    t.slots[other].time = 0.6;
+    t.slots[first].time = 7.6;
+    t.frame(); // the old one has caught up (0.4 s before its end: the early swap): same picture, same instant
     expect(t.store.activeSlot).toBe(other);
-    expect(t.slots[other].playing).toBe(true);
-    expect(t.slots[first].src).toBe('blob:k0'); // the old one plays out its last 0.1 s under the next one's start
+    expect(t.slots[other].muted).toBe(false);
+    expect(t.slots[other].playbackRate).toBe(1);
+    expect(t.slots[first].playing).toBe(false);
+    expect(t.getTime()).toBe(7.6);
+    t.slots[other].time = 2.5;
+    t.frame();
+    expect(t.getTime()).toBe(9.5);
+    expect(t.slots[first].src).toBe('blob:k0'); // released a moment later, not in the swap's frame
     await vi.advanceTimersByTimeAsync(400);
     expect(t.slots[first].src).toBeNull();
-    expect(t.revoked).toContain('blob:k0');
     await t.finish(2); // the chunk after next lands in the element that was freed
-    expect(t.slots[first].src).toBe('blob:k16');
-    expect(t.reqs.map((r) => r.range.start)).toEqual([0, 8, 16, 24]);
-    t.slots[other].time = 1;
+    expect(t.slots[first].src).toBe('blob:k15');
+    expect(t.revoked).toContain('blob:k0');
+    expect(t.reqs.map((r) => r.range.start)).toEqual([0, 7, 15, 23]);
+  });
+
+  it('swaps anyway near the old end when the next never lines up', async () => {
+    const t = setup();
+    t.store.play();
+    await t.flush();
+    await t.finish(0);
+    await t.finish(1);
+    const first = t.store.activeSlot!;
+    t.slots[first].time = 7.3;
     t.frame();
-    expect(t.getTime()).toBe(9);
+    await t.flush();
+    t.slots[first].time = 7.95;
+    t.frame();
+    expect(t.store.activeSlot).toBe(first === 0 ? 1 : 0);
   });
 
   it('holds and rebuffers when the next chunk is not ready at the join', async () => {
@@ -224,7 +258,7 @@ describe('PlaybackStore', () => {
     expect(t.store.showing).toBe('still');
     await t.finish(1);
     expect(t.store.state).toBe('playing');
-    expect(t.slots[t.store.activeSlot!].src).toBe('blob:k8');
+    expect(t.slots[t.store.activeSlot!].src).toBe('blob:k7');
   });
 
   it('stops at the end of the timeline on a short last chunk', async () => {
@@ -232,7 +266,7 @@ describe('PlaybackStore', () => {
     t.setTime(9);
     t.store.play();
     await t.flush();
-    expect(t.reqs[0]!.range).toEqual({ start: 8, end: 10 });
+    expect(t.reqs[0]!.range).toEqual({ start: 7, end: 10 });
     await t.finish(0);
     const slot = t.slots[t.store.activeSlot!];
     slot.time = 2;
@@ -268,7 +302,7 @@ describe('PlaybackStore', () => {
     t.store.play();
     await t.flush();
     expect(t.store.state).toBe('playing');
-    expect(t.reqs[2]!.range.start).toBe(8); // the lookahead resumes; chunk 0 was still in memory
+    expect(t.reqs[2]!.range.start).toBe(7); // the lookahead resumes; chunk 0 was still in memory
   });
 
   it('a seek away cancels the old renders, asks for the new place first, and shows the still meanwhile', async () => {
@@ -277,18 +311,18 @@ describe('PlaybackStore', () => {
     await t.flush();
     await t.finish(0);
     await t.flush();
-    expect(t.reqs[1]!.range.start).toBe(8);
+    expect(t.reqs[1]!.range.start).toBe(7);
     t.setTime(26);
     t.store.seeked(26);
     expect(t.store.showing).toBe('still');
     expect(t.store.state).toBe('buffering');
     expect(t.cancels).toContain('job1');
     await t.flush();
-    expect(t.reqs[2]!.range).toEqual({ start: 24, end: 32 }); // before any lookahead
+    expect(t.reqs[2]!.range).toEqual({ start: 23, end: 32 }); // before any lookahead
     await t.finish(2);
     expect(t.store.state).toBe('playing');
-    expect(t.slots[t.store.activeSlot!].time).toBe(2);
-    expect(t.reqs[3]!.range.start).toBe(32);
+    expect(t.slots[t.store.activeSlot!].time).toBe(3); // 26 - 24 + 1 s lead-in
+    expect(t.reqs[3]!.range.start).toBe(31);
   });
 
   it('steps and cut jumps while playing seek and keep playing; paused they only move the playhead', async () => {
@@ -327,7 +361,7 @@ describe('PlaybackStore', () => {
     t.store.seeked(10);
     await t.flush();
     expect(t.store.activeSlot).toBe(nextSlot);
-    expect(t.slots[nextSlot].time).toBe(2);
+    expect(t.slots[nextSlot].time).toBe(3); // 10 - 8, plus the lead-in
     expect(t.slots[nextSlot].playing).toBe(true);
     expect(t.reqs.length).toBe(before);
   });
@@ -357,7 +391,7 @@ describe('PlaybackStore', () => {
     t.store.sync({ path: 'gig.mp4', revision: 2, preset: 'youtube-1080p', duration: 40 });
     expect(slot.playing).toBe(false); // the old sound stops at once
     expect(t.store.state).toBe('buffering');
-    expect(t.revoked).toEqual(expect.arrayContaining(['blob:k0', 'blob:k8']));
+    expect(t.revoked).toEqual(expect.arrayContaining(['blob:k0', 'blob:k7']));
     await t.flush();
     const again = t.reqs[t.reqs.length - 1]!;
     expect(again.range.start).toBe(0);

@@ -12,14 +12,27 @@ export const CHUNK_SECONDS = 8;
 /** Chunks rendered ahead of the one playing. With the one playing and the two ahead, 3 of the server's 8 cached chunks are in use. */
 export const LOOKAHEAD = 2;
 /**
- * Start the next chunk this long before the playing one ends. A paused element needs about this long after `play()` to
- * put out sound and the next frames, so the old one is left running (hidden) until then rather than going silent.
+ * Every chunk but the first is rendered from this long before its grid start (SPL-126), so the next element can be
+ * playing, muted and hidden, before the join and be on the right frame at it.
  */
+export const LEAD_IN = 1;
+/** Start the next element this long before the playing chunk ends. */
+const JOIN_FROM = 0.75;
+/**
+ * The next element is parked this far ahead of where the join needs it: a paused element takes up to about 0.1 s after
+ * `play()` to deliver frames, so it starts ahead and is slowed to `CATCH_UP_RATE` until the playing one has caught up.
+ * Both play at the same speed otherwise, so the gap would never close.
+ */
+const PRE_ROLL = 0.25;
+const CATCH_UP_RATE = 0.5;
+/** Swap this close to the playing one's end even if the next is not aligned yet (it never started): a late frame, not silence. */
 const SWAP_LEAD = 0.1;
+/** The next element is shown once it is within this of the playing one: half a frame at 30 fps. */
+const ALIGNED = 1 / 60;
+/** How long after a swap the old element is released and the window of chunks moves on. */
+const RELEASE_MS = 300;
 /** A tail shorter than this is not worth a chunk (the server refuses ranges under 0.1 s). */
 const MIN_TAIL = 0.1;
-/** How long the old element stays loaded after a swap, so its last 0.1 s plays out under the next one's start. */
-const RELEASE_MS = 300;
 
 /** One `<video>` element, as far as playback needs it. */
 export interface VideoSlot {
@@ -35,6 +48,9 @@ export interface VideoSlot {
   readonly time: number;
   readonly duration: number;
   readonly ended: boolean;
+  /** Silences the element without pausing it. `load` makes it audible again at normal speed. */
+  muted: boolean;
+  playbackRate: number;
 }
 
 /** The main track's own file, for the draft shown while a chunk renders. `at` is the source time of the playhead. */
@@ -59,6 +75,8 @@ interface Chunk {
   index: number;
   start: number;
   end: number;
+  /** How much of the rendered file comes before `start` (0 for the first chunk). */
+  lead: number;
   status: 'starting' | 'rendering' | 'fetching' | 'ready' | 'failed';
   jobId: string | null;
   abort: AbortController;
@@ -87,8 +105,9 @@ const message = {
 
 /**
  * Plays the composite of the timeline by chaining server-rendered chunks (SPL-70) on a fixed grid. Two `<video>`
- * elements are double-buffered: the chunk playing is in one, the next is loaded and paused at its first frame in the
- * other, and at the join the next one starts and the old one is released. Chunks up to `LOOKAHEAD` ahead are
+ * elements are double-buffered: the chunk playing is in one, the next is loaded and paused just before its grid start
+ * in the other (each chunk is rendered with a lead-in). Shortly before the join the next one plays muted and hidden,
+ * and when it reaches the playing one's time it takes over picture and sound and the old one is released. Chunks up to `LOOKAHEAD` ahead are
  * requested one render at a time (the server has one preview worker), the current one first; chunks no longer needed
  * are cancelled for real (the job and its ffmpeg stop). While the wanted chunk renders, the main track's own file plays
  * as a draft (no overlays) when the browser can, otherwise the still stays with "Preparing preview".
@@ -122,7 +141,7 @@ export class PlaybackStore {
   #loaded: [Chunk | null, Chunk | null] = [null, null];
   #active: { slot: 0 | 1; chunk: Chunk } | null = null;
   #next: { slot: 0 | 1; chunk: Chunk } | null = null;
-  #retiring: { slot: 0 | 1; chunk: Chunk } | null = null;
+  #joining = false;
   #preloading = false;
   #activating = false;
   #draft: DraftSource | null = null;
@@ -219,18 +238,18 @@ export class PlaybackStore {
   /** The user moved the playhead (a click on the ruler, Home/End). */
   seeked(time: number): void {
     if (time === this.#written || this.#path === null) return;
-    this.#dropRetiring();
     this.#epoch++;
     this.#stopDraft();
     const slots = this.#slots;
     const inside = (c: Chunk) => time >= c.start && time < c.end;
+    this.#stopJoin();
     const holder = [this.#active, this.#next].find((h) => h && inside(h.chunk));
     if (holder && slots) {
       // Already in memory: a seek inside the video, no request.
       if (holder === this.#next) this.#swapTo(holder);
       const epoch = this.#epoch;
       const slot = slots[holder.slot];
-      void slot.seek(time - holder.chunk.start).then(() => {
+      void slot.seek(this.#fileTime(holder.chunk, time)).then(() => {
         if (epoch === this.#epoch && this.state === 'playing') void this.#playSlot(slot);
       });
     } else {
@@ -260,10 +279,22 @@ export class PlaybackStore {
 
   // ---- chunks ----
 
-  #bounds(index: number): { start: number; end: number } | null {
+  #bounds(index: number): { start: number; end: number; lead: number } | null {
     const start = index * CHUNK_SECONDS;
     if (start >= this.#duration - MIN_TAIL) return null;
-    return { start, end: Math.min(start + CHUNK_SECONDS, this.#duration) };
+    return {
+      start,
+      end: Math.min(start + CHUNK_SECONDS, this.#duration),
+      lead: Math.min(LEAD_IN, start),
+    };
+  }
+
+  /** Where `time` (timeline seconds) is in the chunk's file, and the reverse. */
+  #fileTime(chunk: Chunk, time: number): number {
+    return time - chunk.start + chunk.lead;
+  }
+  #timelineTime(chunk: Chunk, fileTime: number): number {
+    return chunk.start - chunk.lead + fileTime;
   }
 
   /** The chunk record for `index`, created (not started) if the grid has one there. */
@@ -286,12 +317,13 @@ export class PlaybackStore {
   /** Start what is wanted, one render at a time, and let go of what is not. */
   #pump(): void {
     if (this.#path === null) return;
-    const cur = Math.floor(this.#deps.getTime() / CHUNK_SECONDS);
+    // The chunk playing, not the one under the playhead: after an early swap the playhead is still in the old one.
+    const cur = this.#active?.chunk.index ?? Math.floor(this.#deps.getTime() / CHUNK_SECONDS);
     // Plain bookkeeping, not UI state: nothing renders from it.
     // eslint-disable-next-line svelte/prefer-svelte-reactivity
     const wanted = new Set<number>();
     for (let i = cur; i <= cur + LOOKAHEAD; i++) if (this.#bounds(i)) wanted.add(i);
-    for (const h of [this.#active, this.#next, this.#retiring]) if (h) wanted.add(h.chunk.index);
+    for (const h of [this.#active, this.#next]) if (h) wanted.add(h.chunk.index);
     for (const chunk of [...this.#chunks.values()]) if (!wanted.has(chunk.index)) this.#drop(chunk);
     if (!this.#wanted) return;
     const busy = [...this.#chunks.values()].some(
@@ -319,7 +351,7 @@ export class PlaybackStore {
       await Promise.allSettled([...this.#cancels]);
       const started = await this.#deps.api.start(
         path,
-        { start: chunk.start, end: chunk.end, preset: this.#preset! },
+        { start: chunk.start - chunk.lead, end: chunk.end, preset: this.#preset! },
         signal,
       );
       chunk.jobId = started.jobId;
@@ -373,15 +405,8 @@ export class PlaybackStore {
     chunk.url = null;
   }
 
-  /** Cut short the old element that is still finishing under a swap (a seek, pause or edit must not leave its sound). */
-  #dropRetiring(): void {
-    const old = this.#retiring;
-    this.#retiring = null;
-    if (old) this.#drop(old.chunk);
-  }
-
   #invalidate(): void {
-    this.#dropRetiring();
+    this.#stopJoin();
     this.#epoch++;
     this.#draftFailed.clear();
     this.#pauseActive();
@@ -424,7 +449,7 @@ export class PlaybackStore {
           return epoch === this.#epoch ? this.#unload(slot) : undefined;
         this.#loaded[slot] = chunk;
       }
-      await slots[slot].seek(Math.max(0, this.#deps.getTime() - chunk.start));
+      await slots[slot].seek(this.#fileTime(chunk, this.#deps.getTime()));
       if (epoch !== this.#epoch) return;
       if (this.#active && this.#active.slot !== slot) slots[this.#active.slot].pause();
       if (this.#next?.slot === slot) this.#next = null;
@@ -455,7 +480,7 @@ export class PlaybackStore {
   #preload(): void {
     const slots = this.#slots;
     const active = this.#active;
-    if (!slots || !active || this.#next || this.#preloading || this.#retiring) return;
+    if (!slots || !active || this.#next || this.#preloading) return;
     const chunk = this.#chunks.get(active.chunk.index + 1);
     if (chunk?.status !== 'ready') return;
     const slot: 0 | 1 = active.slot === 0 ? 1 : 0;
@@ -475,7 +500,10 @@ export class PlaybackStore {
           return;
         }
         this.#loaded[slot] = chunk;
-        this.#next = { slot, chunk };
+        return slots[slot].seek(chunk.lead - JOIN_FROM + PRE_ROLL).then(() => {
+          if (epoch !== this.#epoch || this.#active !== active) return;
+          this.#next = { slot, chunk };
+        });
       })
       .catch(() => slots[slot].clear())
       .finally(() => {
@@ -484,15 +512,13 @@ export class PlaybackStore {
       });
   }
 
-  /** The next chunk becomes the one playing, without starting it (a seek into it). */
-  #swapTo(next: { slot: 0 | 1; chunk: Chunk }, atJoin = false): void {
+  /** The next chunk becomes the one playing and the old element stops (it is already running, or a seek into it follows). */
+  #swapTo(next: { slot: 0 | 1; chunk: Chunk }): void {
     const old = this.#active;
     this.#active = next;
     this.#next = null;
-    if (atJoin) return; // the old element stays on screen until the new one plays (a hidden element draws no frames)
     this.activeSlot = next.slot;
     if (old) this.#slots![old.slot].pause();
-    this.#pump();
   }
 
   #startTick(): void {
@@ -506,25 +532,40 @@ export class PlaybackStore {
     const active = this.#active;
     if (!active || this.state !== 'playing') return;
     const slot = slots[active.slot];
-    const length = Math.min(slot.duration || Infinity, active.chunk.end - active.chunk.start);
-    this.#setTime(active.chunk.start + Math.min(slot.time, length));
-    if (length - slot.time > SWAP_LEAD && !slot.ended) return;
-    if (active.chunk.end >= this.#duration - MIN_TAIL) return this.#finish();
+    const chunk = active.chunk;
+    const length = Math.min(slot.duration || Infinity, chunk.lead + chunk.end - chunk.start);
+    this.#setTime(this.#timelineTime(chunk, Math.min(slot.time, length)));
+    const remaining = length - slot.time;
+    const last = chunk.end >= this.#duration - MIN_TAIL;
     const next = this.#next;
-    if (!next) return this.#rebuffer(); // the next chunk is not ready: underrun
+    if (last || !next) {
+      if (remaining > SWAP_LEAD && !slot.ended) return;
+      return last ? this.#finish() : this.#rebuffer(); // no next chunk ready: underrun
+    }
+    if (!this.#joining) {
+      if (remaining > JOIN_FROM && !slot.ended) return;
+      this.#joining = true;
+      void this.#playSlot(slots[next.slot], true);
+      return;
+    }
+    const upcoming = slots[next.slot];
+    const ahead =
+      this.#timelineTime(next.chunk, upcoming.time) - this.#timelineTime(chunk, slot.time);
+    const running = upcoming.time > next.chunk.lead - JOIN_FROM + PRE_ROLL;
+    if ((ahead > ALIGNED || !running) && remaining > SWAP_LEAD && !slot.ended) return;
     this.#epoch++; // the old chunk's async work is stale
-    this.#swapTo(next, true);
-    this.#setTime(next.chunk.start); // the window of chunks to keep is that of the new one
-    void this.#playSlot(slots[next.slot]).then(() => {
-      if (this.#active === next) this.activeSlot = next.slot;
-    });
-    this.#retiring = active;
-    setTimeout(() => this.#release(active), RELEASE_MS);
-    this.#pump();
+    this.#joining = false;
+    upcoming.muted = false;
+    upcoming.playbackRate = 1;
+    this.#swapTo(next);
+    this.#setTime(this.#timelineTime(next.chunk, slots[next.slot].time));
+    setTimeout(() => this.#pump(), RELEASE_MS); // freeing the old element stalls the picture: not at the swap
   }
 
-  async #playSlot(slot: VideoSlot): Promise<void> {
+  async #playSlot(slot: VideoSlot, catchUp = false): Promise<void> {
     try {
+      slot.muted = catchUp;
+      slot.playbackRate = catchUp ? CATCH_UP_RATE : 1;
       await slot.play();
     } catch {
       this.#halt();
@@ -532,13 +573,15 @@ export class PlaybackStore {
     }
   }
 
-  /** The chunk that just finished playing is not needed any more: free its blob and element. */
-  #release(old: { slot: 0 | 1; chunk: Chunk }): void {
-    if (this.#retiring === old) this.#retiring = null;
-    if (this.#loaded[old.slot] === old.chunk && this.#active?.chunk !== old.chunk) {
-      this.#drop(old.chunk);
+  /** Cancel a join in progress: the next element stops and is audible again for whoever plays it next. */
+  #stopJoin(): void {
+    if (this.#joining && this.#next && this.#slots) {
+      const slot = this.#slots[this.#next.slot];
+      slot.pause();
+      slot.muted = false;
+      slot.playbackRate = 1;
     }
-    this.#pump();
+    this.#joining = false;
   }
 
   #finish(): void {
@@ -548,7 +591,7 @@ export class PlaybackStore {
 
   /** Playback wants a chunk that is not there yet: hold the last frame, play the draft when there is one. */
   #rebuffer(): void {
-    this.#dropRetiring();
+    this.#stopJoin();
     this.#epoch++;
     this.#stopDraft();
     this.#pauseActive();
@@ -613,12 +656,12 @@ export class PlaybackStore {
   #halt(): void {
     if (this.#wanted && this.#active && this.#slots) {
       const slot = this.#slots[this.#active.slot];
-      this.#setTime(this.#active.chunk.start + slot.time);
+      this.#setTime(this.#timelineTime(this.#active.chunk, slot.time));
     } else if (this.#draft && this.#draftSlot) {
       this.#setTime(this.#draft.toTimeline(this.#draftSlot.time));
     }
     this.#wanted = false;
-    this.#dropRetiring();
+    this.#stopJoin();
     this.#epoch++;
     this.#pauseActive();
     this.#stopDraft();

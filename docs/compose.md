@@ -128,8 +128,10 @@ mp4 is, `display_path` of the media id), `mime`, `start`, `end`, `duration`, `wi
 recording's own timeline is `POST /api/v1/project/preview-range?path=` and `GET /api/v1/project/preview-range/{key}?path=`,
 `compose preview-range --video` and MCP `video`.
 
-The editor plays by chaining chunks on a fixed grid: 8 s ranges starting at multiples of 8 s, so replays and seeks ask for
-ranges that are already cached, and it keeps the one playing and two ahead (3 of the 8 cached chunks; the other 5 are the
+The editor plays by chaining chunks on a fixed grid: 8 s ranges starting at multiples of 8 s, each (but the first) asked
+from 1 s earlier, a lead-in that the next `<video>` plays muted before the join so it is on the right frame at it and no
+frame is dropped. The lead-in is part of the range, so it is part of the key (`[7, 16)`, not `[8, 16)`), and replays and
+seeks ask for ranges that are already cached. It keeps the one playing and two ahead (3 of the 8 cached chunks; the other 5 are the
 ones just played, so a short rewind is a cache hit). See [the frontend docs](frontend.md#playback).
 
 The cache lives in the video's `.split-video-cache/` sidecar (for a named project, next to its `<name>.timeline` anchor),
