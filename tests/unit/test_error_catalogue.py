@@ -136,6 +136,9 @@ def _samples() -> dict[str, BaseException]:
         "upload.invalid_name": raised(media_import.clean_name, ""),
         "upload.unsupported_type": raised(media_import.clean_name, "notes.txt"),
         "upload.empty": media_import.ImportError_("the upload is empty", "upload.empty"),
+        "upload.not_writable": media_import.ImportError_(
+            "the editor cannot write to the workspace folder", "upload.not_writable"
+        ),
         "revision.conflict": RevisionConflictError("reel", 3, 1, "timeline project"),
         "history.empty": HistoryEmptyError("undo"),
         "preset.unknown": raised(presets.get, "zzz"),
