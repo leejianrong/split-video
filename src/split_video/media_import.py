@@ -71,7 +71,6 @@ class IncomingFile:
 
     def __init__(self, media: MediaStore, folder: str, name: str) -> None:
         self._media = media
-        self._folder = folder
         self.media_id = free_id(media, folder, clean_name(name))
         self.size = 0
         self._stack = ExitStack()
@@ -82,12 +81,6 @@ class IncomingFile:
         try:
             path = self._stack.enter_context(self._media.write_local(self.media_id))
             self._file = self._stack.enter_context(open(path, "wb"))
-        except PermissionError:
-            self._stack.close()
-            where = f"the folder {self._folder!r}" if self._folder else "the workspace folder"
-            raise ImportError_(
-                f"the editor cannot write to {where}", "upload.not_writable", folder=self._folder
-            ) from None
         except BaseException:
             self._stack.close()
             raise

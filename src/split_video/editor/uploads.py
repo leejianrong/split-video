@@ -48,10 +48,7 @@ def make_router(provider: StoreProvider) -> APIRouter:
             with assets.open_book(ctx.media) as book:
                 return asset_out(book, book.require(asset.id))
 
-        try:
-            await run_in_threadpool(incoming.__enter__)
-        except media_import.ImportError_ as exc:
-            raise api_error(403, exc) from None
+        await run_in_threadpool(incoming.__enter__)
         try:
             async for chunk in request.stream():
                 if chunk:
