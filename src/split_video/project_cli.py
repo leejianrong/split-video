@@ -24,7 +24,11 @@ from split_video import cli_errors, project
 from split_video.compose_cli import _show
 from split_video.editor.cache import ClassificationCache
 from split_video.editor.classify import ModelNotFoundError
+from split_video.editor.job_routes import CANCEL_WAIT_SECONDS, job_out
+from split_video.error_catalogue import ErrorInfo
 from split_video.ffmpeg import ExtractError, FfmpegNotFoundError, ProbeError
+from split_video.job_work import submit_split
+from split_video.jobs import InProcessJobQueue
 from split_video.local_media_store import LocalMediaStore
 from split_video.local_store import LocalProjectStore
 from split_video.media_store import MediaStore
@@ -193,12 +197,16 @@ def split_by_silence_cmd(
     base_revision: int | None = _BaseRevision,
     as_json: bool = _Json,
 ) -> None:
-    """Split a video at its silences and save the pieces as its segments (what `POST /assets/{id}/split` queues as a job)."""
+    """Split a video at its silences and save the pieces as its segments, as a `split` job (what `POST /assets/{id}/split`
+    queues). The command waits for the job and prints it (`--json`: the job as `GET /jobs/{id}` shows it, its `result`
+    is `{video, segments, revision, labels}`); Ctrl+C cancels it and saves nothing (exit 1)."""
+    jobs = InProcessJobQueue(max_workers=1)
     try:
         store, media, source_id = _stores(source)
-        result = project.split_by_silence(
-            store,
+        job_id = submit_split(
+            jobs,
             media,
+            store,
             source_id,
             silence_threshold=silence_threshold,
             min_silence_duration=min_silence_duration,
@@ -207,12 +215,27 @@ def split_by_silence_cmd(
             label_prefix=label_prefix,
             base_revision=base_revision,
         )
+        try:
+            info = jobs.wait(job_id)
+        except KeyboardInterrupt:
+            jobs.cancel(job_id)
+            info = jobs.wait(job_id, CANCEL_WAIT_SECONDS)
     except _EXPECTED_ERRORS as exc:
         raise _fail(exc, as_json, source)
+    finally:
+        jobs.shutdown()
+    if info.state == "error":
+        failure = info.error_info or {}
+        error = ErrorInfo(failure["code"], failure["message"], failure["fix"])
+        cli_errors.report(error, as_json)
+        raise typer.Exit(code=error.spec.exit_code)
     if as_json:
-        _emit_json(result)
-        return
-    console.print(f"Saved {result['segments']} segment(s) as revision {result['revision']}.")
+        _emit_json(job_out(info).model_dump())
+    if info.state != "done":
+        error_console.print("[yellow]Cancelled[/yellow] — nothing was saved.")
+        raise typer.Exit(code=1)
+    if not as_json:
+        console.print(f"Saved {info.result['segments']} segment(s) as revision {info.result['revision']}.")
 
 
 def add_asset_clip_cmd(

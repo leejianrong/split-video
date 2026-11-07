@@ -27,7 +27,7 @@ from split_video import (
 )
 from split_video.editor import classify
 from split_video.editor.cache import ClassificationCache, WaveformCache
-from split_video.jobs import PROXY, JobContext, JobQueue
+from split_video.jobs import PROXY, SPLIT, JobContext, JobQueue
 from split_video.media_store import MediaStore
 from split_video.store import ProjectStore
 from split_video.timeline import Project
@@ -103,6 +103,15 @@ def split_work(
         )
 
     return work
+
+
+def submit_split(jobs: JobQueue, media: MediaStore, store: ProjectStore, source: str, **options: Any) -> str:
+    """Queue `split_work` as a `split` job and return its id: the one submission the HTTP route, the CLI and MCP share.
+    A recording without audio is refused up front (`ProjectError`), not as a failed job. `owner` is the job's owner."""
+    if not media.probe(source).has_audio:
+        raise project.ProjectError(project.AUDIO_MISSING)
+    owner = options.pop("owner", None)
+    return jobs.submit(SPLIT, split_work(media, store, source, **options), label=source, owner=owner)
 
 
 def report_prepare_work(media: MediaStore, asset_id: str) -> Callable[[JobContext], dict[str, Any]]:

@@ -6,7 +6,8 @@ the saved ones. This is what the editor's "Split by silence" and "Find songs" do
 `label_prefix` ("Song" labels the cuts "Song 1", "Song 2"). The job's progress counts thousandths of the audio and its
 result is `{video, segments, revision, labels}`; follow it through `/jobs/{id}` or `/events`, cancel it with
 `POST /jobs/{id}/cancel` (nothing is saved). `If-Match` makes the save fail with a revision conflict, as a job error, if
-the project changed since. The CLI (`propose --apply`) and MCP (`propose_splits`) run the same operation inline.
+the project changed since. The CLI (`split-by-silence`) and MCP (`split_by_silence`) queue the same job; `propose --apply` and
+`propose_splits` are the older inline form.
 """
 
 from __future__ import annotations
@@ -18,8 +19,8 @@ from split_video import assets
 from split_video.editor.context import RequestContext, make_context_dependency
 from split_video.editor.errors import api_error
 from split_video.editor.revisions import WRITE_RESPONSES, base_revision
-from split_video.job_work import split_work
-from split_video.jobs import SPLIT, JobQueue
+from split_video.job_work import submit_split
+from split_video.jobs import JobQueue
 from split_video.media_store import MediaError
 from split_video.project import AUDIO_MISSING
 from split_video.store_provider import StoreProvider
@@ -58,20 +59,17 @@ def make_router(provider: StoreProvider, jobs: JobQueue) -> APIRouter:
             raise api_error(404, exc) from None
         if not asset.has_audio:
             raise HTTPException(status_code=422, detail=AUDIO_MISSING)
-        job_id = jobs.submit(
-            SPLIT,
-            split_work(
-                ctx.media,
-                ctx.store,
-                asset.path,
-                silence_threshold=request.silence_threshold,
-                min_silence_duration=request.min_silence_duration,
-                min_song_length=request.min_song_length,
-                padding=request.padding,
-                label_prefix=request.label_prefix,
-                base_revision=base,
-            ),
-            label=asset.path,
+        job_id = submit_split(
+            jobs,
+            ctx.media,
+            ctx.store,
+            asset.path,
+            silence_threshold=request.silence_threshold,
+            min_silence_duration=request.min_silence_duration,
+            min_song_length=request.min_song_length,
+            padding=request.padding,
+            label_prefix=request.label_prefix,
+            base_revision=base,
             owner=ctx.principal.id,
         )
         return SplitStartResponse(job_id=job_id)

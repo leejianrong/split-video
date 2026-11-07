@@ -67,8 +67,10 @@ from split_video import (
 from split_video import captions as captions_module
 from split_video import preview_range as preview_range_module
 from split_video.editor.cache import ClassificationCache
+from split_video.editor.job_routes import CANCEL_WAIT_SECONDS, job_out
 from split_video.error_catalogue import ErrorInfo, argument_error, error_dict
 from split_video.history import Step
+from split_video.job_work import submit_split
 from split_video.jobs import (
     RENDER,
     InProcessJobQueue,
@@ -345,14 +347,16 @@ def create_server(
         base_revision: int | None = None,
     ) -> dict[str, Any]:
         """Split `video` at its silent gaps and SAVE the pieces as its segments, REPLACING any saved splits, labels
-        and exclusions (propose_splits with apply=true, but with the result `POST /assets/{id}/split` gives: `{video,
-        segments (count), revision, labels}`). Runs to completion before answering; the HTTP route queues it as a job.
-        `base_revision` (optional): fail with revision_conflict if the project changed since."""
+        and exclusions. Like `POST /assets/{id}/split` it queues a `split` job and returns `{job_id}` at once; follow
+        it with get_job (the job's `result` is `{video, segments (count), revision, labels}`), stop it with
+        cancel_job (nothing is saved). `base_revision` (optional): the job fails with revision.conflict if the
+        project changed since. A recording without audio is refused up front."""
         source = resolve(video)
-        return await run(
-            project.split_by_silence,
-            store,
+        job_id = await run(
+            submit_split,
+            jobs,
             media,
+            store,
             source,
             silence_threshold=silence_threshold,
             min_silence_duration=min_silence_duration,
@@ -361,6 +365,25 @@ def create_server(
             label_prefix=label_prefix,
             base_revision=base_revision,
         )
+        return {"job_id": job_id}
+
+    @server.tool(annotations=_READ_ONLY)
+    async def get_job(job_id: str) -> dict[str, Any]:
+        """One job by id (from split_by_silence), the shape of `GET /jobs/{id}`: `state` (queued, running, done, error,
+        cancelled), `fraction` 0..1, `message`, `result` once done, `error_info {code, message, fix}` when it failed.
+        Poll it until `state` is done, error or cancelled; it stays available until the server restarts."""
+        return job_out(await run(jobs.status, job_id)).model_dump()
+
+    @server.tool(annotations=_REPLACES_PROJECT)
+    async def cancel_job(job_id: str) -> dict[str, Any]:
+        """Stop a job (from split_by_silence): a queued one never starts, a running one stops and saves nothing. Waits
+        a few seconds for it to end and returns it as get_job does. Idempotent; a finished job is returned unchanged."""
+
+        def cancel() -> Any:
+            info = jobs.cancel(job_id)
+            return info if info.finished else jobs.wait(job_id, CANCEL_WAIT_SECONDS)
+
+        return job_out(await run(cancel)).model_dump()
 
     @server.tool(annotations=_EDITS_PROJECT)
     async def add_asset_to_video(

@@ -8,7 +8,7 @@ do — propose splits, review and adjust them, label segments, optionally
 classify the audio, and export — without a browser or a running editor. It
 reads and writes the same project file, so a human can open the result in
 the visual editor afterward. Tools: `list_videos`, `list_segments`,
-`propose_splits`, `split_by_silence`, `add_asset_to_video`, `add_split`, `move_split`, `remove_split`, `label_segment`,
+`propose_splits`, `split_by_silence` (a job), `get_job`, `cancel_job`, `add_asset_to_video`, `add_split`, `move_split`, `remove_split`, `label_segment`,
 `analyze_audio`, `export_project`. The `compose` commands above have matching tools:
 `list_timelines`, `scan_library`, `list_assets`, `prepare_asset`, `transcribe_asset`, `get_transcript`, `transcript_range`, `transcript_search`, `analyze_scenes`, `get_scenes`, `get_frame`, `get_contact_sheet`, `create_timeline`, `show_timeline`, `add_clip_to_timeline`
 (a path or an asset id),
