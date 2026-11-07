@@ -256,6 +256,12 @@ _register(
     "Make sure the file is not empty (it may still be recording or copying), then import it again.",
     status=400,
 )
+_register(
+    "upload.not_writable",
+    "The folder an upload goes into is not writable by the editor's user (for example a root-owned folder in Docker).",
+    "Make the folder writable by the user the editor runs as (for example `chown` it to your user), then import the file again.",
+    status=403,
+)
 
 # --- revisions ----------------------------------------------------------------------------------------------------
 
