@@ -608,6 +608,10 @@ export type ClipOut = {
      */
     included?: boolean;
     /**
+     * Index
+     */
+    index: number;
+    /**
      * Kind
      */
     kind: string;
@@ -3414,6 +3418,10 @@ export type TrackOut = {
      * Id
      */
     id: string;
+    /**
+     * Index
+     */
+    index: number;
     /**
      * Kind
      */

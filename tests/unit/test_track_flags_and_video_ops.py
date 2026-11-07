@@ -223,7 +223,7 @@ def test_dry_run_on_the_video_timeline_writes_nothing_and_flags_lock_the_splits(
         dry_run=True,
         target=target,
     )
-    assert dry["dry_run"] and dry["revision"] == rev + 1 and dry["timeline"]["tracks"][0]["clips"][0]["out"] == 40
+    assert dry["dry_run"] and dry["revision"] == rev + 1 and dry["timeline"]["tracks"][0]["clips"][0]["out_point"] == 40
     assert project.current_revision(world.store, "a.mp4") == rev
 
     main_id = target.load().tracks[0].id

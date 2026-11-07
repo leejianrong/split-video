@@ -93,7 +93,7 @@ async def test_mcp_outputs_are_rounded_to_a_millisecond(ws, anyio_backend):
     for doc in (shown, crop):
         assert doc["duration"] == round(doc["duration"], 3)
         for clip in doc["tracks"][0]["clips"]:
-            for key in ("in", "out", "start", "end", "duration"):
+            for key in ("in_point", "out_point", "start", "end", "duration"):
                 assert clip[key] == round(clip[key], 3), (key, clip[key])
     assert crop["tracks"][0]["clips"][0]["crop"] == {"x": 0.3, "y": 0.0, "w": 0.316406, "h": 0.5625}
     stored = json.loads((root / "noisy.split-video-timeline.json").read_text())["tracks"][0]["clips"][0]

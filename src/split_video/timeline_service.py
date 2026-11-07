@@ -559,7 +559,7 @@ def canvas_view(project: Project, rows: dict[str, Any]) -> dict[str, Any]:
 def describe(
     media: MediaStore, name: str, project: Project, *, read_only: bool = False, history: HistoryState | None = None
 ) -> dict[str, Any]:
-    """JSON-friendly view of a project, with clips numbered from 1 per track.
+    """JSON-friendly view of a project, with clips numbered from 1 per track: the `ProjectOut` document of the HTTP API.
 
     Each media clip shows its `asset` id and its file's current path as `source` (found by
     asset id, so a renamed file shows where it is now); an unresolvable clip shows its hint.
@@ -584,14 +584,17 @@ def describe(
                 "id": t.id,
                 "kind": t.kind,
                 "magnetic": t.magnetic,
+                "locked": t.locked,
+                "hidden": t.hidden,
+                "muted": t.muted,
                 "clips": [
                     {
                         "index": i + 1,
                         "id": c.id,
                         "asset": rows[c.id].asset.id if rows.get(c.id) else c.asset,
                         "source": rows[c.id].source if rows.get(c.id) else c.source,
-                        "in": timeline.ms(c.in_point),
-                        "out": timeline.ms(c.out_point),
+                        "in_point": timeline.ms(c.in_point),
+                        "out_point": timeline.ms(c.out_point),
                         "start": timeline.ms(c.start),
                         "end": timeline.ms(c.end),
                         "duration": timeline.ms(c.duration),
@@ -613,6 +616,9 @@ def describe(
                         "saturation": c.saturation,
                         "crop": timeline.shown_crop(c.crop),
                         "fit": c.fit,
+                        "label": c.label,
+                        "label_color": c.label_color,
+                        "included": c.included,
                     }
                     for i, c in enumerate(t.clips)
                 ],

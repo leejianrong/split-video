@@ -32,6 +32,12 @@ def clips_of(tracks):
     return [(c["asset"], c["source"], c["start"], c["end"], c["duration"]) for c in tracks[0]["clips"]]
 
 
+def shape(body):
+    """The field names of a project at each level: the same on every surface (SPL-130)."""
+    track, clip = body["tracks"][0], body["tracks"][0]["clips"][0]
+    return sorted(body), sorted(track), sorted(clip)
+
+
 def wait_job(client, job_id):
     deadline = time.time() + 60
     while time.time() < deadline:
@@ -59,6 +65,7 @@ async def test_add_clip_is_the_same_on_http_cli_and_mcp(media_dir, tmp_path):  #
     got = client.post("/api/v1/project/clips", params=params, json=body, headers={"If-Match": '"0"'})
     assert got.status_code == 200, got.text
     results["http"] = (got.json()["revision"], got.json()["duration"], clips_of(got.json()["tracks"]))
+    fields = {"http": shape(got.json())}
 
     cli_root, ids = workspace(media_dir, tmp_path, "cli")
     base = ["add-asset-clip", str(cli_root / VIDEO), "--asset", ids["green"], "--at", "1"]
@@ -67,6 +74,7 @@ async def test_add_clip_is_the_same_on_http_cli_and_mcp(media_dir, tmp_path):  #
     code, shown = cli_json(*base, "--base-revision", "0")
     assert code == 0, shown
     results["cli"] = (shown["revision"], shown["duration"], clips_of(shown["tracks"]))
+    fields["cli"] = shape(shown)
 
     mcp_root, ids = workspace(media_dir, tmp_path, "mcp")
     async with Client(create_server(mcp_root)) as mcp:
@@ -75,10 +83,13 @@ async def test_add_clip_is_the_same_on_http_cli_and_mcp(media_dir, tmp_path):  #
         assert tool_error(stale)["error"] == "revision_conflict"
         shown = await mcp_call(mcp, "add_asset_to_video", **args, base_revision=0)
         results["mcp"] = (shown["revision"], shown["duration"], clips_of(shown["tracks"]))
+        fields["mcp"] = shape(shown)
         audio_only = await mcp.call_tool("add_asset_to_video", {"video": VIDEO, "asset": ids["tone"]})
         assert tool_error(audio_only)["code"] == "media.audio_only"
 
     assert results["http"] == results["cli"] == results["mcp"]
+    assert fields["http"] == fields["cli"] == fields["mcp"]
+    assert "in_point" in fields["http"][2] and "in" not in fields["http"][2]
     revision, _, clips = results["http"]
     assert revision == 1 and clips[0][0] == ids["green"] and len(clips) == 2
 

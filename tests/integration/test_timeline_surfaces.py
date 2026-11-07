@@ -86,7 +86,7 @@ def test_dry_run_writes_nothing_and_a_bad_op_is_a_422_report(client):
     clip = before["tracks"][0]["clips"][0]
     dry = _ops(client, [{"op": "trim_clip", "clip": clip["id"], "out": 2.5}], before["revision"], dry_run="true")
     assert dry.status_code == 200 and dry.json()["dry_run"] is True
-    assert dry.json()["timeline"]["tracks"][0]["clips"][0]["out"] == 2.5
+    assert dry.json()["timeline"]["tracks"][0]["clips"][0]["out_point"] == 2.5
     assert _timeline(client)["revision"] == before["revision"]
     bad = _ops(client, [{"op": "trim_clip", "clip": "nope", "out": 2.5}], before["revision"])
     assert bad.status_code == 422 and bad.json()["errors"][0]["code"] == "ops.clip.not_found"

@@ -136,7 +136,7 @@ async def test_mcp_edits_the_video_timeline_and_shows_it(media_dir, tmp_path, an
             "ops": [{"op": "trim_clip", "clip": clips[1]["id"], "out": 5.5}],
         }
         dry = await mcp_call(mcp, "apply_ops", ops=doc, video=VIDEO, dry_run=True, base_revision=shown["revision"])
-        assert dry["dry_run"] and dry["timeline"]["tracks"][0]["clips"][1]["out"] == 5.5
+        assert dry["dry_run"] and dry["timeline"]["tracks"][0]["clips"][1]["out_point"] == 5.5
         assert project.current_revision(store, VIDEO) == shown["revision"]
         done = await mcp_call(mcp, "apply_ops", ops=doc, video=VIDEO, base_revision=shown["revision"])
         assert done["revision"] == shown["revision"] + 1 and done["project"] == VIDEO

@@ -158,7 +158,7 @@ touched (for a creating op, the id it made). `ops_hash` is the sha256 of the can
 sorted, no spaces, without `meta`).
 
 **Dry run.** `dry_run: true` returns the same document plus `timeline`: the whole resulting project, exactly what
-`show_timeline` returns (tracks, clips with asset, in/out, start, transition, text and properties, `revision` being the
+`show_timeline` returns (the API's `ProjectOut`: tracks, clips with asset, `in_point` / `out_point`, start, transition, text and properties, `revision` being the
 predicted one). The rest is exactly what the real call returns. `revision` is a **prediction** (the current revision plus
 one), not a reservation: another writer can move the project before you apply. A plan's dry run carries the same
 `timeline` key, so an agent reads both the same way.
