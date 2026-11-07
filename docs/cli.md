@@ -78,10 +78,12 @@ split-video analyze liveshow.mp4                                # YAMNet classif
 `propose` only prints unless you pass `--apply`, which replaces any splits
 already saved. `--label-prefix Song` labels the pieces "Song 1", "Song 2" and so on (MCP: `label_prefix`).
 
-`split-by-silence liveshow.mp4 [--base-revision N] --json` does the same as `propose --apply` but answers with the
-editor's `split` job result (`{video, segments, revision, labels}`), and `add-asset-clip liveshow.mp4 --asset a_... [--at N]`
+`split-by-silence liveshow.mp4 [--base-revision N] --json` does the same as `propose --apply` but runs as the editor's
+`split` job: it waits for the job and prints it as `GET /jobs/{id}` does (its `result` is `{video, segments, revision,
+labels}`). The command is one process, so the job lives only as long as it: Ctrl+C cancels it and saves nothing
+(exit 1). A stale `--base-revision` fails the job (`revision.conflict`, exit code 3). And `add-asset-clip liveshow.mp4 --asset a_... [--at N]`
 adds a library asset as a clip on the video's own timeline (the editor's Media tab). Both take `--base-revision` (stale:
-exit code 3). The MCP twins are `split_by_silence` and `add_asset_to_video`; see [api.md](api.md).
+exit code 3). The MCP twins are `split_by_silence` (returns `{job_id}`; follow it with `get_job`, stop it with `cancel_job`) and `add_asset_to_video`; see [api.md](api.md).
 
 ## Run without Docker (uv)
 
