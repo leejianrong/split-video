@@ -256,10 +256,15 @@ _register(
     "Make sure the file is not empty (it may still be recording or copying), then import it again.",
     status=400,
 )
+
+# --- storage ------------------------------------------------------------------------------------------------------
+
 _register(
-    "upload.not_writable",
-    "The folder an upload goes into is not writable by the editor's user (for example a root-owned folder in Docker).",
-    "Make the folder writable by the user the editor runs as (for example `chown` it to your user), then import the file again.",
+    "folder.not_writable",
+    "The editor's user cannot write into the workspace folder (for example a root-owned folder in Docker): a project "
+    "save, an undo log, a cache or an upload failed with a permission error.",
+    "Make the workspace folder writable by the user the editor runs as (for example `chown` it to your user), then "
+    "repeat the request.",
     status=403,
 )
 
@@ -638,6 +643,8 @@ def classify(exc: BaseException) -> tuple[str, _Details]:
     own = getattr(exc, "error_code", None)
     if own in REGISTRY:  # an exception may name its own code
         return own, dict(getattr(exc, "details", None) or {})
+    if isinstance(exc, PermissionError):
+        return "folder.not_writable", {}
     if _is(exc, "conflict"):
         return "revision.conflict", {
             "project": exc.project,  # type: ignore[attr-defined]
@@ -681,7 +688,9 @@ def describe(exc: BaseException) -> ErrorInfo:
     message = str(exc) or type(exc).__name__
     legacy: dict[str, Any] = {}
     extra_fix = ""
-    if code in ("preset.unknown", "fit.unknown", "caption.style_unknown"):
+    if code == "folder.not_writable":
+        message = "the editor cannot write to the workspace folder"  # the OS message would show an absolute path
+    elif code in ("preset.unknown", "fit.unknown", "caption.style_unknown"):
         details = {**details, "choices": choices_of(message)}
     elif code == "plan.invalid":
         report = exc.report  # type: ignore[attr-defined]

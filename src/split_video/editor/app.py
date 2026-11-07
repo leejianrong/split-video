@@ -38,6 +38,7 @@ from split_video.editor.errors import (
     ERROR_RESPONSE,
     ApiError,
     ApiErrorOut,
+    api_error,
     api_error_handler,
     validation_error_handler,
 )
@@ -240,6 +241,10 @@ def create_app(
 
     app.add_exception_handler(ApiError, api_error_handler)  # type: ignore[arg-type]
     app.add_exception_handler(RequestValidationError, validation_error_handler)  # type: ignore[arg-type]
+
+    @app.exception_handler(PermissionError)
+    async def not_writable(request: Request, exc: PermissionError) -> Response:
+        return await api_error_handler(request, api_error(403, exc))
 
     @app.exception_handler(RevisionConflictError)
     async def revision_conflict(request: Request, exc: RevisionConflictError) -> Response:

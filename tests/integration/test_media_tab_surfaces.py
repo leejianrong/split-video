@@ -105,7 +105,7 @@ def test_upload_errors_carry_a_code_and_a_fix_and_leave_nothing_on_disk(workspac
 
 
 @pytest.mark.skipif(os.geteuid() == 0, reason="root can write into a read-only folder")
-def test_upload_into_a_folder_the_editor_cannot_write_to_is_a_403_that_names_the_folder(workspace, tmp_path):
+def test_upload_into_a_folder_the_editor_cannot_write_to_is_a_403(workspace, tmp_path):
     (workspace / "shows").mkdir()
     (workspace / "shows").chmod(0o555)
     junk = tmp_path / "junk.bin"
@@ -116,7 +116,7 @@ def test_upload_into_a_folder_the_editor_cannot_write_to_is_a_403_that_names_the
         (workspace / "shows").chmod(0o755)
     body = response.json()
     assert response.status_code == 403, body
-    assert body["code"] == "upload.not_writable" and "shows" in body["message"] and "chown" in body["fix"]
+    assert body["code"] == "folder.not_writable" and "chown" in body["fix"]
 
 
 def test_split_job_saves_labelled_segments_and_reports_progress(workspace, three_songs_clip):

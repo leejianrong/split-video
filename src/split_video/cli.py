@@ -10,6 +10,7 @@ from pathlib import Path
 import typer
 from rich.console import Console
 from rich.table import Table
+from typer.core import TyperGroup
 
 from split_video import (
     captions_cli,
@@ -48,7 +49,18 @@ from split_video.naming import build_manifest, segment_filename, write_manifest
 from split_video.segments import compute_segments
 from split_video.timefmt import format_timestamp
 
-app = typer.Typer(add_completion=False, no_args_is_help=True)
+
+class _ReportedGroup(TyperGroup):
+    """The root group: a write into a read-only folder from any command is reported like every other failure."""
+
+    def invoke(self, ctx):  # type: ignore[no-untyped-def]
+        try:
+            return super().invoke(ctx)
+        except PermissionError as exc:
+            raise cli_errors.fail(exc) from None
+
+
+app = typer.Typer(add_completion=False, no_args_is_help=True, cls=_ReportedGroup)
 console = Console()
 error_console = Console(stderr=True)
 
