@@ -108,8 +108,8 @@ def test_outputs_are_rounded_to_a_millisecond_but_the_stored_file_keeps_full_pre
     shown = timeline_service.describe(w.media, "reel", w.store.load_timeline("reel"))
     clip = shown["tracks"][0]["clips"][2]
     assert raw_in != round(raw_in, 3), "the fixture must have sub-millisecond noise"
-    assert clip["in"] == round(raw_in, 3)
-    for key in ("in", "out", "start", "end", "duration"):
+    assert clip["in_point"] == round(raw_in, 3)
+    for key in ("in_point", "out_point", "start", "end", "duration"):
         assert clip[key] == round(clip[key], 3), key
     assert shown["duration"] == round(shown["duration"], 3) == result["duration"]
     assert all(t["end"] == round(t["end"], 3) for t in result["tracks"])

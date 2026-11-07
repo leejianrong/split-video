@@ -53,6 +53,8 @@ If thresholds alone don't get every split right, use the
 
 ## Project commands (scripting the editor's splits)
 
+**Behaviour change (SPL-130):** every command that prints a timeline with `--json` (`add-asset-clip`, `undo`, `redo`, `compose ...`) now prints the HTTP API's `ProjectOut`. Clips name their source range `in_point` / `out_point` instead of `in` / `out`, and carry `label`, `label_color`, `included`; tracks carry `locked`, `hidden`, `muted`. Scripts reading `in` / `out` must change.
+
 The same saved splits the visual editor keeps (since SPL-116 in the video's timeline
 project, `<video>.split-video-timeline.json` next to the video; see
 [the design note](decisions/unified-project-model.md)) can be read and changed from the command line — handy for scripts and AI

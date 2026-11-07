@@ -28,7 +28,6 @@ from split_video import (
     timeline_service,
     transcribe,
 )
-from split_video import timeline as timeline_module
 from split_video.editor.context import RequestContext, make_context_dependency
 from split_video.editor.errors import ApiError, api_error
 from split_video.editor.job_routes import cancel_job, job_of_kind
@@ -43,7 +42,6 @@ from split_video.media_store import MediaError, MediaOutsideRootError, MediaStor
 from split_video.store_provider import StoreProvider
 from split_video.timeline import (
     AssetNotFoundError,
-    Clip,
     OutputExistsError,
     OutsideRootError,
     Project,
@@ -64,6 +62,7 @@ class CropBox(BaseModel):
 
 
 class ClipOut(BaseModel):
+    index: int  # the clip's number in its track, from 1 (what CLI and MCP tools take)
     id: str
     asset: str  # the clip's asset id (see /assets); "" for a text clip or a media clip not yet linked
     source: str  # where the asset's file is now (last known path if it can't be found)
@@ -96,6 +95,7 @@ class ClipOut(BaseModel):
 
 
 class TrackOut(BaseModel):
+    index: int  # the track's number, from 1
     id: str
     kind: str
     magnetic: bool
@@ -344,65 +344,8 @@ class RenderStatusOut(BaseModel):
     captions: dict[str, Any] | None = None
 
 
-def clip_out(c: Clip, row: assets.Located | None) -> ClipOut:
-    return ClipOut(
-        id=c.id,
-        asset=row.asset.id if row else c.asset,
-        source=row.source if row else c.source,
-        in_point=timeline_module.ms(c.in_point),
-        out_point=timeline_module.ms(c.out_point),
-        start=timeline_module.ms(c.start),
-        end=timeline_module.ms(c.end),
-        duration=timeline_module.ms(c.duration),
-        source_duration=row.asset.duration if row else None,
-        gain=c.gain,
-        muted=c.muted,
-        transition=c.transition,
-        transition_duration=timeline_module.ms(c.transition_duration),
-        x=c.x,
-        y=c.y,
-        scale=c.scale,
-        opacity=c.opacity,
-        brightness=c.brightness,
-        contrast=c.contrast,
-        saturation=c.saturation,
-        crop=CropBox(**timeline_module.shown_crop(c.crop)) if c.crop else None,
-        fit=c.fit,
-        kind=c.kind,
-        text=c.text,
-        font_size=c.font_size,
-        color=c.color,
-        label=c.label,
-        label_color=c.label_color,
-        included=c.included,
-    )
-
-
 def project_out(media: MediaStore, name: str, project: Project, history: HistoryState | None = None) -> ProjectOut:
-    # One table load for the whole project; each clip's file is found by asset id.
-    with assets.open_book(media) as book:
-        rows = {
-            c.id: assets.lookup(book, c.asset, c.source) for t in project.tracks for c in t.clips if c.kind == "media"
-        }
-    return ProjectOut(
-        name=name,
-        revision=project.revision,
-        duration=timeline_module.ms(project.duration),
-        canvas=CanvasOut(**timeline_service.canvas_view(project, rows)),
-        history=None if history is None else HistoryOut(**history.to_dict()),
-        tracks=[
-            TrackOut(
-                id=t.id,
-                kind=t.kind,
-                magnetic=t.magnetic,
-                clips=[clip_out(c, rows.get(c.id)) for c in t.clips],
-                locked=t.locked,
-                hidden=t.hidden,
-                muted=t.muted,
-            )
-            for t in project.tracks
-        ],
-    )
+    return ProjectOut.model_validate(timeline_service.describe(media, name, project, history=history))
 
 
 def asset_out(book: assets.AssetBook, a: assets.Asset) -> AssetOut:

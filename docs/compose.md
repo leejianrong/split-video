@@ -26,7 +26,9 @@ so renaming or moving a video does not break a project. In the editor, the
 The same project can be built from the command line. Every command takes
 `--json` and `--root DIR` (default: the current directory); clips are numbered
 from 1 within their track, and tracks from 1 in the order `show` lists them
-(1 is the main track, which is also the default `--track`):
+(1 is the main track, which is also the default `--track`). `--json` prints the same project document as the
+HTTP API's `ProjectOut` (and MCP `show_timeline`): a clip's source range is `in_point` / `out_point`. Before SPL-130
+it was `in` / `out`, so scripts reading those keys must change:
 
 ```bash
 split-video compose new mix

@@ -219,14 +219,14 @@ def test_cli_compose_edits_show_revision_and_refuse_stale_ones(root, three_songs
     stale = cli("compose", "trim", "mix", 1, "--in", 1, "--base-revision", 1, *r)
     assert stale.exit_code == 3
     assert "revision 2" in stale.output and "compose show mix" in stale.output and "--base-revision 2" in stale.output
-    assert cli_json("compose", "show", "mix", *r)["tracks"][0]["clips"][0]["in"] == 0  # unchanged
+    assert cli_json("compose", "show", "mix", *r)["tracks"][0]["clips"][0]["in_point"] == 0  # unchanged
 
     stale_json = cli("compose", "set", "mix", 1, "--gain", 0.5, "--base-revision", 0, "--json", *r)
     assert stale_json.exit_code == 3
     assert json.loads(stale_json.stdout[stale_json.stdout.index("{") :])["current_revision"] == 2
 
     retried = cli_json("compose", "trim", "mix", 1, "--in", 1, "--base-revision", 2, *r)
-    assert retried["revision"] == 3 and retried["tracks"][0]["clips"][0]["in"] == 1
+    assert retried["revision"] == 3 and retried["tracks"][0]["clips"][0]["in_point"] == 1
 
 
 def test_every_cli_edit_command_takes_base_revision():
@@ -299,7 +299,7 @@ async def test_mcp_timeline_conflict_and_revisions_in_results(root, three_songs_
         error = await _error(client, "add_timeline_track", name="mix", base_revision=0)
         assert error["current_revision"] == 2
         trimmed = await _call(client, "trim_timeline_clip", name="mix", clip=1, in_point=1, base_revision=2)
-        assert trimmed["revision"] == 3 and trimmed["tracks"][0]["clips"][0]["in"] == 1
+        assert trimmed["revision"] == 3 and trimmed["tracks"][0]["clips"][0]["in_point"] == 1
 
 
 @pytest.mark.anyio

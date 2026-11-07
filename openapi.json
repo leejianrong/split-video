@@ -938,6 +938,10 @@
             "title": "Included",
             "type": "boolean"
           },
+          "index": {
+            "title": "Index",
+            "type": "integer"
+          },
           "kind": {
             "title": "Kind",
             "type": "string"
@@ -1019,6 +1023,7 @@
           }
         },
         "required": [
+          "index",
           "id",
           "asset",
           "source",
@@ -5529,6 +5534,10 @@
             "title": "Id",
             "type": "string"
           },
+          "index": {
+            "title": "Index",
+            "type": "integer"
+          },
           "kind": {
             "title": "Kind",
             "type": "string"
@@ -5549,6 +5558,7 @@
           }
         },
         "required": [
+          "index",
           "id",
           "kind",
           "magnetic",

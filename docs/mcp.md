@@ -17,6 +17,8 @@ the visual editor afterward. Tools: `list_videos`, `list_segments`,
 `move_timeline_track`, `place_timeline_clip`, `set_timeline_clip`,
 `add_timeline_text`, `set_timeline_text`, `undo`, `redo` (see [revisions](revisions.md#undo-and-redo)), `preview_frame` (the edited result at one time, as an image; see [compose.md](compose.md)), `preview_range` (up to 30 s of the edited result as a low-resolution mp4 cached by revision; returns a reference, never the video), `render_timeline` (with `preset`, `fit` and `captions`), `list_export_presets`, `list_caption_styles`.
 
+**Behaviour change (SPL-130):** every tool that returns a timeline (`show_timeline`, `add_asset_to_video`, the `*_timeline_*` tools, `undo`, `redo`) now returns the HTTP API's `ProjectOut`: clips name their source range `in_point` / `out_point` instead of `in` / `out`, and carry `label`, `label_color`, `included`; tracks carry `locked`, `hidden`, `muted`. Agents and scripts reading `in` / `out` must change. Edit-ops and plan documents you send still take `in` / `out`.
+
 New to driving it? The [agent guide](../src/split_video/agent_guide/SKILL.md) is the order of calls that works (import,
 report, transcribe, pick moments, plan, render), with limits, costs and error recovery. The server serves it as the
 resource `guide://agent` and the prompts `highlights_workflow`, `vertical_short` and `recover_from_error`;
