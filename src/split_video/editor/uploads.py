@@ -4,7 +4,7 @@ A browser cannot give the server a path, so a file dropped on the editor (or cho
 the raw request body and written into the workspace through the `MediaStore` (`media_import.py` holds the rules):
 a plain media file name, a free name in `folder` (`gig (2).mp4` if `gig.mp4` exists), probed and registered as an
 asset. The answer is the asset (`GET /assets/{id}`), `201`. A name or type that is not accepted is 400 or 415 and an
-unreadable file 422, all with the catalogue's `code` and `fix`, and nothing is left on disk. The body is streamed in
+unreadable file 422, a folder the editor cannot write to 403, all with the catalogue's `code` and `fix`, and nothing is left on disk. The body is streamed in
 chunks, never held whole; the request is the progress (a browser reports upload progress itself). Files that are
 already in the workspace need no upload: `POST /assets/register` adds them by path.
 """
@@ -48,7 +48,10 @@ def make_router(provider: StoreProvider) -> APIRouter:
             with assets.open_book(ctx.media) as book:
                 return asset_out(book, book.require(asset.id))
 
-        await run_in_threadpool(incoming.__enter__)
+        try:
+            await run_in_threadpool(incoming.__enter__)
+        except media_import.ImportError_ as exc:
+            raise api_error(403, exc) from None
         try:
             async for chunk in request.stream():
                 if chunk:
