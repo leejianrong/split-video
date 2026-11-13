@@ -12,12 +12,12 @@ RUN npm run build
 # resolve Kaggle's signed, short-lived download URLs) never ends up in the
 # final image — see scripts/fetch_yamnet_model.py.
 # The base image is pinned by digest for reproducible builds; Dependabot's docker ecosystem bumps it.
-FROM python:3.12-slim@sha256:cb33f7f771ecec2ef1225cf39b159591a040391bd73e4c01f00fdfc4c47611d2 AS models
+FROM python:3.15-slim@sha256:65a65fc7b30b06cb6df4930fd4650697cb23f4c2698ab81fc87e4b031bc36928 AS models
 RUN pip install --no-cache-dir kagglehub
 COPY scripts/fetch_yamnet_model.py ./
 RUN python fetch_yamnet_model.py /models
 
-FROM python:3.12-slim@sha256:cb33f7f771ecec2ef1225cf39b159591a040391bd73e4c01f00fdfc4c47611d2
+FROM python:3.15-slim@sha256:65a65fc7b30b06cb6df4930fd4650697cb23f4c2698ab81fc87e4b031bc36928
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ffmpeg fonts-dejavu-core \
